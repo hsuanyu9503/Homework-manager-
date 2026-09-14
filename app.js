@@ -1,4 +1,4 @@
-const APP_VERSION = "2.6";
+const APP_VERSION = "2.7";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -76,7 +76,9 @@ function normalizeData(input){
     students:Array.isArray(input?.students) ? input.students : [],
     assignments:Array.isArray(input?.assignments) ? input.assignments : [],
     records:Array.isArray(input?.records) ? input.records : [],
-    contactBook:Array.isArray(input?.contactBook) ? input.contactBook : []
+    contactItems:Array.isArray(input?.contactItems)
+      ? input.contactItems
+      : (Array.isArray(input?.contactBook) ? input.contactBook : [])
   };
 }
 
@@ -328,7 +330,7 @@ function renderDashboard(){
       <div class="item-card clickable" onclick="openAssignment('${x.assignment.id}')">
         <div class="item-main">
           <div class="item-title">${escapeHtml(String(x.student.number).padStart(2,"0"))} ${escapeHtml(x.student.name)}</div>
-          <div class="item-sub">${formatDate(x.assignment.date)}｜${escapeHtml(x.assignment.subject || "未分類")}｜${escapeHtml(x.assignment.title)}${x.note ? `｜${escapeHtml(x.note)}`:""}</div>
+          <div class="item-sub">${formatDate(x.assignment.date)}｜${escapeHtml(x.assignment.title)}${x.note ? `｜${escapeHtml(x.note)}`:""}</div>
         </div>
         <span class="badge ${x.status}">${STATUS_LABEL[x.status]}</span>
       </div>
@@ -343,7 +345,7 @@ function dashboardAssignmentHtml(a){
       <div class="progress-card-top">
         <div class="item-main">
           <div class="item-title">${escapeHtml(a.title)}</div>
-          <div class="item-sub">${formatDate(a.date)}｜${escapeHtml(a.subject || "未分類")}</div>
+          <div class="item-sub">${formatDate(a.date)}</div>
         </div>
         <div class="rate-pill ${percent===100 ? "done" : ""}">${percent}%</div>
       </div>
@@ -361,7 +363,7 @@ function assignmentCardHtml(a){
     <div class="item-card clickable" onclick="openAssignment('${a.id}')">
       <div class="item-main">
         <div class="item-title">${escapeHtml(a.title)}</div>
-        <div class="item-sub">${formatDate(a.date)}｜${escapeHtml(a.subject || "未分類")}</div>
+        <div class="item-sub">${formatDate(a.date)}</div>
         <div class="assignment-summary">
           ${c.missing ? `<span class="badge missing">缺交 ${c.missing}</span>`:""}
           ${c.correction ? `<span class="badge correction">待訂正 ${c.correction}</span>`:""}
@@ -428,51 +430,132 @@ function renderContactBook(){
   }).join("");
 }
 
+function contactDraftRowHtml(index){
+  return `
+    <div class="contact-draft-row" data-contact-row>
+      <div class="contact-draft-number">${index + 1}</div>
+      <div class="contact-draft-fields">
+        <label>
+          <span>事項</span>
+          <input class="contact-draft-title" placeholder="例如：數學習作 P.42" required>
+        </label>
+        <label>
+          <span>補充說明</span>
+          <input class="contact-draft-note" placeholder="選填">
+        </label>
+        <label class="check-row contact-track-row">
+          <input type="checkbox" class="contact-draft-track">
+          <span>登錄到作業</span>
+        </label>
+      </div>
+      <button type="button" class="contact-row-remove" title="移除此項" onclick="removeContactDraftRow(this)">×</button>
+    </div>
+  `;
+}
+
+function refreshContactDraftNumbers(){
+  const rows = [...document.querySelectorAll("[data-contact-row]")];
+  rows.forEach((row,index)=>{
+    const num = row.querySelector(".contact-draft-number");
+    if(num) num.textContent = index + 1;
+    const remove = row.querySelector(".contact-row-remove");
+    if(remove) remove.style.visibility = rows.length === 1 ? "hidden" : "visible";
+  });
+}
+
+function addContactDraftRow(){
+  const list = document.getElementById("contactDraftList");
+  if(!list) return;
+  const holder = document.createElement("div");
+  holder.innerHTML = contactDraftRowHtml(list.querySelectorAll("[data-contact-row]").length).trim();
+  list.appendChild(holder.firstElementChild);
+  refreshContactDraftNumbers();
+  const inputs = list.querySelectorAll(".contact-draft-title");
+  inputs[inputs.length - 1]?.focus();
+}
+
+function removeContactDraftRow(button){
+  const row = button.closest("[data-contact-row]");
+  if(!row) return;
+  const rows = document.querySelectorAll("[data-contact-row]");
+  if(rows.length <= 1) return;
+  row.remove();
+  refreshContactDraftNumbers();
+}
+
 function openNewContactItem(){
   showModal(
     "新增聯絡事項",
     `
-      <form id="newContactItemForm" class="modal-form">
-        <label><span>日期</span><input type="date" id="contactNewDate" value="${localDateString()}" required></label>
-        <label><span>事項</span><input id="contactNewTitle" placeholder="例如：數學習作 P.42、明天帶水壺" required></label>
-        <label><span>補充說明</span><textarea id="contactNewNote" rows="3" placeholder="選填"></textarea></label>
-        <label class="check-row">
-          <input type="checkbox" id="contactTrackAssignment">
-          <span>同時登錄到作業追蹤</span>
+      <form id="newContactItemForm" class="modal-form contact-batch-form">
+        <label class="contact-date-field">
+          <span>日期</span>
+          <input type="date" id="contactNewDate" value="${localDateString()}" required>
         </label>
-        <label id="contactSubjectWrap" class="hidden-field"><span>作業科目</span><input id="contactNewSubject" placeholder="例如：數學"></label>
+
+        <div id="contactDraftList" class="contact-draft-list">
+          ${contactDraftRowHtml(0)}
+        </div>
+
+        <button type="button" class="add-contact-row-btn" onclick="addContactDraftRow()">
+          <span class="plus-symbol">＋</span>
+          <span>新增一項</span>
+        </button>
+
         <div class="modal-actions">
           <button type="button" class="secondary" onclick="closeModal()">取消</button>
-          <button class="primary" type="submit">新增</button>
+          <button class="primary" type="submit">儲存聯絡簿</button>
         </div>
       </form>
     `
   );
 
-  const check = document.getElementById("contactTrackAssignment");
-  const subjectWrap = document.getElementById("contactSubjectWrap");
-  check.addEventListener("change",()=>subjectWrap.classList.toggle("hidden-field", !check.checked));
+  refreshContactDraftNumbers();
 
   document.getElementById("newContactItemForm").addEventListener("submit", e=>{
     e.preventDefault();
-    const item = {
-      id:uid("c"),
-      date:document.getElementById("contactNewDate").value,
-      title:document.getElementById("contactNewTitle").value.trim(),
-      note:document.getElementById("contactNewNote").value.trim(),
-      subject:document.getElementById("contactNewSubject").value.trim(),
-      trackAsAssignment:check.checked,
-      assignmentId:null,
-      createdAt:new Date().toISOString()
-    };
-    if(item.trackAsAssignment){
-      const assignment = createAssignmentFromContact(item);
-      item.assignmentId = assignment.id;
+    const date = document.getElementById("contactNewDate").value;
+    const rows = [...document.querySelectorAll("[data-contact-row]")];
+    const drafts = rows.map(row=>({
+      title:row.querySelector(".contact-draft-title").value.trim(),
+      note:row.querySelector(".contact-draft-note").value.trim(),
+      trackAsAssignment:row.querySelector(".contact-draft-track").checked
+    })).filter(x=>x.title);
+
+    if(!drafts.length){
+      toast("請至少輸入一項聯絡事項");
+      return;
     }
-    data.contactItems.push(item);
+
+    if(drafts.some(x=>x.trackAsAssignment) && !data.students.length){
+      toast("要登錄為作業前，請先到設定建立學生名單");
+      return;
+    }
+
+    drafts.forEach(draft=>{
+      const item = {
+        id:uid("c"),
+        date,
+        title:draft.title,
+        note:draft.note,
+        subject:"",
+        trackAsAssignment:draft.trackAsAssignment,
+        assignmentId:null,
+        createdAt:new Date().toISOString()
+      };
+      if(item.trackAsAssignment){
+        const assignment = createAssignmentFromContact(item);
+        item.assignmentId = assignment.id;
+      }
+      data.contactItems.push(item);
+    });
+
     saveData();
     closeModal();
-    toast(item.trackAsAssignment ? "聯絡事項已新增，並同步到作業" : "聯絡事項已新增");
+    const trackedCount = drafts.filter(x=>x.trackAsAssignment).length;
+    toast(trackedCount
+      ? `已新增 ${drafts.length} 項，其中 ${trackedCount} 項同步到作業`
+      : `已新增 ${drafts.length} 項聯絡事項`);
   });
 }
 
@@ -480,7 +563,7 @@ function createAssignmentFromContact(item){
   const assignment = {
     id:uid("a"),
     date:item.date,
-    subject:item.subject || "聯絡簿",
+    subject:"",
     title:item.title,
     createdAt:new Date().toISOString(),
     dashboardArchived:false,
@@ -592,7 +675,7 @@ function openAssignment(id){
   showModal(
     `${a.title}`,
     `
-      <div class="item-sub">${formatDate(a.date)}｜${escapeHtml(a.subject || "未分類")}</div>
+      <div class="item-sub">${formatDate(a.date)}</div>
       <div class="tracker-grid">
         ${[...data.students].sort((x,y)=>x.number-y.number).map(s=>{
           const r = ensureRecord(a.id,s.id);
@@ -673,7 +756,7 @@ function openStudent(studentId){
           <div class="item-card clickable" onclick="closeModal();openAssignment('${x.a.id}')">
             <div class="item-main">
               <div class="item-title">${escapeHtml(x.a.title)}</div>
-              <div class="item-sub">${formatDate(x.a.date)}｜${escapeHtml(x.a.subject||"未分類")}${x.r.note?`｜${escapeHtml(x.r.note)}`:""}</div>
+              <div class="item-sub">${formatDate(x.a.date)}${x.r.note?`｜${escapeHtml(x.r.note)}`:""}</div>
             </div>
             <span class="badge ${x.r.status}">${STATUS_LABEL[x.r.status]}</span>
           </div>
@@ -694,7 +777,6 @@ function openNewAssignment(){
     `
       <form id="newAssignmentForm" class="modal-form">
         <label><span>日期</span><input type="date" id="newDate" value="${localDateString()}" required></label>
-        <label><span>科目</span><input id="newSubject" placeholder="例如：數學"></label>
         <label><span>作業名稱</span><input id="newTitle" placeholder="例如：數學習作 P.42" required></label>
         <div class="modal-actions">
           <button type="button" class="secondary" onclick="closeModal()">取消</button>
@@ -708,7 +790,7 @@ function openNewAssignment(){
     const assignment = {
       id:uid("a"),
       date:document.getElementById("newDate").value,
-      subject:document.getElementById("newSubject").value.trim(),
+      subject:"",
       title:document.getElementById("newTitle").value.trim(),
       createdAt:new Date().toISOString(),
       dashboardArchived:false
