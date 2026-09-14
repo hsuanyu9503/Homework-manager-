@@ -1,4 +1,4 @@
-const APP_VERSION = "3.15";
+const APP_VERSION = "3.16";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1746,7 +1746,6 @@ function escapeHtml(str){
 function escapeAttr(str){ return escapeHtml(str); }
 
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
-document.getElementById("quickAddBtn").addEventListener("click",openNewAssignment);
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
