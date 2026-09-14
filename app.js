@@ -1,3 +1,4 @@
+const APP_VERSION = "2.1";
 
 const STORAGE_KEY = "homeworkTrackerDataV1";
 
