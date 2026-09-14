@@ -1,4 +1,4 @@
-const APP_VERSION = "3.17";
+const APP_VERSION = "3.19";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -992,6 +992,37 @@ function removeContactDraftRow(button){
   refreshContactDraftNumbers();
 }
 
+
+function openContactDisplay(){
+  const dateInput = document.getElementById("contactDateFilter");
+  const selectedDate = showAllContactItemsMode ? null : (dateInput?.value || localDateString());
+  const items = [...(Array.isArray(data.contactItems) ? data.contactItems : [])]
+    .filter(item=>selectedDate ? item.date===selectedDate : true)
+    .sort((a,b)=>a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || ""));
+
+  const titleDate = selectedDate ? formatDate(selectedDate) : "全部日期";
+  const content = items.length
+    ? items.map(item=>`
+        <article class="contact-display-item">
+          <div class="contact-display-date">${escapeHtml(formatDate(item.date))}</div>
+          <div class="contact-display-title">${escapeHtml(item.title || "")}</div>
+        </article>
+      `).join("")
+    : `<div class="contact-display-empty">目前沒有聯絡事項</div>`;
+
+  showModal(
+    `聯絡簿展示｜${escapeHtml(titleDate)}`,
+    `
+      <div class="contact-display-view">
+        ${content}
+      </div>
+      <div class="modal-actions contact-display-actions">
+        <button type="button" class="secondary" onclick="closeModal()">返回聯絡簿</button>
+      </div>
+    `
+  );
+}
+
 function openNewContactItem(){
   showModal(
     "新增聯絡事項",
@@ -1772,6 +1803,10 @@ document.getElementById("showAllContactItems").addEventListener("click",()=>{
   document.getElementById("showAllContactItems").textContent = showAllContactItemsMode ? "依日期篩選" : "顯示全部";
   renderContactBook();
 });
+const contactDisplayBtn = document.getElementById("contactDisplayBtn");
+if(contactDisplayBtn){
+  contactDisplayBtn.addEventListener("click", openContactDisplay);
+}
 document.getElementById("addContactItemBtn").addEventListener("click",openNewContactItem);
 document.getElementById("studentSearch").addEventListener("input",renderStudents);
 document.getElementById("classForm").addEventListener("submit",saveClassSettings);

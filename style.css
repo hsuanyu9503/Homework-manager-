@@ -1370,3 +1370,82 @@ body::before{
     justify-content:flex-end;
   }
 }
+
+
+/* v3.18 contact book display mode */
+.contact-display-view{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  padding:4px 0 8px;
+}
+
+.contact-display-item{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:18px 20px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--surface);
+}
+
+.contact-display-date{
+  font-size:14px;
+  font-weight:800;
+  color:var(--muted);
+  line-height:1.35;
+}
+
+.contact-display-title{
+  font-size:24px;
+  font-weight:900;
+  line-height:1.45;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
+.contact-display-empty{
+  padding:28px 18px;
+  text-align:center;
+  color:var(--muted);
+  border:1px dashed var(--line);
+  border-radius:16px;
+}
+
+.contact-display-actions{
+  position:sticky;
+  bottom:0;
+  padding-top:10px;
+  background:linear-gradient(to bottom, rgba(255,255,255,0), var(--surface) 28%);
+}
+
+@media(max-width:640px){
+  .contact-display-item{
+    padding:16px;
+  }
+  .contact-display-title{
+    font-size:21px;
+  }
+}
+
+
+.contact-section-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+@media(max-width:640px){
+  #contactbook .section-head{
+    align-items:stretch;
+  }
+  .contact-section-actions{
+    width:100%;
+  }
+  .contact-section-actions button{
+    flex:1 1 0;
+  }
+}

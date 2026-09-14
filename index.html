@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.17" />
+  <link rel="stylesheet" href="style.css?v=3.19" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.17</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.19</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.17</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.19</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -116,7 +116,10 @@
           <h2>聯絡簿</h2>
           <p>依日期記錄聯絡事項，並決定是否同步到作業追蹤</p>
         </div>
-        <button class="primary" id="addContactItemBtn">＋ 新增事項</button>
+        <div class="contact-section-actions">
+          <button class="secondary" id="contactDisplayBtn">展示</button>
+          <button class="primary" id="addContactItemBtn">＋ 新增事項</button>
+        </div>
       </div>
 
       <div class="toolbar card">
@@ -234,6 +237,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.17"></script>
+  <script src="app.js?v=3.19"></script>
 </body>
 </html>
