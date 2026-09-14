@@ -1,4 +1,4 @@
-const APP_VERSION = "3.18";
+const APP_VERSION = "3.19";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1163,9 +1163,11 @@ function setScoreMode(mode){
   document.getElementById("groupScorePanel")?.classList.toggle("hidden", mode!=="group");
   document.getElementById("lotteryPanel")?.classList.toggle("hidden", mode!=="lottery");
   document.getElementById("timerPanel")?.classList.toggle("hidden", mode!=="timer");
+  document.getElementById("marqueePanel")?.classList.toggle("hidden", mode!=="marquee");
   if(mode==="group") renderGroupScores();
   if(mode==="lottery") renderLottery();
   if(mode==="timer") renderPomodoro();
+  if(mode==="marquee") renderMarquee();
 }
 
 
@@ -1317,6 +1319,91 @@ function resetPomodoro(){
   pomodoroRemainingSec=pomodoroDurationSec;
   stopPomodoroInterval();
   renderPomodoro();
+}
+
+
+// v3.19 classroom marquee
+let marqueeRunning = false;
+let marqueeSpeed = "normal";
+const marqueeDurations = {slow:18, normal:11, fast:6};
+
+function marqueeDuration(){
+  return marqueeDurations[marqueeSpeed] || marqueeDurations.normal;
+}
+
+function renderMarquee(){
+  const track=document.getElementById("marqueeTrack");
+  const text=document.getElementById("marqueeText");
+  const input=document.getElementById("marqueeTextInput");
+  const status=document.getElementById("marqueeStatus");
+  const startBtn=document.getElementById("marqueeStartPauseBtn");
+  if(!track || !text) return;
+
+  track.style.setProperty("--marquee-duration", `${marqueeDuration()}s`);
+  track.classList.toggle("running", marqueeRunning);
+  track.classList.toggle("paused", !marqueeRunning);
+
+  if(status) status.textContent=marqueeRunning ? "播放中" : "已暫停";
+  if(startBtn) startBtn.textContent=marqueeRunning ? "暫停" : "開始";
+
+  document.querySelectorAll(".marquee-speed").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.speed===marqueeSpeed);
+  });
+
+  if(input && !input.value.trim()) input.value=text.textContent || "請準備好上課用品";
+}
+
+function restartMarqueeAnimation(){
+  const track=document.getElementById("marqueeTrack");
+  if(!track) return;
+  track.classList.remove("running");
+  void track.offsetWidth;
+  if(marqueeRunning) track.classList.add("running");
+}
+
+function applyMarqueeText(){
+  const input=document.getElementById("marqueeTextInput");
+  const text=document.getElementById("marqueeText");
+  if(!input || !text) return;
+  const value=input.value.trim();
+  if(!value){
+    toast("請先輸入跑馬燈文字");
+    input.focus();
+    return;
+  }
+  text.textContent=value;
+  restartMarqueeAnimation();
+  renderMarquee();
+}
+
+function toggleMarquee(){
+  const text=document.getElementById("marqueeText");
+  if(!text) return;
+  if(!text.textContent.trim()){
+    applyMarqueeText();
+    return;
+  }
+  marqueeRunning=!marqueeRunning;
+  if(marqueeRunning) restartMarqueeAnimation();
+  renderMarquee();
+}
+
+function resetMarquee(){
+  marqueeRunning=false;
+  marqueeSpeed="normal";
+  const input=document.getElementById("marqueeTextInput");
+  const text=document.getElementById("marqueeText");
+  if(input) input.value="請準備好上課用品";
+  if(text) text.textContent="請準備好上課用品";
+  restartMarqueeAnimation();
+  renderMarquee();
+}
+
+function setMarqueeSpeed(speed){
+  if(!marqueeDurations[speed]) return;
+  marqueeSpeed=speed;
+  restartMarqueeAnimation();
+  renderMarquee();
 }
 
 function studentScore(studentId){
@@ -1923,6 +2010,23 @@ const timerStartPauseBtn=document.getElementById("timerStartPauseBtn");
 if(timerStartPauseBtn) timerStartPauseBtn.addEventListener("click",togglePomodoro);
 const timerResetBtn=document.getElementById("timerResetBtn");
 if(timerResetBtn) timerResetBtn.addEventListener("click",resetPomodoro);
+
+const marqueeStartPauseBtn=document.getElementById("marqueeStartPauseBtn");
+if(marqueeStartPauseBtn) marqueeStartPauseBtn.addEventListener("click",toggleMarquee);
+const marqueeApplyBtn=document.getElementById("marqueeApplyBtn");
+if(marqueeApplyBtn) marqueeApplyBtn.addEventListener("click",applyMarqueeText);
+const marqueeResetBtn=document.getElementById("marqueeResetBtn");
+if(marqueeResetBtn) marqueeResetBtn.addEventListener("click",resetMarquee);
+const marqueeTextInput=document.getElementById("marqueeTextInput");
+if(marqueeTextInput) marqueeTextInput.addEventListener("keydown",e=>{
+  if(e.key==="Enter"){
+    e.preventDefault();
+    applyMarqueeText();
+  }
+});
+document.querySelectorAll(".marquee-speed").forEach(btn=>btn.addEventListener("click",()=>{
+  setMarqueeSpeed(btn.dataset.speed);
+}));
 
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
