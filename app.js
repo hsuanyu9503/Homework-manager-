@@ -42,7 +42,7 @@ function normalizeData(input){
     version:1,
     class:{name: input?.class?.name || ""},
     students:Array.isArray(input?.students) ? input.students : [],
-    assignments:Array.isArray(input?.assignments) ? input.assignments : [],
+    assignments:Array.isArray(input?.assignments) ? input.assignments.map(a => ({...a, dashboardArchived: Boolean(a.dashboardArchived), createdAt: a.createdAt || `${a.date || ""}T00:00:00.000Z`})) : [],
     records:Array.isArray(input?.records) ? input.records : []
   };
 }
@@ -95,6 +95,13 @@ function assignmentCounts(assignmentId){
   return counts;
 }
 
+function assignmentProgress(assignmentId){
+  const counts = assignmentCounts(assignmentId);
+  const total = data.students.length;
+  const percent = total ? Math.round((counts.completed / total) * 100) : 0;
+  return {counts, total, percent};
+}
+
 function setPage(page){
   currentPage = page;
   document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active", el.id===page));
@@ -125,6 +132,16 @@ function renderDashboard(){
   document.getElementById("correctionPeople").textContent = `${new Set(correction.map(r=>r.studentId)).size} 人`;
   document.getElementById("completedCount").textContent = completed.length;
 
+  const activeAssignments = [...data.assignments]
+    .filter(a=>!a.dashboardArchived)
+    .sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  const target = document.getElementById("recentAssignments");
+  if(!activeAssignments.length){
+    target.innerHTML = `<div class="empty cheerful">🎉 目前沒有需要追蹤的作業，全部處理完畢！</div>`;
+  }else{
+    target.innerHTML = activeAssignments.map(a=>dashboardAssignmentHtml(a)).join("");
+  }
+
   const pendingList = document.getElementById("pendingList");
   const pendingRecords = data.records
     .filter(r=>["missing","correction"].includes(r.status))
@@ -133,11 +150,11 @@ function renderDashboard(){
       student:data.students.find(s=>s.id===r.studentId),
       assignment:data.assignments.find(a=>a.id===r.assignmentId)
     }))
-    .filter(x=>x.student && x.assignment)
+    .filter(x=>x.student && x.assignment && !x.assignment.dashboardArchived)
     .sort((a,b)=> b.assignment.date.localeCompare(a.assignment.date));
 
   if(!pendingRecords.length){
-    pendingList.innerHTML = `<div class="empty">目前沒有缺交或待訂正的紀錄。</div>`;
+    pendingList.innerHTML = `<div class="empty">目前沒有缺交或待訂正的學生。</div>`;
   }else{
     pendingList.innerHTML = pendingRecords.map(x=>`
       <div class="item-card clickable" onclick="openAssignment('${x.assignment.id}')">
@@ -149,14 +166,25 @@ function renderDashboard(){
       </div>
     `).join("");
   }
+}
 
-  const recent = [...data.assignments].sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0,6);
-  const target = document.getElementById("recentAssignments");
-  if(!recent.length){
-    target.innerHTML = `<div class="empty">尚未建立作業。</div>`;
-  }else{
-    target.innerHTML = recent.map(a=>assignmentCardHtml(a)).join("");
-  }
+function dashboardAssignmentHtml(a){
+  const {counts:c, total, percent} = assignmentProgress(a.id);
+  return `
+    <div class="progress-card clickable" onclick="openAssignment('${a.id}')">
+      <div class="progress-card-top">
+        <div class="item-main">
+          <div class="item-title">${escapeHtml(a.title)}</div>
+          <div class="item-sub">${formatDate(a.date)}｜${escapeHtml(a.subject || "未分類")}</div>
+        </div>
+        <div class="rate-pill ${percent===100 ? "done" : ""}">${percent}%</div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div>
+      <div class="progress-meta">
+        <span>完成 ${c.completed} / ${total}</span>
+        <span>${c.missing ? `缺交 ${c.missing}` : "無缺交"} · ${c.correction ? `待訂正 ${c.correction}` : "無待訂正"}</span>
+      </div>
+    </div>`;
 }
 
 function assignmentCardHtml(a){
@@ -278,6 +306,21 @@ function cycleStatus(assignmentId, studentId, button){
   renderDashboard();
   renderAssignments();
   renderStudents();
+  maybeArchiveCompletedAssignment(assignmentId);
+}
+
+function maybeArchiveCompletedAssignment(assignmentId){
+  const a = data.assignments.find(x=>x.id===assignmentId);
+  if(!a || a.dashboardArchived || !data.students.length) return;
+  const {percent} = assignmentProgress(assignmentId);
+  if(percent !== 100) return;
+  const shouldArchive = confirm(`「${a.title}」完成率已達 100%！\n\n是否從總覽的待處理作業清單移除？\n（作業與學生歷史紀錄仍會保留）`);
+  if(shouldArchive){
+    a.dashboardArchived = true;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    renderAll();
+    toast("作業已完成，已從總覽移除 🎉");
+  }
 }
 
 function updateNote(assignmentId, studentId, note){
@@ -343,7 +386,8 @@ function openNewAssignment(){
       date:document.getElementById("newDate").value,
       subject:document.getElementById("newSubject").value.trim(),
       title:document.getElementById("newTitle").value.trim(),
-      createdAt:new Date().toISOString()
+      createdAt:new Date().toISOString(),
+      dashboardArchived:false
     };
     data.assignments.push(assignment);
     data.students.forEach(s=>{
