@@ -1,4 +1,4 @@
-const APP_VERSION = "3.14";
+const APP_VERSION = "3.15";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -485,7 +485,31 @@ function setPage(page){
   renderAll();
 }
 
+
+let __lastRenderedDate = localDateString();
+
+function refreshForDateRollover(){
+  const currentDate = localDateString();
+  if(currentDate === __lastRenderedDate) return;
+  __lastRenderedDate = currentDate;
+  renderAll();
+}
+
+function startDateRolloverGuards(){
+  // 第一層：頁面持續開啟時，定期檢查是否跨日。
+  window.setInterval(refreshForDateRollover, 60000);
+
+  // 第二層：從背景切回、重新聚焦時，立即檢查一次。
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.visibilityState === "visible"){
+      refreshForDateRollover();
+    }
+  });
+  window.addEventListener("focus", refreshForDateRollover);
+}
+
 function renderAll(){
+  __lastRenderedDate = localDateString();
   document.getElementById("todayText").textContent = formatToday();
   const className = data.class.name || "尚未設定班級";
   document.getElementById("headerClassName").textContent = data.class.name || "Classroom Manager";
@@ -1762,3 +1786,5 @@ document.getElementById("modalBackdrop").addEventListener("click",e=>{
 });
 
 renderClassHome();
+
+startDateRolloverGuards();
