@@ -1,4 +1,4 @@
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.2";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -27,7 +27,9 @@ function defaultData(){
     assignments:[],
     records:[],
     contactItems:[],
-    scores:{}
+    scores:{},
+    groups:[],
+    groupScores:{}
   };
 }
 
@@ -80,7 +82,9 @@ function normalizeData(input){
     contactItems:Array.isArray(input?.contactItems)
       ? input.contactItems
       : (Array.isArray(input?.contactBook) ? input.contactBook : []),
-    scores:(input?.scores && typeof input.scores==="object") ? input.scores : {}
+    scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
+    groups:Array.isArray(input?.groups) ? input.groups : [],
+    groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {}
   };
 }
 
@@ -318,6 +322,10 @@ function openClassSettings(classId){
     d.scores = Object.fromEntries(
       Object.entries(d.scores || {}).filter(([studentId])=>studentIds.has(studentId))
     );
+    d.groups = (d.groups || []).map(g=>({
+      ...g,
+      studentIds:(g.studentIds || []).filter(studentId=>studentIds.has(studentId))
+    }));
 
     cls.name = newName;
     cls.data = d;
@@ -451,6 +459,7 @@ function renderAll(){
   renderContactBook();
   renderStudents();
   renderScores();
+  renderGroupScores();
 }
 
 function renderDashboard(){
@@ -794,6 +803,19 @@ function deleteContactItem(contactId){
 }
 
 
+
+let currentScoreMode = "individual";
+
+function setScoreMode(mode){
+  currentScoreMode = mode;
+  document.querySelectorAll(".score-mode-tab").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.scoreMode===mode);
+  });
+  document.getElementById("individualScorePanel")?.classList.toggle("hidden", mode!=="individual");
+  document.getElementById("groupScorePanel")?.classList.toggle("hidden", mode!=="group");
+  if(mode==="group") renderGroupScores();
+}
+
 function studentScore(studentId){
   const value = Number(data.scores?.[studentId] ?? 0);
   return Number.isFinite(value) ? value : 0;
@@ -810,7 +832,7 @@ function renderScores(){
   if(!list) return;
   const students = [...data.students].sort((a,b)=>a.number-b.number);
   if(!students.length){
-    list.innerHTML = `<div class="empty">尚未建立學生名單，請先從班級首頁的「班級設定」加入學生。</div>`;
+    list.innerHTML = `<div class="empty">尚未建立學生名單，請先從班級首頁的「班級資料管理」加入學生。</div>`;
     return;
   }
   list.innerHTML = students.map(s=>{
@@ -822,14 +844,203 @@ function renderScores(){
           <div class="item-title">${escapeHtml(s.name)}</div>
         </div>
         <div class="score-controls">
-          <button class="score-btn minus" onclick="changeStudentScore('${s.id}',-1)" aria-label="${escapeAttr(s.name)} 減 1 分">−</button>
+          <button class="score-btn minus" onclick="changeStudentScore('${s.id}',-1)">−</button>
           <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
-          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)" aria-label="${escapeAttr(s.name)} 加 1 分">＋</button>
+          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)">＋</button>
         </div>
       </div>
     `;
   }).join("");
 }
+
+function groupScore(groupId){
+  const value = Number(data.groupScores?.[groupId] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function changeGroupScore(groupId, delta){
+  if(!data.groupScores || typeof data.groupScores!=="object") data.groupScores = {};
+  data.groupScores[groupId] = groupScore(groupId) + delta;
+  saveData();
+}
+
+function normalizeGroups(){
+  if(!Array.isArray(data.groups)) data.groups=[];
+  const studentIds = new Set(data.students.map(s=>s.id));
+  data.groups = data.groups.map((g,i)=>({
+    id:g.id || uid("g"),
+    name:g.name || `第 ${i+1} 組`,
+    studentIds:Array.isArray(g.studentIds) ? g.studentIds.filter(id=>studentIds.has(id)) : []
+  }));
+}
+
+function renderGroupScores(){
+  const list = document.getElementById("groupScoreList");
+  if(!list) return;
+  normalizeGroups();
+
+  if(!data.groups.length){
+    list.innerHTML = `<div class="empty">尚未建立小組。可使用「手動分組」或「隨機分組」開始。</div>`;
+    return;
+  }
+
+  list.innerHTML = data.groups.map((g,index)=>{
+    const score=groupScore(g.id);
+    const members=g.studentIds
+      .map(id=>data.students.find(s=>s.id===id))
+      .filter(Boolean)
+      .sort((a,b)=>a.number-b.number);
+
+    return `
+      <div class="group-score-card">
+        <div class="group-card-head">
+          <div>
+            <div class="group-name">${escapeHtml(g.name || `第 ${index+1} 組`)}</div>
+            <div class="item-sub">${members.length} 人</div>
+          </div>
+          <button class="secondary small-btn" onclick="renameGroup('${g.id}')">改名</button>
+        </div>
+
+        <div class="group-members">
+          ${members.length ? members.map(s=>`<span class="group-member-chip">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span>`).join("") : `<span class="muted">尚無成員</span>`}
+        </div>
+
+        <div class="score-controls group-score-controls">
+          <button class="score-btn minus" onclick="changeGroupScore('${g.id}',-1)">−</button>
+          <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
+          <button class="score-btn plus" onclick="changeGroupScore('${g.id}',1)">＋</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function openManualGrouping(){
+  if(!data.students.length){
+    toast("請先建立學生名單");
+    return;
+  }
+  normalizeGroups();
+  if(!data.groups.length){
+    data.groups=[{id:uid("g"),name:"第 1 組",studentIds:[]}];
+  }
+
+  const groupOptions = data.groups.map((g,i)=>`<option value="${g.id}">${escapeHtml(g.name || `第 ${i+1} 組`)}</option>`).join("");
+  const rows=[...data.students].sort((a,b)=>a.number-b.number).map(s=>{
+    const current=data.groups.find(g=>g.studentIds.includes(s.id))?.id || "";
+    return `
+      <div class="manual-group-row">
+        <div class="manual-student">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</div>
+        <select data-manual-student="${s.id}">
+          <option value="">未分組</option>
+          ${groupOptions.replace(`value="${current}"`,`value="${current}" selected`)}
+        </select>
+      </div>`;
+  }).join("");
+
+  showModal("手動分組",`
+    <div class="modal-form">
+      <div class="manual-group-top">
+        <label><span>小組數量</span><input id="manualGroupCount" type="number" min="1" max="20" value="${data.groups.length}"></label>
+        <button type="button" class="secondary" onclick="rebuildManualGroupSelectors()">套用組數</button>
+      </div>
+      <div id="manualGroupRows" class="manual-group-list">${rows}</div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button type="button" class="primary" onclick="saveManualGrouping()">儲存分組</button>
+      </div>
+    </div>
+  `);
+}
+
+function rebuildManualGroupSelectors(){
+  const count=Math.max(1,Math.min(20,Number(document.getElementById("manualGroupCount")?.value)||1));
+  const oldGroups=[...data.groups];
+  const next=[];
+  for(let i=0;i<count;i++){
+    next.push(oldGroups[i] || {id:uid("g"),name:`第 ${i+1} 組`,studentIds:[]});
+  }
+  data.groups=next;
+  openManualGrouping();
+}
+
+function saveManualGrouping(){
+  normalizeGroups();
+  data.groups.forEach(g=>g.studentIds=[]);
+  document.querySelectorAll("[data-manual-student]").forEach(sel=>{
+    const group=data.groups.find(g=>g.id===sel.value);
+    if(group) group.studentIds.push(sel.dataset.manualStudent);
+  });
+  persistActiveClass();
+  closeModal();
+  renderGroupScores();
+  toast("小組分組已儲存");
+}
+
+function openRandomGrouping(){
+  if(!data.students.length){
+    toast("請先建立學生名單");
+    return;
+  }
+  showModal("隨機分組",`
+    <form id="randomGroupingForm" class="modal-form">
+      <label>
+        <span>要分成幾組？</span>
+        <input id="randomGroupCount" type="number" min="1" max="${Math.max(1,data.students.length)}" value="${Math.min(4,Math.max(1,data.students.length))}" required>
+      </label>
+      <div class="item-sub">學生會隨機平均分配到各組；會取代目前的小組成員配置。</div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button class="primary" type="submit">開始分組</button>
+      </div>
+    </form>
+  `);
+  document.getElementById("randomGroupingForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const count=Math.max(1,Math.min(data.students.length,Number(document.getElementById("randomGroupCount").value)||1));
+    randomizeGroups(count);
+  });
+}
+
+function randomizeGroups(count){
+  const shuffled=[...data.students].sort(()=>Math.random()-.5);
+  const oldScores=data.groupScores || {};
+  const groups=Array.from({length:count},(_,i)=>({
+    id:data.groups?.[i]?.id || uid("g"),
+    name:data.groups?.[i]?.name || `第 ${i+1} 組`,
+    studentIds:[]
+  }));
+  shuffled.forEach((s,i)=>groups[i%count].studentIds.push(s.id));
+  data.groups=groups;
+  data.groupScores=Object.fromEntries(groups.map(g=>[g.id,Number(oldScores[g.id]||0)]));
+  saveData();
+  closeModal();
+  setScoreMode("group");
+  toast(`已隨機分成 ${count} 組`);
+}
+
+function renameGroup(groupId){
+  const group=data.groups.find(g=>g.id===groupId);
+  if(!group) return;
+  const next=prompt("輸入小組名稱",group.name);
+  if(next===null) return;
+  const name=next.trim();
+  if(!name) return;
+  group.name=name;
+  saveData();
+}
+
+function resetGroupScores(){
+  if(!data.groups.length){
+    toast("目前沒有小組");
+    return;
+  }
+  if(!confirm("確定要將所有小組積分歸零嗎？")) return;
+  data.groupScores={};
+  saveData();
+  toast("小組積分已歸零");
+}
+
 
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();

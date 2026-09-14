@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.1" />
+  <link rel="stylesheet" href="style.css?v=3.2" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.1</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.2</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.1</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.2</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button><button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button></div>
@@ -188,11 +188,28 @@
     <section id="scores" class="page">
       <div class="page-head">
         <div>
-          <h2>個人積分</h2>
-          <p class="muted">使用 ＋ / − 快速調整學生分數，分數可低於 0。</p>
+          <h2>積分</h2>
+          <p class="muted">個人積分與小組積分分開計算，互不影響。</p>
         </div>
       </div>
-      <div id="scoreList" class="score-grid"></div>
+
+      <div class="score-mode-tabs">
+        <button class="score-mode-tab active" data-score-mode="individual" onclick="setScoreMode('individual')">個人積分</button>
+        <button class="score-mode-tab" data-score-mode="group" onclick="setScoreMode('group')">小組積分</button>
+      </div>
+
+      <div id="individualScorePanel" class="score-mode-panel">
+        <div id="scoreList" class="score-grid"></div>
+      </div>
+
+      <div id="groupScorePanel" class="score-mode-panel hidden">
+        <div class="group-toolbar">
+          <button class="secondary" onclick="openManualGrouping()">手動分組</button>
+          <button class="secondary" onclick="openRandomGrouping()">隨機分組</button>
+          <button class="secondary" onclick="resetGroupScores()">小組分數歸零</button>
+        </div>
+        <div id="groupScoreList" class="group-score-grid"></div>
+      </div>
     </section>
 
 </main>
@@ -211,6 +228,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.1"></script>
+  <script src="app.js?v=3.2"></script>
 </body>
 </html>
