@@ -1,4 +1,4 @@
-const APP_VERSION = "2.7";
+const APP_VERSION = "2.8";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -200,7 +200,7 @@ function renderClassHome(){
         </div>
         <div class="class-card-actions" onclick="event.stopPropagation()">
           <button class="secondary" onclick="enterClass('${cls.id}')">進入班級</button>
-          <button class="secondary" onclick="renameClass('${cls.id}')">重新命名</button>
+          <button class="secondary" onclick="openClassSettings('${cls.id}')">班級設定</button>
         </div>
       </article>
     `;
@@ -234,6 +234,165 @@ function openAddClass(){
     renderClassHome();
     enterClass(cls.id);
   });
+}
+
+
+function openClassSettings(classId){
+  const cls = store.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  const d = normalizeData(cls.data);
+  const rosterText = [...d.students]
+    .sort((a,b)=>a.number-b.number)
+    .map(s=>`${s.number} ${s.name}`)
+    .join("\n");
+
+  showModal("班級設定", `
+    <form id="classSettingsForm" class="modal-form class-settings-form">
+      <label>
+        <span>班級名稱</span>
+        <input id="homeClassNameInput" value="${escapeAttr(cls.name || "")}" required>
+      </label>
+      <label>
+        <span>學生名單</span>
+        <textarea id="homeStudentRosterInput" rows="12" placeholder="每行一位學生，例如：&#10;1 王小明&#10;2 李小華">${escapeHtml(rosterText)}</textarea>
+      </label>
+
+      <div class="settings-divider"></div>
+
+      <div class="settings-block">
+        <div>
+          <div class="item-title">資料備份</div>
+          <div class="item-sub">匯出或匯入這個班級的學生、作業與聯絡簿資料。</div>
+        </div>
+        <div class="settings-inline-actions">
+          <button type="button" class="secondary" onclick="exportClassBackup('${classId}')">匯出 JSON</button>
+          <label class="secondary file-button">
+            匯入 JSON
+            <input type="file" accept=".json,application/json" onchange="importClassBackup('${classId}', this.files[0]); this.value=''">
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-divider"></div>
+
+      <div class="settings-block danger-zone">
+        <div>
+          <div class="item-title">清除班級資料</div>
+          <div class="item-sub">保留班級本身，但清除學生、作業、聯絡簿與追蹤紀錄。</div>
+        </div>
+        <button type="button" class="ghost-danger" onclick="clearClassFromHome('${classId}')">清除資料</button>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button class="primary" type="submit">儲存設定</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById("classSettingsForm").addEventListener("submit", e=>{
+    e.preventDefault();
+    const newName = document.getElementById("homeClassNameInput").value.trim();
+    const roster = parseRoster(document.getElementById("homeStudentRosterInput").value);
+    const oldByNumber = new Map(d.students.map(s=>[s.number,s]));
+
+    d.class.name = newName;
+    d.students = roster.map(s=>{
+      const old = oldByNumber.get(s.number);
+      return {id: old?.id || uid("s"), number:s.number, name:s.name};
+    });
+
+    // Ensure every assignment has a record for every current student.
+    d.assignments.forEach(a=>{
+      d.students.forEach(s=>{
+        if(!d.records.some(r=>r.assignmentId===a.id && r.studentId===s.id)){
+          d.records.push({assignmentId:a.id, studentId:s.id, status:"pending", note:""});
+        }
+      });
+    });
+
+    // Drop records belonging to students no longer in roster.
+    const studentIds = new Set(d.students.map(s=>s.id));
+    d.records = d.records.filter(r=>studentIds.has(r.studentId));
+
+    cls.name = newName;
+    cls.data = d;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    closeModal();
+    renderClassHome();
+    toast("班級設定已儲存");
+  });
+}
+
+function exportClassBackup(classId){
+  const cls = store.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  const payload = {
+    app:"homework-tracker",
+    version:APP_VERSION,
+    backupDate:new Date().toISOString(),
+    className:cls.name,
+    data:normalizeData(cls.data)
+  };
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${cls.name || "班級"}-作業追蹤備份-${localDateString()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importClassBackup(classId, file){
+  if(!file) return;
+  const cls = store.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const parsed = JSON.parse(reader.result);
+      const incoming = normalizeData(parsed.data || parsed);
+      const ok = confirm(`確定要匯入備份到「${cls.name}」嗎？\n\n目前班級資料會被備份內容取代。`);
+      if(!ok) return;
+      cls.data = incoming;
+      if(parsed.className){
+        cls.name = parsed.className;
+        cls.data.class.name = parsed.className;
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      closeModal();
+      renderClassHome();
+      toast("班級備份已匯入");
+    }catch(e){
+      alert("匯入失敗：JSON 檔案格式不正確。");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function clearClassFromHome(classId){
+  const cls = store.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  if(!confirm(`確定要清除「${cls.name}」的所有班級資料嗎？`)) return;
+  if(!confirm("再次確認：若沒有備份，清除後無法復原。")) return;
+  const fresh = defaultData();
+  fresh.class.name = cls.name;
+  cls.data = fresh;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  closeModal();
+  renderClassHome();
+  toast("班級資料已清除");
+}
+
+function openClassDataPanel(){
+  if(!store.classes.length){
+    toast("目前還沒有班級");
+    return;
+  }
+  const options = store.classes
+    .map(c=>`<button class="class-manage-row" onclick="openClassSettings('${c.id}')"><span>${escapeHtml(c.name)}</span><span>管理 ›</span></button>`)
+    .join("");
+  showModal("班級資料管理", `<div class="class-manage-list">${options}</div>`);
 }
 
 function enterClass(classId){
@@ -925,6 +1084,7 @@ function escapeAttr(str){ return escapeHtml(str); }
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 document.getElementById("quickAddBtn").addEventListener("click",openNewAssignment);
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
+document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
 document.getElementById("dashboardAddAssignment").addEventListener("click",openNewAssignment);
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
