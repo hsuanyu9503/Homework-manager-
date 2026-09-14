@@ -1,4 +1,4 @@
-const APP_VERSION = "3.19";
+const APP_VERSION = "3.21";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -994,6 +994,7 @@ function removeContactDraftRow(button){
 
 
 function openContactDisplay(){
+  document.getElementById("modalBackdrop")?.classList.add("contact-display-modal");
   const dateInput = document.getElementById("contactDateFilter");
   const selectedDate = showAllContactItemsMode ? null : (dateInput?.value || localDateString());
   const items = [...(Array.isArray(data.contactItems) ? data.contactItems : [])]
@@ -1759,7 +1760,9 @@ function showModal(title, bodyHtml){
 }
 
 function closeModal(){
-  document.getElementById("modalBackdrop").classList.add("hidden");
+  const backdrop = document.getElementById("modalBackdrop");
+  backdrop.classList.add("hidden");
+  backdrop.classList.remove("contact-display-modal");
   renderAll();
 }
 
