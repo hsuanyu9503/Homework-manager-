@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.7" />
+  <link rel="stylesheet" href="style.css?v=3.9" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.7</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.9</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.7</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.9</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button><button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button></div>
@@ -49,7 +49,7 @@
           <div id="todayNoticeArea" class="today-notice-area"></div>
         </div>
         <div class="dashboard-hero-actions">
-          <button class="secondary" id="noticeMemoBtn">備忘錄</button>
+          <button class="secondary" id="noticeMemoBtn">設定</button>
           <button class="primary" id="dashboardAddAssignment">＋ 新增作業</button>
         </div>
       </div>
@@ -65,6 +65,13 @@
           <strong id="correctionCount">0</strong>
           <small id="correctionPeople">0 人</small>
         </article>
+        <article class="summary-card memo-summary-card">
+          <div class="memo-summary-head">
+            <span>備忘錄</span>
+            <small id="memoCount">0 項</small>
+          </div>
+          <div id="memoSummaryList" class="memo-summary-list"></div>
+        </article>
       </div>
 
       <div class="section-head">
@@ -78,7 +85,7 @@
       <div class="section-head">
         <div>
           <h3>需留意學生</h3>
-          <p>目前仍有缺交或待訂正的紀錄</p>
+          <p>僅顯示超過設定天數仍未完成的作業紀錄</p>
         </div>
       </div>
       <div id="pendingList" class="stack"></div>
@@ -227,6 +234,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.7"></script>
+  <script src="app.js?v=3.9"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const APP_VERSION = "3.7";
+const APP_VERSION = "3.9";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -28,6 +28,7 @@ function defaultData(){
     records:[],
     contactItems:[],
     notices:[],
+    memos:[],
     scores:{},
     groups:[],
     groupScores:{},
@@ -85,6 +86,7 @@ function normalizeData(input){
       ? input.contactItems
       : (Array.isArray(input?.contactBook) ? input.contactBook : []),
     notices:Array.isArray(input?.notices) ? input.notices : [],
+    memos:Array.isArray(input?.memos) ? input.memos : [],
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
     groups:Array.isArray(input?.groups) ? input.groups : [],
     groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {},
@@ -490,6 +492,7 @@ function renderAll(){
   document.getElementById("dashboardClassName").textContent = className;
   renderDashboard();
   renderTodayNotices();
+  renderMemoSummary();
   renderAssignments();
   renderContactBook();
   renderStudents();
@@ -519,40 +522,152 @@ function renderTodayNotices(){
   `;
 }
 
+
+function memoDaysLeft(deadline){
+  if(!deadline) return null;
+  const [y,m,d]=deadline.split("-").map(Number);
+  if(!y || !m || !d) return null;
+  const target=new Date(y,m-1,d);
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  return Math.ceil((target-today)/86400000);
+}
+
+function memoDeadlineLabel(deadline){
+  const left=memoDaysLeft(deadline);
+  if(left===null) return "未設定截止日";
+  if(left<0) return `已逾期 ${Math.abs(left)} 天`;
+  if(left===0) return "今天截止";
+  if(left===1) return "明天截止";
+  return `剩 ${left} 天`;
+}
+
+function renderMemoSummary(){
+  const list=document.getElementById("memoSummaryList");
+  const count=document.getElementById("memoCount");
+  if(!list || !count) return;
+  const memos=[...(Array.isArray(data.memos) ? data.memos : [])]
+    .filter(m=>String(m.text || "").trim())
+    .sort((a,b)=>{
+      const aLeft=memoDaysLeft(a.deadline);
+      const bLeft=memoDaysLeft(b.deadline);
+      const aRank=aLeft===null ? Number.POSITIVE_INFINITY : (aLeft<0 ? Math.abs(aLeft)-0.5 : aLeft);
+      const bRank=bLeft===null ? Number.POSITIVE_INFINITY : (bLeft<0 ? Math.abs(bLeft)-0.5 : bLeft);
+      return aRank-bRank || (a.deadline || "9999-12-31").localeCompare(b.deadline || "9999-12-31") || (a.createdAt || "").localeCompare(b.createdAt || "");
+    });
+  count.textContent=`${memos.length} 項`;
+  if(!memos.length){
+    list.innerHTML=`<div class="memo-summary-empty">目前沒有備忘事項</div>`;
+    return;
+  }
+  list.innerHTML=memos.slice(0,4).map(m=>`
+    <div class="memo-summary-item">
+      <div class="memo-summary-text">${escapeHtml(m.text)}</div>
+      <div class="memo-summary-deadline ${memoDaysLeft(m.deadline)<0 ? "overdue" : ""}">${escapeHtml(memoDeadlineLabel(m.deadline))}</div>
+    </div>
+  `).join("") + (memos.length>4 ? `<div class="memo-summary-more">另有 ${memos.length-4} 項，請至「設定」查看</div>` : "");
+}
+
+function addMemoFromSettings(){
+  const deadline=document.getElementById("memoDeadline")?.value || "";
+  const text=document.getElementById("memoText")?.value.trim() || "";
+  if(!deadline || !text){ toast("請輸入備忘事項與截止日"); return; }
+  if(!Array.isArray(data.memos)) data.memos=[];
+  data.memos.push({id:uid("m"),deadline,text,createdAt:new Date().toISOString()});
+  saveData();
+  renderMemoSummary();
+  closeModal();
+  openNoticeMemo();
+  toast("備忘事項已新增");
+}
+
+function editMemo(memoId){
+  const memo=(data.memos || []).find(m=>m.id===memoId);
+  if(!memo) return;
+  showModal("編輯備忘錄",`
+    <form id="editMemoForm" class="modal-form">
+      <label><span>截止日</span><input type="date" id="editMemoDeadline" value="${escapeAttr(memo.deadline || localDateString())}" required></label>
+      <label><span>事項</span><input id="editMemoText" value="${escapeAttr(memo.text || "")}" required></label>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal();openNoticeMemo()">取消</button>
+        <button class="primary" type="submit">儲存</button>
+      </div>
+    </form>`);
+  document.getElementById("editMemoForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const nextDeadline=document.getElementById("editMemoDeadline").value;
+    const nextText=document.getElementById("editMemoText").value.trim();
+    if(!nextDeadline || !nextText){ toast("請輸入備忘事項與截止日"); return; }
+    memo.deadline=nextDeadline;
+    memo.text=nextText;
+    saveData(); closeModal(); renderMemoSummary(); openNoticeMemo();
+    toast("備忘事項已更新");
+  });
+}
+
+function deleteMemo(memoId){
+  if(!confirm("確定要刪除這則備忘事項嗎？")) return;
+  data.memos=(data.memos || []).filter(m=>m.id!==memoId);
+  saveData(); closeModal(); renderMemoSummary(); openNoticeMemo();
+}
+
 function openNoticeMemo(){
   const notices=[...(data.notices || [])]
     .sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const memos=[...(data.memos || [])]
+    .sort((a,b)=>{
+      const aLeft=memoDaysLeft(a.deadline);
+      const bLeft=memoDaysLeft(b.deadline);
+      const aRank=aLeft===null ? Number.POSITIVE_INFINITY : (aLeft<0 ? Math.abs(aLeft)-0.5 : aLeft);
+      const bRank=bLeft===null ? Number.POSITIVE_INFINITY : (bLeft<0 ? Math.abs(bLeft)-0.5 : bLeft);
+      return aRank-bRank || (a.deadline || "9999-12-31").localeCompare(b.deadline || "9999-12-31") || (a.createdAt || "").localeCompare(b.createdAt || "");
+    });
 
-  const rows=notices.length
-    ? notices.map(n=>`
-        <div class="notice-memo-row">
-          <div class="notice-memo-date">${formatDate(n.date)}</div>
-          <div class="notice-memo-text">${escapeHtml(n.text)}</div>
-          <div class="notice-memo-actions">
-            <button class="secondary small-btn" type="button" onclick="editNotice('${n.id}')">編輯</button>
-            <button class="ghost-danger small-btn" type="button" onclick="deleteNotice('${n.id}')">刪除</button>
-          </div>
-        </div>
-      `).join("")
-    : `<div class="empty">目前還沒有公告備忘。</div>`;
+  const noticeRows=notices.length ? notices.map(n=>`
+    <div class="notice-memo-row">
+      <div class="notice-memo-date">${formatDate(n.date)}</div>
+      <div class="notice-memo-text">${escapeHtml(n.text)}</div>
+      <div class="notice-memo-actions">
+        <button class="secondary small-btn" type="button" onclick="editNotice('${n.id}')">編輯</button>
+        <button class="ghost-danger small-btn" type="button" onclick="deleteNotice('${n.id}')">刪除</button>
+      </div>
+    </div>`).join("") : `<div class="empty">目前還沒有公告。</div>`;
 
-  showModal("公告備忘錄",`
-    <div class="modal-form">
-      <form id="newNoticeForm" class="notice-new-form">
-        <label>
-          <span>顯示日期</span>
-          <input type="date" id="noticeDate" value="${localDateString()}" required>
-        </label>
-        <label class="grow">
-          <span>注意事項</span>
-          <input id="noticeText" placeholder="例如：記得帶美勞用品" required>
-        </label>
-        <button class="primary" type="submit">新增</button>
-      </form>
+  const memoRows=memos.length ? memos.map(m=>`
+    <div class="notice-memo-row">
+      <div class="notice-memo-date">${formatDate(m.deadline)}</div>
+      <div>
+        <div class="notice-memo-text">${escapeHtml(m.text)}</div>
+        <div class="item-sub ${memoDaysLeft(m.deadline)<0 ? "memo-overdue-text" : ""}">${escapeHtml(memoDeadlineLabel(m.deadline))}</div>
+      </div>
+      <div class="notice-memo-actions">
+        <button class="secondary small-btn" type="button" onclick="editMemo('${m.id}')">編輯</button>
+        <button class="ghost-danger small-btn" type="button" onclick="deleteMemo('${m.id}')">刪除</button>
+      </div>
+    </div>`).join("") : `<div class="empty">目前還沒有備忘事項。</div>`;
+
+  showModal("設定",`
+    <div class="settings-hub">
+      <section class="settings-hub-section">
+        <div class="settings-hub-title"><div><div class="item-title">公告設定</div><div class="item-sub">設定指定日期，公告只會在當天出現在總覽上方。</div></div></div>
+        <form id="newNoticeForm" class="notice-new-form">
+          <label><span>顯示日期</span><input type="date" id="noticeDate" value="${localDateString()}" required></label>
+          <label class="grow"><span>公告內容</span><input id="noticeText" placeholder="例如：記得帶美勞用品" required></label>
+          <button class="primary" type="submit">新增公告</button>
+        </form>
+        <div class="notice-memo-list">${noticeRows}</div>
+      </section>
       <div class="settings-divider"></div>
-      <div class="notice-memo-list">${rows}</div>
-    </div>
-  `);
+      <section class="settings-hub-section">
+        <div class="settings-hub-title"><div><div class="item-title">備忘錄</div><div class="item-sub">設定事項與截止日；越接近截止日期的事項越靠上。</div></div></div>
+        <div class="notice-new-form">
+          <label><span>截止日</span><input type="date" id="memoDeadline" value="${localDateString()}" required></label>
+          <label class="grow"><span>事項</span><input id="memoText" placeholder="例如：繳交實習手冊" required></label>
+          <button class="primary" type="button" onclick="addMemoFromSettings()">新增備忘</button>
+        </div>
+        <div class="notice-memo-list">${memoRows}</div>
+      </section>
+    </div>`);
 
   document.getElementById("newNoticeForm").addEventListener("submit",e=>{
     e.preventDefault();
@@ -560,16 +675,8 @@ function openNoticeMemo(){
     const text=document.getElementById("noticeText").value.trim();
     if(!text) return;
     if(!Array.isArray(data.notices)) data.notices=[];
-    data.notices.push({
-      id:uid("n"),
-      date,
-      text,
-      createdAt:new Date().toISOString()
-    });
-    saveData();
-    closeModal();
-    renderTodayNotices();
-    toast("公告已新增");
+    data.notices.push({id:uid("n"),date,text,createdAt:new Date().toISOString()});
+    saveData(); closeModal(); renderTodayNotices(); openNoticeMemo();
   });
 }
 

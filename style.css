@@ -1101,15 +1101,27 @@ body::before{
 }
 
 
-/* v3.7 dashboard fixes */
-#dashboard .summary-grid{
-  grid-template-columns:repeat(2,minmax(0,1fr));
-}
-@media(max-width:600px){
-  #dashboard .summary-grid{grid-template-columns:1fr;}
-}
+/* v3.9: removed obsolete v3.7 two-column dashboard override */
 .notice-new-form input[type="date"],
 .notice-new-form input[type="text"],
 .notice-new-form input:not([type]){
   width:100%;
 }
+
+
+/* v3.8 dashboard memo card */
+#dashboard .summary-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+.memo-summary-card{display:flex;flex-direction:column;gap:8px;min-height:122px;}
+.memo-summary-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.memo-summary-head>span{font-weight:900;}
+.memo-summary-list{display:flex;flex-direction:column;gap:6px;}
+.memo-summary-item{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-top:6px;border-top:1px solid var(--line);}
+.memo-summary-text{font-size:13px;font-weight:800;line-height:1.35;min-width:0;overflow-wrap:anywhere;}
+.memo-summary-deadline{font-size:11px;color:var(--muted);white-space:nowrap;}
+.memo-summary-deadline.overdue,.memo-overdue-text{color:#b42318;font-weight:800;}
+.memo-summary-empty,.memo-summary-more{font-size:12px;color:var(--muted);line-height:1.4;}
+.settings-hub{display:flex;flex-direction:column;gap:18px;}
+.settings-hub-section{display:flex;flex-direction:column;gap:12px;}
+.settings-hub-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+@media(max-width:800px){#dashboard .summary-grid{grid-template-columns:1fr 1fr;}.memo-summary-card{grid-column:1/-1;}}
+@media(max-width:520px){#dashboard .summary-grid{grid-template-columns:1fr;}.memo-summary-card{grid-column:auto;}}
