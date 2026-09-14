@@ -1,4 +1,4 @@
-const APP_VERSION = "3.13";
+const APP_VERSION = "3.14";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -240,7 +240,7 @@ function renderClassHome(){
 function openAddClass(){
   showModal("新增班級", `
     <form id="newClassForm" class="modal-form">
-      <label><span>班級名稱</span><input id="newClassName" placeholder="例如：作業抽查" required></label>
+      <label><span>班級名稱</span><input id="newClassName" placeholder="例如：六年甲班" required></label>
       <div class="modal-actions">
         <button type="button" class="secondary" onclick="closeModal()">取消</button>
         <button class="primary" type="submit">建立班級</button>
