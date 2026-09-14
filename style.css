@@ -1342,3 +1342,31 @@ body::before{
     grid-column:auto;
   }
 }
+
+
+/* v3.17 dashboard/header action cleanup */
+#dashboard .dashboard-hero{
+  align-items:flex-start;
+}
+
+#dashboard .dashboard-hero-actions{
+  margin-left:auto;
+  display:flex;
+  justify-content:flex-end;
+  align-items:flex-start;
+  flex:0 0 auto;
+}
+
+#dashboard #noticeMemoBtn{
+  margin-left:0;
+}
+
+@media(max-width:760px){
+  #dashboard .dashboard-hero{
+    align-items:stretch;
+  }
+  #dashboard .dashboard-hero-actions{
+    width:100%;
+    justify-content:flex-end;
+  }
+}

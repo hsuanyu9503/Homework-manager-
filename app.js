@@ -1,4 +1,4 @@
-const APP_VERSION = "3.16";
+const APP_VERSION = "3.17";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1749,7 +1749,6 @@ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
-document.getElementById("dashboardAddAssignment").addEventListener("click",openNewAssignment);
 const noticeMemoBtn = document.getElementById("noticeMemoBtn");
 if(noticeMemoBtn){
   noticeMemoBtn.addEventListener("click", openNoticeMemo);
