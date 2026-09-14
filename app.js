@@ -1,4 +1,4 @@
-const APP_VERSION = "3.21";
+const APP_VERSION = "3.18";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -522,6 +522,8 @@ function renderAll(){
   renderStudents();
   renderScores();
   renderGroupScores();
+  renderLottery();
+  renderPomodoro();
 }
 
 
@@ -992,38 +994,6 @@ function removeContactDraftRow(button){
   refreshContactDraftNumbers();
 }
 
-
-function openContactDisplay(){
-  document.getElementById("modalBackdrop")?.classList.add("contact-display-modal");
-  const dateInput = document.getElementById("contactDateFilter");
-  const selectedDate = showAllContactItemsMode ? null : (dateInput?.value || localDateString());
-  const items = [...(Array.isArray(data.contactItems) ? data.contactItems : [])]
-    .filter(item=>selectedDate ? item.date===selectedDate : true)
-    .sort((a,b)=>a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || ""));
-
-  const titleDate = selectedDate ? formatDate(selectedDate) : "全部日期";
-  const content = items.length
-    ? items.map(item=>`
-        <article class="contact-display-item">
-          <div class="contact-display-date">${escapeHtml(formatDate(item.date))}</div>
-          <div class="contact-display-title">${escapeHtml(item.title || "")}</div>
-        </article>
-      `).join("")
-    : `<div class="contact-display-empty">目前沒有聯絡事項</div>`;
-
-  showModal(
-    `聯絡簿展示｜${escapeHtml(titleDate)}`,
-    `
-      <div class="contact-display-view">
-        ${content}
-      </div>
-      <div class="modal-actions contact-display-actions">
-        <button type="button" class="secondary" onclick="closeModal()">返回聯絡簿</button>
-      </div>
-    `
-  );
-}
-
 function openNewContactItem(){
   showModal(
     "新增聯絡事項",
@@ -1191,7 +1161,162 @@ function setScoreMode(mode){
   });
   document.getElementById("individualScorePanel")?.classList.toggle("hidden", mode!=="individual");
   document.getElementById("groupScorePanel")?.classList.toggle("hidden", mode!=="group");
+  document.getElementById("lotteryPanel")?.classList.toggle("hidden", mode!=="lottery");
+  document.getElementById("timerPanel")?.classList.toggle("hidden", mode!=="timer");
   if(mode==="group") renderGroupScores();
+  if(mode==="lottery") renderLottery();
+  if(mode==="timer") renderPomodoro();
+}
+
+
+// v3.18 classroom tools: lottery + pomodoro
+let lotteryDrawnIds = [];
+let lotteryLastStudentId = null;
+let lotteryClassId = null;
+
+function ensureLotteryClass(){
+  if(lotteryClassId === activeClassId) return;
+  lotteryClassId = activeClassId;
+  lotteryDrawnIds = [];
+  lotteryLastStudentId = null;
+}
+
+function resetLottery(){
+  ensureLotteryClass();
+  lotteryDrawnIds = [];
+  lotteryLastStudentId = null;
+  renderLottery();
+}
+
+function drawRandomStudent(){
+  ensureLotteryClass();
+  const students = [...data.students].sort((a,b)=>Number(a.number)-Number(b.number));
+  if(!students.length){
+    toast("請先建立學生名單");
+    return;
+  }
+  const validIds = new Set(students.map(s=>s.id));
+  lotteryDrawnIds = lotteryDrawnIds.filter(id=>validIds.has(id));
+  let available = students.filter(s=>!lotteryDrawnIds.includes(s.id));
+  if(!available.length){
+    toast("本輪已全部抽完，請先重置抽籤");
+    return;
+  }
+  const picked = available[Math.floor(Math.random()*available.length)];
+  lotteryDrawnIds.push(picked.id);
+  lotteryLastStudentId = picked.id;
+  renderLottery();
+}
+
+function renderLottery(){
+  const stage=document.getElementById("lotteryStage");
+  if(!stage) return;
+  ensureLotteryClass();
+  const students=[...data.students].sort((a,b)=>Number(a.number)-Number(b.number));
+  const validIds=new Set(students.map(s=>s.id));
+  lotteryDrawnIds=lotteryDrawnIds.filter(id=>validIds.has(id));
+  if(lotteryLastStudentId && !validIds.has(lotteryLastStudentId)) lotteryLastStudentId=null;
+  const remaining=Math.max(0, students.length-lotteryDrawnIds.length);
+  const remainingEl=document.getElementById("lotteryRemaining");
+  const countEl=document.getElementById("lotteryDrawnCount");
+  if(remainingEl) remainingEl.textContent=`${remaining} 人待抽`;
+  if(countEl) countEl.textContent=`已抽 ${lotteryDrawnIds.length} 人`;
+  const last=students.find(s=>s.id===lotteryLastStudentId);
+  stage.innerHTML=last
+    ? `<div class="lottery-result"><span>${String(last.number).padStart(2,"0")} 號</span><strong>${escapeHtml(last.name)}</strong></div>`
+    : students.length
+      ? `<div class="lottery-placeholder">按下「抽一位」開始</div>`
+      : `<div class="lottery-placeholder">尚未建立學生名單</div>`;
+  const history=document.getElementById("lotteryHistory");
+  if(history){
+    const drawn=[...lotteryDrawnIds].reverse().map(id=>students.find(s=>s.id===id)).filter(Boolean);
+    history.innerHTML=drawn.length
+      ? drawn.map((s,i)=>`<div class="lottery-history-item"><span>${lotteryDrawnIds.length-i}</span><b>${String(s.number).padStart(2,"0")} 號</b><span>${escapeHtml(s.name)}</span></div>`).join("")
+      : `<div class="empty compact">本輪尚未抽出學生</div>`;
+  }
+  const drawBtn=document.getElementById("drawStudentBtn");
+  if(drawBtn) drawBtn.disabled=!students.length || remaining===0;
+}
+
+let pomodoroDurationSec=25*60;
+let pomodoroRemainingSec=25*60;
+let pomodoroRunning=false;
+let pomodoroEndAt=null;
+let pomodoroInterval=null;
+let pomodoroLabel="專注時間";
+
+function formatTimer(seconds){
+  const safe=Math.max(0,Math.ceil(seconds));
+  const m=Math.floor(safe/60);
+  const s=safe%60;
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
+function stopPomodoroInterval(){
+  if(pomodoroInterval){
+    clearInterval(pomodoroInterval);
+    pomodoroInterval=null;
+  }
+}
+
+function syncPomodoroRemaining(){
+  if(pomodoroRunning && pomodoroEndAt){
+    pomodoroRemainingSec=Math.max(0,Math.ceil((pomodoroEndAt-Date.now())/1000));
+    if(pomodoroRemainingSec<=0){
+      pomodoroRunning=false;
+      pomodoroEndAt=null;
+      stopPomodoroInterval();
+      toast(`${pomodoroLabel}結束`);
+    }
+  }
+}
+
+function renderPomodoro(){
+  const display=document.getElementById("timerDisplay");
+  if(!display) return;
+  syncPomodoroRemaining();
+  display.textContent=formatTimer(pomodoroRemainingSec);
+  const label=document.getElementById("timerLabel");
+  const status=document.getElementById("timerStatus");
+  const startBtn=document.getElementById("timerStartPauseBtn");
+  if(label) label.textContent=pomodoroLabel;
+  if(status) status.textContent=pomodoroRunning ? "倒數中" : (pomodoroRemainingSec===0 ? "時間到" : "準備開始");
+  if(startBtn) startBtn.textContent=pomodoroRunning ? "暫停" : (pomodoroRemainingSec===0 ? "重新開始" : "開始");
+}
+
+function setPomodoroDuration(minutes,labelText){
+  const min=Math.max(1,Math.min(180,Number(minutes)||1));
+  pomodoroDurationSec=Math.round(min*60);
+  pomodoroRemainingSec=pomodoroDurationSec;
+  pomodoroLabel=labelText || `自訂 ${min} 分鐘`;
+  pomodoroRunning=false;
+  pomodoroEndAt=null;
+  stopPomodoroInterval();
+  renderPomodoro();
+}
+
+function togglePomodoro(){
+  syncPomodoroRemaining();
+  if(pomodoroRunning){
+    pomodoroRunning=false;
+    pomodoroEndAt=null;
+    stopPomodoroInterval();
+  }else{
+    if(pomodoroRemainingSec<=0) pomodoroRemainingSec=pomodoroDurationSec;
+    pomodoroRunning=true;
+    pomodoroEndAt=Date.now()+pomodoroRemainingSec*1000;
+    stopPomodoroInterval();
+    pomodoroInterval=setInterval(renderPomodoro,250);
+  }
+  renderPomodoro();
+}
+
+function resetPomodoro(){
+  pomodoroRunning=false;
+  pomodoroEndAt=null;
+  pomodoroRemainingSec=pomodoroDurationSec;
+  stopPomodoroInterval();
+  renderPomodoro();
 }
 
 function studentScore(studentId){
@@ -1760,9 +1885,7 @@ function showModal(title, bodyHtml){
 }
 
 function closeModal(){
-  const backdrop = document.getElementById("modalBackdrop");
-  backdrop.classList.add("hidden");
-  backdrop.classList.remove("contact-display-modal");
+  document.getElementById("modalBackdrop").classList.add("hidden");
   renderAll();
 }
 
@@ -1778,6 +1901,28 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[s]));
 }
 function escapeAttr(str){ return escapeHtml(str); }
+
+const drawStudentBtn=document.getElementById("drawStudentBtn");
+if(drawStudentBtn) drawStudentBtn.addEventListener("click",drawRandomStudent);
+const resetLotteryBtn=document.getElementById("resetLotteryBtn");
+if(resetLotteryBtn) resetLotteryBtn.addEventListener("click",resetLottery);
+
+document.querySelectorAll(".timer-preset").forEach(btn=>btn.addEventListener("click",()=>{
+  document.querySelectorAll(".timer-preset").forEach(x=>x.classList.toggle("active",x===btn));
+  setPomodoroDuration(Number(btn.dataset.minutes),btn.dataset.label);
+}));
+const applyCustomTimerBtn=document.getElementById("applyCustomTimerBtn");
+if(applyCustomTimerBtn) applyCustomTimerBtn.addEventListener("click",()=>{
+  const input=document.getElementById("customTimerMinutes");
+  const minutes=Math.max(1,Math.min(180,Number(input?.value)||10));
+  if(input) input.value=String(minutes);
+  document.querySelectorAll(".timer-preset").forEach(x=>x.classList.remove("active"));
+  setPomodoroDuration(minutes,`自訂 ${minutes} 分鐘`);
+});
+const timerStartPauseBtn=document.getElementById("timerStartPauseBtn");
+if(timerStartPauseBtn) timerStartPauseBtn.addEventListener("click",togglePomodoro);
+const timerResetBtn=document.getElementById("timerResetBtn");
+if(timerResetBtn) timerResetBtn.addEventListener("click",resetPomodoro);
 
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
@@ -1806,10 +1951,6 @@ document.getElementById("showAllContactItems").addEventListener("click",()=>{
   document.getElementById("showAllContactItems").textContent = showAllContactItemsMode ? "依日期篩選" : "顯示全部";
   renderContactBook();
 });
-const contactDisplayBtn = document.getElementById("contactDisplayBtn");
-if(contactDisplayBtn){
-  contactDisplayBtn.addEventListener("click", openContactDisplay);
-}
 document.getElementById("addContactItemBtn").addEventListener("click",openNewContactItem);
 document.getElementById("studentSearch").addEventListener("input",renderStudents);
 document.getElementById("classForm").addEventListener("submit",saveClassSettings);

@@ -861,10 +861,10 @@ body::before{
 /* v3.2 score modes + group scoring */
 .score-mode-tabs{
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:repeat(4,minmax(0,1fr));
   gap:8px;
   margin:16px 0;
-  max-width:520px;
+  max-width:760px;
 }
 .score-mode-tab{
   border:1px solid var(--line);
@@ -1372,124 +1372,57 @@ body::before{
 }
 
 
-/* v3.18 contact book display mode */
-.contact-display-view{
-  display:flex;
-  flex-direction:column;
-  gap:16px;
-  padding:4px 0 8px;
-}
-
-.contact-display-item{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  padding:18px 20px;
+/* v3.18 lottery + pomodoro tools */
+.tool-card{
+  background:#fff;
   border:1px solid var(--line);
-  border-radius:16px;
-  background:var(--surface);
+  border-radius:22px;
+  padding:22px;
+  box-shadow:0 8px 22px rgba(17,24,39,.05);
 }
-
-.contact-display-date{
-  font-size:14px;
-  font-weight:800;
-  color:var(--muted);
-  line-height:1.35;
-}
-
-.contact-display-title{
-  font-size:24px;
-  font-weight:900;
-  line-height:1.45;
-  overflow-wrap:anywhere;
-  word-break:break-word;
-}
-
-.contact-display-empty{
-  padding:28px 18px;
-  text-align:center;
-  color:var(--muted);
-  border:1px dashed var(--line);
-  border-radius:16px;
-}
-
-.contact-display-actions{
-  position:sticky;
-  bottom:0;
-  padding-top:10px;
-  background:linear-gradient(to bottom, rgba(255,255,255,0), var(--surface) 28%);
-}
-
-@media(max-width:640px){
-  .contact-display-item{
-    padding:16px;
-  }
-  .contact-display-title{
-    font-size:21px;
-  }
-}
-
-
-.contact-section-actions{
+.tool-card-head{
   display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  gap:8px;
-  flex-wrap:wrap;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
 }
-
-@media(max-width:640px){
-  #contactbook .section-head{
-    align-items:stretch;
-  }
-  .contact-section-actions{
-    width:100%;
-  }
-  .contact-section-actions button{
-    flex:1 1 0;
-  }
+.tool-card-head h3{margin:3px 0 5px}
+.tool-kicker{font-size:11px;font-weight:900;letter-spacing:.14em;color:var(--primary)}
+.tool-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.tool-actions button{min-width:140px}
+.lottery-remaining,.timer-status{padding:8px 11px;border-radius:999px;background:#f3f5fb;font-weight:800;font-size:13px;white-space:nowrap}
+.lottery-stage{min-height:210px;display:grid;place-items:center;margin:22px 0 8px;border:1px dashed #cfd8e8;border-radius:20px;background:linear-gradient(145deg,#fbfcff,#f6f3ff)}
+.lottery-placeholder{color:var(--muted);font-weight:800}
+.lottery-result{text-align:center;display:flex;flex-direction:column;gap:8px;animation:lotteryPop .22s ease-out}
+.lottery-result span{font-size:15px;color:var(--muted);font-weight:800}
+.lottery-result strong{font-size:42px;line-height:1.1}
+@keyframes lotteryPop{from{transform:scale(.88);opacity:.25}to{transform:scale(1);opacity:1}}
+.lottery-history-wrap{margin-top:24px;padding-top:18px;border-top:1px solid var(--line)}
+.lottery-history-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px}
+.lottery-history{display:flex;flex-direction:column;gap:7px;max-height:260px;overflow:auto}
+.lottery-history-item{display:grid;grid-template-columns:34px 60px minmax(0,1fr);align-items:center;gap:8px;padding:9px 11px;border-radius:12px;background:#f7f8fc;font-size:14px}
+.lottery-history-item>span:first-child{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--muted);font-size:12px;font-weight:900}
+.empty.compact{padding:12px}
+.timer-card{max-width:760px}
+.timer-presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+.timer-preset{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 14px;font-weight:800;cursor:pointer}
+.timer-preset.active{background:var(--primary-soft);border-color:#cfd8ff;color:var(--primary)}
+.timer-display{text-align:center;font-size:clamp(64px,12vw,112px);line-height:1;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.045em;margin:34px 0 8px}
+.timer-label{text-align:center;font-weight:900;color:var(--muted);font-size:17px}
+.timer-custom{display:grid;grid-template-columns:auto minmax(90px,140px) auto;align-items:center;justify-content:center;gap:9px;margin:26px auto 8px}
+.timer-custom label{font-weight:800}
+.timer-custom input{width:100%;box-sizing:border-box;text-align:center}
+.timer-actions{margin-top:18px}
+@media(max-width:720px){
+  .score-mode-tabs{grid-template-columns:repeat(2,minmax(0,1fr));max-width:none}
+  .tool-card-head{flex-direction:column}
+  .lottery-remaining,.timer-status{align-self:flex-start}
 }
-
-/* v3.20 larger contact-book presentation */
-.modal-backdrop.contact-display-modal{padding:24px;}
-.modal-backdrop.contact-display-modal .modal{
-  width:min(1100px,96vw);max-height:94vh;padding:26px 30px;border-radius:24px;
-}
-.modal-backdrop.contact-display-modal .modal-head h3{font-size:24px;}
-.modal-backdrop.contact-display-modal .contact-display-view{
-  display:flex;flex-direction:column;align-items:stretch;gap:14px;width:100%;
-}
-.modal-backdrop.contact-display-modal .contact-display-item{
-  display:flex;
-  flex-direction:column;
-  align-items:stretch;
-  width:100%;
-  box-sizing:border-box;
-  gap:8px;
-  padding:22px 24px;
-}
-.modal-backdrop.contact-display-modal .contact-display-date{font-size:18px;}
-.modal-backdrop.contact-display-modal .contact-display-title{font-size:30px;line-height:1.5;}
-@media(max-width:700px){
-  .modal-backdrop.contact-display-modal{padding:10px;}
-  .modal-backdrop.contact-display-modal .modal{width:100%;max-height:96vh;padding:18px;}
-  .modal-backdrop.contact-display-modal .contact-display-item{
-    gap:6px;
-    padding:18px;
-  }
-  .modal-backdrop.contact-display-modal .contact-display-title{font-size:24px;}
-}
-
-
-/* v3.21 true vertical contact-book presentation */
-.modal-backdrop.contact-display-modal .contact-display-date{
-  display:block;
-  width:100%;
-  margin:0;
-}
-
-.modal-backdrop.contact-display-modal .contact-display-title{
-  display:block;
-  width:100%;
-  margin:0;
+@media(max-width:520px){
+  .tool-card{padding:16px}
+  .lottery-stage{min-height:170px}
+  .lottery-result strong{font-size:34px}
+  .timer-custom{grid-template-columns:1fr 100px}
+  .timer-custom button{grid-column:1/-1;width:100%}
+  .tool-actions button{flex:1;min-width:110px}
 }

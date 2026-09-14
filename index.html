@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.21" />
+  <link rel="stylesheet" href="style.css?v=3.18" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.21</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.18</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.21</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.18</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -116,10 +116,7 @@
           <h2>聯絡簿</h2>
           <p>依日期記錄聯絡事項，並決定是否同步到作業追蹤</p>
         </div>
-        <div class="contact-section-actions">
-          <button class="secondary" id="contactDisplayBtn">展示</button>
-          <button class="primary" id="addContactItemBtn">＋ 新增事項</button>
-        </div>
+        <button class="primary" id="addContactItemBtn">＋ 新增事項</button>
       </div>
 
       <div class="toolbar card">
@@ -198,13 +195,15 @@
       <div class="page-head">
         <div>
           <h2>積分</h2>
-          <p class="muted">個人積分與小組積分分開計算，互不影響。</p>
+          <p class="muted">個人、小組積分與課堂工具集中在這裡使用。</p>
         </div>
       </div>
 
       <div class="score-mode-tabs">
         <button class="score-mode-tab active" data-score-mode="individual" onclick="setScoreMode('individual')">個人積分</button>
         <button class="score-mode-tab" data-score-mode="group" onclick="setScoreMode('group')">小組積分</button>
+        <button class="score-mode-tab" data-score-mode="lottery" onclick="setScoreMode('lottery')">抽籤</button>
+        <button class="score-mode-tab" data-score-mode="timer" onclick="setScoreMode('timer')">蕃茄鐘</button>
       </div>
 
       <div id="individualScorePanel" class="score-mode-panel">
@@ -218,6 +217,61 @@
           <button class="secondary" onclick="resetGroupScores()">小組分數歸零</button>
         </div>
         <div id="groupScoreList" class="group-score-grid"></div>
+      </div>
+
+      <div id="lotteryPanel" class="score-mode-panel hidden">
+        <div class="tool-card lottery-card">
+          <div class="tool-card-head">
+            <div>
+              <div class="tool-kicker">RANDOM PICK</div>
+              <h3>學生抽籤</h3>
+              <p class="muted">本輪採不重複抽取，抽完後可重置重新開始。</p>
+            </div>
+            <div class="lottery-remaining" id="lotteryRemaining">0 人待抽</div>
+          </div>
+          <div class="lottery-stage" id="lotteryStage">
+            <div class="lottery-placeholder">按下「抽一位」開始</div>
+          </div>
+          <div class="tool-actions">
+            <button class="primary" id="drawStudentBtn" type="button">抽一位</button>
+            <button class="secondary" id="resetLotteryBtn" type="button">重置抽籤</button>
+          </div>
+          <div class="lottery-history-wrap">
+            <div class="lottery-history-head">
+              <strong>本輪紀錄</strong>
+              <span class="muted" id="lotteryDrawnCount">已抽 0 人</span>
+            </div>
+            <div id="lotteryHistory" class="lottery-history"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="timerPanel" class="score-mode-panel hidden">
+        <div class="tool-card timer-card">
+          <div class="tool-card-head">
+            <div>
+              <div class="tool-kicker">POMODORO</div>
+              <h3>課堂蕃茄鐘</h3>
+              <p class="muted">可快速切換專注、休息或自訂倒數時間。</p>
+            </div>
+            <div class="timer-status" id="timerStatus">準備開始</div>
+          </div>
+          <div class="timer-presets">
+            <button type="button" class="timer-preset active" data-minutes="25" data-label="專注時間">專注 25 分</button>
+            <button type="button" class="timer-preset" data-minutes="5" data-label="休息時間">休息 5 分</button>
+          </div>
+          <div class="timer-display" id="timerDisplay">25:00</div>
+          <div class="timer-label" id="timerLabel">專注時間</div>
+          <div class="timer-custom">
+            <label for="customTimerMinutes">自訂分鐘</label>
+            <input id="customTimerMinutes" type="number" min="1" max="180" inputmode="numeric" value="10">
+            <button type="button" class="secondary" id="applyCustomTimerBtn">套用</button>
+          </div>
+          <div class="tool-actions timer-actions">
+            <button class="primary" id="timerStartPauseBtn" type="button">開始</button>
+            <button class="secondary" id="timerResetBtn" type="button">重設</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -237,6 +291,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.21"></script>
+  <script src="app.js?v=3.18"></script>
 </body>
 </html>
