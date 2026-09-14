@@ -298,3 +298,116 @@ body::before{
 @media (max-width:560px){
   .progress-meta{flex-direction:column;gap:4px}
 }
+
+
+/* v2.2 student & assignment layout */
+.badge.clear{
+  background:#f2f7f5;
+  color:#5b6f67;
+}
+
+.tracker-grid{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+  margin-top:16px;
+}
+
+.tracker-tile{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px;
+  min-width:0;
+  box-shadow:0 4px 12px rgba(17,24,39,.04);
+}
+
+.tracker-tile-head{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-bottom:8px;
+  min-width:0;
+}
+
+.student-no{
+  flex:0 0 auto;
+  width:28px;
+  height:28px;
+  border-radius:9px;
+  display:grid;
+  place-items:center;
+  background:#f1efff;
+  color:#6658e8;
+  font-size:12px;
+  font-weight:900;
+}
+
+.tracker-tile .student-name{
+  font-size:14px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.tracker-tile .status-btn{
+  margin-bottom:7px;
+}
+
+.tracker-tile .note-input{
+  margin-top:0;
+  font-size:12px;
+  padding:7px 8px;
+}
+
+@media (max-width:900px){
+  .tracker-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media (max-width:720px){
+  .tracker-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:520px){
+  .tracker-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+
+/* v2.3 contact book */
+.tabs{grid-template-columns:repeat(5,1fr)}
+.contact-card{
+  background:linear-gradient(135deg,#fff 0%,#fffdf7 100%);
+  border:1px solid #eee4c7;
+  border-radius:17px;
+  padding:16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  box-shadow:0 6px 18px rgba(112,90,35,.05);
+}
+.contact-card-main{min-width:0;flex:1}
+.contact-date{font-size:12px;font-weight:800;color:#9a761d;margin-bottom:5px}
+.contact-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.assignment-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 11px;
+  background:#f1efff;
+  color:#5f55d9;
+  border-radius:12px;
+  font-size:13px;
+  font-weight:800;
+  cursor:pointer;
+}
+.assignment-toggle input,.check-row input{width:auto;accent-color:#6c63ff}
+.check-row{display:flex!important;grid-template-columns:none!important;align-items:center;gap:9px}
+.check-row span{font-size:14px!important;color:var(--text)!important}
+.small-btn{padding:8px 10px;font-size:12px}
+.ghost-danger{border:0;border-radius:10px;padding:8px 10px;background:#fff0f0;color:#b42318;font-weight:800}
+.hidden-field{display:none!important}
+@media (max-width:700px){
+  .tabs{grid-template-columns:repeat(5,1fr)}
+  .tab{font-size:13px;padding:9px 4px}
+  .contact-card{align-items:flex-start;flex-direction:column}
+  .contact-actions{width:100%;justify-content:flex-start}
+}

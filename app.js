@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.3";
 
 const STORAGE_KEY = "homeworkTrackerDataV1";
 
@@ -14,6 +14,7 @@ const STATUS_LABEL = {
 let data = loadData();
 let currentPage = "dashboard";
 let showAllAssignmentsMode = false;
+let showAllContactItemsMode = false;
 
 function defaultData(){
   return {
@@ -21,7 +22,8 @@ function defaultData(){
     class:{name:""},
     students:[],
     assignments:[],
-    records:[]
+    records:[],
+    contactItems:[]
   };
 }
 
@@ -44,7 +46,12 @@ function normalizeData(input){
     class:{name: input?.class?.name || ""},
     students:Array.isArray(input?.students) ? input.students : [],
     assignments:Array.isArray(input?.assignments) ? input.assignments.map(a => ({...a, dashboardArchived: Boolean(a.dashboardArchived), createdAt: a.createdAt || `${a.date || ""}T00:00:00.000Z`})) : [],
-    records:Array.isArray(input?.records) ? input.records : []
+    records:Array.isArray(input?.records) ? input.records : [],
+    contactItems:Array.isArray(input?.contactItems) ? input.contactItems.map(i => ({
+      ...i,
+      trackAsAssignment:Boolean(i.trackAsAssignment),
+      createdAt:i.createdAt || `${i.date || ""}T00:00:00.000Z`
+    })) : []
   };
 }
 
@@ -118,6 +125,7 @@ function renderAll(){
   document.getElementById("classNameInput").value = data.class.name || "";
   renderDashboard();
   renderAssignments();
+  renderContactBook();
   renderStudents();
   renderSettingsRoster();
 }
@@ -222,6 +230,165 @@ function renderAssignments(){
   }
 }
 
+
+function renderContactBook(){
+  const input = document.getElementById("contactDateFilter");
+  if(!input) return;
+  if(!input.value) input.value = localDateString();
+
+  let items = [...data.contactItems].sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  if(!showAllContactItemsMode){
+    items = items.filter(i=>i.date===input.value);
+  }
+
+  const list = document.getElementById("contactItemList");
+  if(!items.length){
+    list.innerHTML = `<div class="empty">${showAllContactItemsMode ? "尚未建立任何聯絡事項。" : "這一天尚未建立聯絡事項。"}</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(i=>{
+    const linked = i.assignmentId && data.assignments.some(a=>a.id===i.assignmentId);
+    return `
+      <div class="contact-card">
+        <div class="contact-card-main">
+          <div class="contact-date">${formatDate(i.date)}</div>
+          <div class="item-title">${escapeHtml(i.title)}</div>
+          ${i.note ? `<div class="item-sub">${escapeHtml(i.note)}</div>` : ""}
+        </div>
+        <div class="contact-actions">
+          <label class="assignment-toggle">
+            <input type="checkbox" ${i.trackAsAssignment && linked ? "checked" : ""}
+              onchange="toggleContactAssignment('${i.id}', this.checked, this)" />
+            <span>登錄到作業</span>
+          </label>
+          ${linked ? `<button class="secondary small-btn" onclick="openAssignment('${i.assignmentId}')">查看作業</button>` : ""}
+          <button class="ghost-danger small-btn" onclick="deleteContactItem('${i.id}')">刪除</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function openNewContactItem(){
+  showModal(
+    "新增聯絡事項",
+    `
+      <form id="newContactItemForm" class="modal-form">
+        <label><span>日期</span><input type="date" id="contactNewDate" value="${localDateString()}" required></label>
+        <label><span>事項</span><input id="contactNewTitle" placeholder="例如：數學習作 P.42、明天帶水壺" required></label>
+        <label><span>補充說明</span><textarea id="contactNewNote" rows="3" placeholder="選填"></textarea></label>
+        <label class="check-row">
+          <input type="checkbox" id="contactTrackAssignment">
+          <span>同時登錄到作業追蹤</span>
+        </label>
+        <label id="contactSubjectWrap" class="hidden-field"><span>作業科目</span><input id="contactNewSubject" placeholder="例如：數學"></label>
+        <div class="modal-actions">
+          <button type="button" class="secondary" onclick="closeModal()">取消</button>
+          <button class="primary" type="submit">新增</button>
+        </div>
+      </form>
+    `
+  );
+
+  const check = document.getElementById("contactTrackAssignment");
+  const subjectWrap = document.getElementById("contactSubjectWrap");
+  check.addEventListener("change",()=>subjectWrap.classList.toggle("hidden-field", !check.checked));
+
+  document.getElementById("newContactItemForm").addEventListener("submit", e=>{
+    e.preventDefault();
+    const item = {
+      id:uid("c"),
+      date:document.getElementById("contactNewDate").value,
+      title:document.getElementById("contactNewTitle").value.trim(),
+      note:document.getElementById("contactNewNote").value.trim(),
+      subject:document.getElementById("contactNewSubject").value.trim(),
+      trackAsAssignment:check.checked,
+      assignmentId:null,
+      createdAt:new Date().toISOString()
+    };
+    if(item.trackAsAssignment){
+      const assignment = createAssignmentFromContact(item);
+      item.assignmentId = assignment.id;
+    }
+    data.contactItems.push(item);
+    saveData();
+    closeModal();
+    toast(item.trackAsAssignment ? "聯絡事項已新增，並同步到作業" : "聯絡事項已新增");
+  });
+}
+
+function createAssignmentFromContact(item){
+  const assignment = {
+    id:uid("a"),
+    date:item.date,
+    subject:item.subject || "聯絡簿",
+    title:item.title,
+    createdAt:new Date().toISOString(),
+    dashboardArchived:false,
+    sourceContactId:item.id
+  };
+  data.assignments.push(assignment);
+  data.students.forEach(s=>{
+    data.records.push({assignmentId:assignment.id, studentId:s.id, status:"pending", note:""});
+  });
+  return assignment;
+}
+
+function toggleContactAssignment(contactId, checked, checkbox){
+  const item = data.contactItems.find(i=>i.id===contactId);
+  if(!item) return;
+
+  if(checked){
+    if(!data.students.length){
+      checkbox.checked = false;
+      toast("請先到設定建立學生名單");
+      return;
+    }
+    if(!item.assignmentId || !data.assignments.some(a=>a.id===item.assignmentId)){
+      const assignment = createAssignmentFromContact(item);
+      item.assignmentId = assignment.id;
+    }
+    item.trackAsAssignment = true;
+    saveData();
+    toast("已同步到作業追蹤");
+    return;
+  }
+
+  const linkedAssignment = data.assignments.find(a=>a.id===item.assignmentId);
+  if(linkedAssignment){
+    const hasProgress = data.records.some(r=>r.assignmentId===linkedAssignment.id && r.status!=="pending");
+    const message = hasProgress
+      ? `這筆連動作業已經有學生追蹤紀錄。\n\n取消「登錄到作業」會刪除該作業及其所有學生狀態，確定要繼續嗎？`
+      : `確定取消這筆聯絡事項的作業追蹤嗎？\n\n對應作業會從作業頁移除。`;
+    if(!confirm(message)){
+      checkbox.checked = true;
+      return;
+    }
+    data.assignments = data.assignments.filter(a=>a.id!==linkedAssignment.id);
+    data.records = data.records.filter(r=>r.assignmentId!==linkedAssignment.id);
+  }
+  item.trackAsAssignment = false;
+  item.assignmentId = null;
+  saveData();
+  toast("已取消作業追蹤");
+}
+
+function deleteContactItem(contactId){
+  const item = data.contactItems.find(i=>i.id===contactId);
+  if(!item) return;
+  const linkedAssignment = data.assignments.find(a=>a.id===item.assignmentId);
+  let message = "確定要刪除這筆聯絡事項嗎？";
+  if(linkedAssignment) message += "\n\n它目前有連動作業，連動作業與學生追蹤紀錄也會一起刪除。";
+  if(!confirm(message)) return;
+  if(linkedAssignment){
+    data.assignments = data.assignments.filter(a=>a.id!==linkedAssignment.id);
+    data.records = data.records.filter(r=>r.assignmentId!==linkedAssignment.id);
+  }
+  data.contactItems = data.contactItems.filter(i=>i.id!==contactId);
+  saveData();
+  toast("聯絡事項已刪除");
+}
+
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
   let students = [...data.students].sort((a,b)=>a.number-b.number);
@@ -237,15 +404,14 @@ function renderStudents(){
     const rs = data.records.filter(r=>r.studentId===s.id);
     const missing = rs.filter(r=>r.status==="missing").length;
     const correction = rs.filter(r=>r.status==="correction").length;
-    const completed = rs.filter(r=>r.status==="completed").length;
     return `
       <div class="student-card" onclick="openStudent('${s.id}')">
         <div class="num">${String(s.number).padStart(2,"0")}</div>
         <div class="item-title">${escapeHtml(s.name)}</div>
         <div class="assignment-summary">
           ${missing ? `<span class="badge missing">缺交 ${missing}</span>`:""}
-          ${correction ? `<span class="badge correction">訂正 ${correction}</span>`:""}
-          <span class="badge completed">完成 ${completed}</span>
+          ${correction ? `<span class="badge correction">待訂正 ${correction}</span>`:""}
+          ${(!missing && !correction) ? `<span class="badge clear">目前無待處理</span>`:""}
         </div>
       </div>
     `;
@@ -268,22 +434,20 @@ function openAssignment(id){
     `${a.title}`,
     `
       <div class="item-sub">${formatDate(a.date)}｜${escapeHtml(a.subject || "未分類")}</div>
-      <div class="tracker-list">
+      <div class="tracker-grid">
         ${[...data.students].sort((x,y)=>x.number-y.number).map(s=>{
           const r = ensureRecord(a.id,s.id);
           return `
-            <div class="tracker-row">
-              <div class="muted">${String(s.number).padStart(2,"0")}</div>
-              <div>
-                <div class="student-name">${escapeHtml(s.name)}</div>
-                <input class="note-input" placeholder="備註（選填）" value="${escapeAttr(r.note||"")}"
-                  onchange="updateNote('${a.id}','${s.id}',this.value)" />
+            <div class="tracker-tile">
+              <div class="tracker-tile-head">
+                <span class="student-no">${String(s.number).padStart(2,"0")}</span>
+                <span class="student-name">${escapeHtml(s.name)}</span>
               </div>
-              <div class="status-wrap">
-                <button class="status-btn ${r.status}" onclick="cycleStatus('${a.id}','${s.id}',this)">
-                  ${STATUS_LABEL[r.status]}
-                </button>
-              </div>
+              <button class="status-btn ${r.status}" onclick="cycleStatus('${a.id}','${s.id}',this)">
+                ${STATUS_LABEL[r.status]}
+              </button>
+              <input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}"
+                onchange="updateNote('${a.id}','${s.id}',this.value)" />
             </div>
           `;
         }).join("")}
@@ -306,6 +470,7 @@ function cycleStatus(assignmentId, studentId, button){
   button.textContent = STATUS_LABEL[r.status];
   renderDashboard();
   renderAssignments();
+  renderContactBook();
   renderStudents();
   maybeArchiveCompletedAssignment(assignmentId);
 }
@@ -529,6 +694,16 @@ document.getElementById("showAllAssignments").addEventListener("click",()=>{
   document.getElementById("showAllAssignments").textContent = showAllAssignmentsMode ? "依日期篩選" : "顯示全部";
   renderAssignments();
 });
+document.getElementById("contactDateFilter").addEventListener("change",()=>{
+  showAllContactItemsMode=false;
+  renderContactBook();
+});
+document.getElementById("showAllContactItems").addEventListener("click",()=>{
+  showAllContactItemsMode=!showAllContactItemsMode;
+  document.getElementById("showAllContactItems").textContent = showAllContactItemsMode ? "依日期篩選" : "顯示全部";
+  renderContactBook();
+});
+document.getElementById("addContactItemBtn").addEventListener("click",openNewContactItem);
 document.getElementById("studentSearch").addEventListener("input",renderStudents);
 document.getElementById("classForm").addEventListener("submit",saveClassSettings);
 document.getElementById("exportBtn").addEventListener("click",exportBackup);

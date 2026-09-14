@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>學生作業追蹤</title>
-  <link rel="stylesheet" href="style.css?v=2.1" />
+  <link rel="stylesheet" href="style.css?v=2.3" />
 </head>
 <body>
   <header class="topbar">
     <div>
-      <div class="eyebrow">HOMEWORK TRACKER <span class="version-badge">v2.1</span></div>
+      <div class="eyebrow">HOMEWORK TRACKER <span class="version-badge">v2.3</span></div>
       <h1 id="headerClassName">學生作業追蹤</h1>
     </div>
     <button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button>
@@ -20,6 +20,7 @@
     <nav class="tabs" aria-label="主要功能">
       <button class="tab active" data-page="dashboard">總覽</button>
       <button class="tab" data-page="assignments">作業</button>
+      <button class="tab" data-page="contactbook">聯絡簿</button>
       <button class="tab" data-page="students">學生</button>
       <button class="tab" data-page="settings">設定</button>
     </nav>
@@ -85,6 +86,25 @@
         <button class="secondary" id="showAllAssignments">顯示全部</button>
       </div>
       <div id="assignmentList" class="stack"></div>
+    </section>
+
+    <section id="contactbook" class="page">
+      <div class="section-head">
+        <div>
+          <h2>聯絡簿</h2>
+          <p>依日期記錄聯絡事項，並決定是否同步到作業追蹤</p>
+        </div>
+        <button class="primary" id="addContactItemBtn">＋ 新增事項</button>
+      </div>
+
+      <div class="toolbar card">
+        <label>
+          <span>選擇日期</span>
+          <input type="date" id="contactDateFilter" />
+        </label>
+        <button class="secondary" id="showAllContactItems">顯示全部</button>
+      </div>
+      <div id="contactItemList" class="stack"></div>
     </section>
 
     <section id="students" class="page">
@@ -162,6 +182,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=2.1"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>
