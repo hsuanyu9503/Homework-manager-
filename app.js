@@ -1,4 +1,4 @@
-const APP_VERSION = "3.9";
+const APP_VERSION = "3.11";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -542,19 +542,28 @@ function memoDeadlineLabel(deadline){
   return `剩 ${left} 天`;
 }
 
+
+function memoSortValue(memo){
+  const left=memoDaysLeft(memo?.deadline);
+  if(left===null) return [3, Number.POSITIVE_INFINITY];
+  if(left<0) return [0, Math.abs(left)];
+  if(left===0) return [1, 0];
+  return [2, left];
+}
+
+function compareMemosByDeadline(a,b){
+  const av=memoSortValue(a);
+  const bv=memoSortValue(b);
+  return av[0]-bv[0] || av[1]-bv[1] || (a.deadline || "9999-12-31").localeCompare(b.deadline || "9999-12-31") || (a.createdAt || "").localeCompare(b.createdAt || "");
+}
+
 function renderMemoSummary(){
   const list=document.getElementById("memoSummaryList");
   const count=document.getElementById("memoCount");
   if(!list || !count) return;
   const memos=[...(Array.isArray(data.memos) ? data.memos : [])]
     .filter(m=>String(m.text || "").trim())
-    .sort((a,b)=>{
-      const aLeft=memoDaysLeft(a.deadline);
-      const bLeft=memoDaysLeft(b.deadline);
-      const aRank=aLeft===null ? Number.POSITIVE_INFINITY : (aLeft<0 ? Math.abs(aLeft)-0.5 : aLeft);
-      const bRank=bLeft===null ? Number.POSITIVE_INFINITY : (bLeft<0 ? Math.abs(bLeft)-0.5 : bLeft);
-      return aRank-bRank || (a.deadline || "9999-12-31").localeCompare(b.deadline || "9999-12-31") || (a.createdAt || "").localeCompare(b.createdAt || "");
-    });
+    .sort(compareMemosByDeadline);
   count.textContent=`${memos.length} 項`;
   if(!memos.length){
     list.innerHTML=`<div class="memo-summary-empty">目前沒有備忘事項</div>`;
@@ -615,57 +624,95 @@ function openNoticeMemo(){
   const notices=[...(data.notices || [])]
     .sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt || "").localeCompare(a.createdAt || ""));
   const memos=[...(data.memos || [])]
-    .sort((a,b)=>{
-      const aLeft=memoDaysLeft(a.deadline);
-      const bLeft=memoDaysLeft(b.deadline);
-      const aRank=aLeft===null ? Number.POSITIVE_INFINITY : (aLeft<0 ? Math.abs(aLeft)-0.5 : aLeft);
-      const bRank=bLeft===null ? Number.POSITIVE_INFINITY : (bLeft<0 ? Math.abs(bLeft)-0.5 : bLeft);
-      return aRank-bRank || (a.deadline || "9999-12-31").localeCompare(b.deadline || "9999-12-31") || (a.createdAt || "").localeCompare(b.createdAt || "");
-    });
+    .sort(compareMemosByDeadline);
 
   const noticeRows=notices.length ? notices.map(n=>`
-    <div class="notice-memo-row">
-      <div class="notice-memo-date">${formatDate(n.date)}</div>
-      <div class="notice-memo-text">${escapeHtml(n.text)}</div>
-      <div class="notice-memo-actions">
+    <article class="settings-item-card">
+      <div class="settings-item-date"><span class="settings-item-date-label">顯示日</span>${formatDate(n.date)}</div>
+      <div class="settings-item-body">
+        <div class="settings-item-text">${escapeHtml(n.text)}</div>
+      </div>
+      <div class="settings-item-actions">
         <button class="secondary small-btn" type="button" onclick="editNotice('${n.id}')">編輯</button>
         <button class="ghost-danger small-btn" type="button" onclick="deleteNotice('${n.id}')">刪除</button>
       </div>
-    </div>`).join("") : `<div class="empty">目前還沒有公告。</div>`;
+    </article>`).join("") : `<div class="settings-list-empty">目前還沒有公告。</div>`;
 
   const memoRows=memos.length ? memos.map(m=>`
-    <div class="notice-memo-row">
-      <div class="notice-memo-date">${formatDate(m.deadline)}</div>
-      <div>
-        <div class="notice-memo-text">${escapeHtml(m.text)}</div>
-        <div class="item-sub ${memoDaysLeft(m.deadline)<0 ? "memo-overdue-text" : ""}">${escapeHtml(memoDeadlineLabel(m.deadline))}</div>
+    <article class="settings-item-card ${memoDaysLeft(m.deadline)<0 ? "is-overdue" : ""}">
+      <div class="settings-item-date"><span class="settings-item-date-label">截止日</span>${formatDate(m.deadline)}</div>
+      <div class="settings-item-body">
+        <div class="settings-item-text">${escapeHtml(m.text)}</div>
+        <div class="settings-item-status ${memoDaysLeft(m.deadline)<0 ? "memo-overdue-text" : ""}">${escapeHtml(memoDeadlineLabel(m.deadline))}</div>
       </div>
-      <div class="notice-memo-actions">
+      <div class="settings-item-actions">
         <button class="secondary small-btn" type="button" onclick="editMemo('${m.id}')">編輯</button>
         <button class="ghost-danger small-btn" type="button" onclick="deleteMemo('${m.id}')">刪除</button>
       </div>
-    </div>`).join("") : `<div class="empty">目前還沒有備忘事項。</div>`;
+    </article>`).join("") : `<div class="settings-list-empty">目前還沒有備忘事項。</div>`;
 
   showModal("設定",`
-    <div class="settings-hub">
-      <section class="settings-hub-section">
-        <div class="settings-hub-title"><div><div class="item-title">公告設定</div><div class="item-sub">設定指定日期，公告只會在當天出現在總覽上方。</div></div></div>
-        <form id="newNoticeForm" class="notice-new-form">
-          <label><span>顯示日期</span><input type="date" id="noticeDate" value="${localDateString()}" required></label>
-          <label class="grow"><span>公告內容</span><input id="noticeText" placeholder="例如：記得帶美勞用品" required></label>
-          <button class="primary" type="submit">新增公告</button>
-        </form>
-        <div class="notice-memo-list">${noticeRows}</div>
-      </section>
-      <div class="settings-divider"></div>
-      <section class="settings-hub-section">
-        <div class="settings-hub-title"><div><div class="item-title">備忘錄</div><div class="item-sub">設定事項與截止日；越接近截止日期的事項越靠上。</div></div></div>
-        <div class="notice-new-form">
-          <label><span>截止日</span><input type="date" id="memoDeadline" value="${localDateString()}" required></label>
-          <label class="grow"><span>事項</span><input id="memoText" placeholder="例如：繳交實習手冊" required></label>
-          <button class="primary" type="button" onclick="addMemoFromSettings()">新增備忘</button>
+    <div class="settings-hub settings-hub-polished">
+      <section class="settings-panel">
+        <div class="settings-panel-head">
+          <div>
+            <div class="settings-panel-kicker">ANNOUNCEMENT</div>
+            <div class="settings-panel-title">公告設定</div>
+            <div class="settings-panel-desc">指定日期的公告只會在當天顯示於總覽。</div>
+          </div>
+          <span class="settings-panel-count">${notices.length} 則</span>
         </div>
-        <div class="notice-memo-list">${memoRows}</div>
+
+        <form id="newNoticeForm" class="settings-compose-card">
+          <div class="settings-compose-grid">
+            <label class="settings-field compact-field">
+              <span>顯示日期</span>
+              <input type="date" id="noticeDate" value="${localDateString()}" required>
+            </label>
+            <label class="settings-field">
+              <span>公告內容</span>
+              <input id="noticeText" placeholder="例如：記得帶美勞用品" required>
+            </label>
+            <button class="primary settings-add-btn" type="submit">＋ 新增公告</button>
+          </div>
+        </form>
+
+        <div class="settings-list-head">
+          <span>已設定公告</span>
+          <span>依日期由新到舊</span>
+        </div>
+        <div class="settings-item-list">${noticeRows}</div>
+      </section>
+
+      <section class="settings-panel memo-panel">
+        <div class="settings-panel-head">
+          <div>
+            <div class="settings-panel-kicker">MEMO</div>
+            <div class="settings-panel-title">備忘事項</div>
+            <div class="settings-panel-desc">依截止日排序，越接近截止日期越靠上。</div>
+          </div>
+          <span class="settings-panel-count">${memos.length} 項</span>
+        </div>
+
+        <div class="settings-compose-card">
+          <div class="settings-compose-grid">
+            <label class="settings-field compact-field">
+              <span>截止日</span>
+              <input type="date" id="memoDeadline" value="${localDateString()}" required>
+            </label>
+            <label class="settings-field">
+              <span>事項</span>
+              <input id="memoText" placeholder="例如：繳交實習手冊" required>
+            </label>
+            <button class="primary settings-add-btn" type="button" onclick="addMemoFromSettings()">＋ 新增備忘</button>
+          </div>
+        </div>
+
+        <div class="settings-list-head">
+          <span>待辦事項</span>
+          <span>依截止日排序</span>
+        </div>
+        <div class="settings-item-list">${memoRows}</div>
       </section>
     </div>`);
 
@@ -673,10 +720,11 @@ function openNoticeMemo(){
     e.preventDefault();
     const date=document.getElementById("noticeDate").value;
     const text=document.getElementById("noticeText").value.trim();
-    if(!text) return;
+    if(!date || !text){ toast("請輸入公告日期與內容"); return; }
     if(!Array.isArray(data.notices)) data.notices=[];
     data.notices.push({id:uid("n"),date,text,createdAt:new Date().toISOString()});
     saveData(); closeModal(); renderTodayNotices(); openNoticeMemo();
+    toast("公告已新增");
   });
 }
 
@@ -702,11 +750,15 @@ function editNotice(noticeId){
 
   document.getElementById("editNoticeForm").addEventListener("submit",e=>{
     e.preventDefault();
-    notice.date=document.getElementById("editNoticeDate").value;
-    notice.text=document.getElementById("editNoticeText").value.trim();
+    const nextDate=document.getElementById("editNoticeDate").value;
+    const nextText=document.getElementById("editNoticeText").value.trim();
+    if(!nextDate || !nextText){ toast("請輸入公告日期與內容"); return; }
+    notice.date=nextDate;
+    notice.text=nextText;
     saveData();
     closeModal();
     renderTodayNotices();
+    openNoticeMemo();
     toast("公告已更新");
   });
 }
