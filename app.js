@@ -1,4 +1,4 @@
-const APP_VERSION = "2.8";
+const APP_VERSION = "3.0";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -26,7 +26,8 @@ function defaultData(){
     students:[],
     assignments:[],
     records:[],
-    contactItems:[]
+    contactItems:[],
+    scores:{}
   };
 }
 
@@ -78,7 +79,8 @@ function normalizeData(input){
     records:Array.isArray(input?.records) ? input.records : [],
     contactItems:Array.isArray(input?.contactItems)
       ? input.contactItems
-      : (Array.isArray(input?.contactBook) ? input.contactBook : [])
+      : (Array.isArray(input?.contactBook) ? input.contactBook : []),
+    scores:(input?.scores && typeof input.scores==="object") ? input.scores : {}
   };
 }
 
@@ -314,6 +316,9 @@ function openClassSettings(classId){
     // Drop records belonging to students no longer in roster.
     const studentIds = new Set(d.students.map(s=>s.id));
     d.records = d.records.filter(r=>studentIds.has(r.studentId));
+    d.scores = Object.fromEntries(
+      Object.entries(d.scores || {}).filter(([studentId])=>studentIds.has(studentId))
+    );
 
     cls.name = newName;
     cls.data = d;
@@ -328,7 +333,7 @@ function exportClassBackup(classId){
   const cls = store.classes.find(c=>c.id===classId);
   if(!cls) return;
   const payload = {
-    app:"homework-tracker",
+    app:"classroom-manager",
     version:APP_VERSION,
     backupDate:new Date().toISOString(),
     className:cls.name,
@@ -440,14 +445,13 @@ function setPage(page){
 function renderAll(){
   document.getElementById("todayText").textContent = formatToday();
   const className = data.class.name || "尚未設定班級";
-  document.getElementById("headerClassName").textContent = data.class.name || "學生作業追蹤";
+  document.getElementById("headerClassName").textContent = data.class.name || "Classroom Manager";
   document.getElementById("dashboardClassName").textContent = className;
-  document.getElementById("classNameInput").value = data.class.name || "";
   renderDashboard();
   renderAssignments();
   renderContactBook();
   renderStudents();
-  renderSettingsRoster();
+  renderScores();
 }
 
 function renderDashboard(){
@@ -790,6 +794,44 @@ function deleteContactItem(contactId){
   toast("聯絡事項已刪除");
 }
 
+
+function studentScore(studentId){
+  const value = Number(data.scores?.[studentId] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function changeStudentScore(studentId, delta){
+  if(!data.scores || typeof data.scores!=="object") data.scores = {};
+  data.scores[studentId] = studentScore(studentId) + delta;
+  saveData();
+}
+
+function renderScores(){
+  const list = document.getElementById("scoreList");
+  if(!list) return;
+  const students = [...data.students].sort((a,b)=>a.number-b.number);
+  if(!students.length){
+    list.innerHTML = `<div class="empty">尚未建立學生名單，請先從班級首頁的「班級設定」加入學生。</div>`;
+    return;
+  }
+  list.innerHTML = students.map(s=>{
+    const score = studentScore(s.id);
+    return `
+      <div class="score-card">
+        <div class="score-student">
+          <div class="student-no">${String(s.number).padStart(2,"0")}</div>
+          <div class="item-title">${escapeHtml(s.name)}</div>
+        </div>
+        <div class="score-controls">
+          <button class="score-btn minus" onclick="changeStudentScore('${s.id}',-1)" aria-label="${escapeAttr(s.name)} 減 1 分">−</button>
+          <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
+          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)" aria-label="${escapeAttr(s.name)} 加 1 分">＋</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
   let students = [...data.students].sort((a,b)=>a.number-b.number);
@@ -825,7 +867,7 @@ function renderSettingsRoster(){
     .map(s=>`${s.number} ${s.name}`)
     .join("\n");
   const ta = document.getElementById("studentRosterInput");
-  if(document.activeElement !== ta) ta.value = text;
+  if(ta && document.activeElement !== ta) ta.value = text;
 }
 
 function openAssignment(id){
@@ -927,8 +969,7 @@ function openStudent(studentId){
 
 function openNewAssignment(){
   if(!data.students.length){
-    toast("請先到設定建立學生名單");
-    setPage("settings");
+    toast("請先回到班級首頁，在「班級設定」建立學生名單");
     return;
   }
   showModal(

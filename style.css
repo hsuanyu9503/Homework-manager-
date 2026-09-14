@@ -734,3 +734,116 @@ body::before{
     flex-direction:column;
   }
 }
+
+
+/* v2.9 equal-width workspace navigation */
+.workspace .nav,
+.workspace .tabs,
+.workspace .topnav,
+.workspace nav{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  width:100%;
+}
+.workspace .nav > *,
+.workspace .tabs > *,
+.workspace .topnav > *,
+.workspace nav > *{
+  min-width:0;
+  width:100%;
+  justify-content:center;
+  text-align:center;
+}
+@media (max-width:560px){
+  .workspace .nav,
+  .workspace .tabs,
+  .workspace .topnav,
+  .workspace nav{
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:4px;
+  }
+  .workspace .nav > *,
+  .workspace .tabs > *,
+  .workspace .topnav > *,
+  .workspace nav > *{
+    padding-left:5px;
+    padding-right:5px;
+    font-size:13px;
+  }
+}
+
+
+/* v3.0 personal score page */
+.score-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px;
+}
+.score-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:14px;
+  box-shadow:0 5px 16px rgba(17,24,39,.05);
+}
+.score-student{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin-bottom:12px;
+}
+.score-controls{
+  display:grid;
+  grid-template-columns:46px minmax(60px,1fr) 46px;
+  gap:8px;
+  align-items:center;
+}
+.score-btn{
+  width:46px;
+  height:42px;
+  padding:0;
+  border:0;
+  border-radius:12px;
+  font-size:25px;
+  font-weight:900;
+  cursor:pointer;
+}
+.score-btn.minus{
+  background:#fff0f4;
+  color:#d94f70;
+}
+.score-btn.plus{
+  background:#eafbf4;
+  color:#23966f;
+}
+.score-value{
+  min-height:42px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  background:#f5f7fb;
+  font-size:24px;
+  font-weight:900;
+  font-variant-numeric:tabular-nums;
+}
+.score-value.positive{
+  color:#23966f;
+}
+.score-value.negative{
+  color:#d94f70;
+}
+@media (max-width:800px){
+  .score-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:520px){
+  .score-grid{grid-template-columns:1fr}
+  .workspace .tabs{
+    gap:3px;
+  }
+  .workspace .tabs > *{
+    font-size:12px;
+    padding-left:3px;
+    padding-right:3px;
+  }
+}

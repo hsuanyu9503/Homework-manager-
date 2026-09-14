@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
-  <title>學生作業追蹤</title>
-  <link rel="stylesheet" href="style.css?v=2.8" />
+  <title>Classroom Manager</title>
+  <link rel="stylesheet" href="style.css?v=3.0" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.8</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.0</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,8 +26,8 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">HOMEWORK TRACKER <span class="version-badge">v2.8</span></div>
-      <h1 id="headerClassName">學生作業追蹤</h1>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.0</span></div>
+      <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button><button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button></div>
   </header>
@@ -38,6 +38,7 @@
       <button class="tab" data-page="assignments">作業</button>
       <button class="tab" data-page="contactbook">聯絡簿</button>
       <button class="tab" data-page="students">學生</button>
+      <button class="tab" data-page="scores">積分</button>
     </nav>
 
     <section id="dashboard" class="page active">
@@ -183,7 +184,18 @@
         <button class="danger-btn" id="clearBtn">清除所有資料</button>
       </div>
     </section>
-  </main>
+  
+    <section id="scores" class="page">
+      <div class="page-head">
+        <div>
+          <h2>個人積分</h2>
+          <p class="muted">使用 ＋ / − 快速調整學生分數，分數可低於 0。</p>
+        </div>
+      </div>
+      <div id="scoreList" class="score-grid"></div>
+    </section>
+
+</main>
 </div>
 
   <div id="modalBackdrop" class="modal-backdrop hidden">
@@ -199,6 +211,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <div class="creator-credit">Created by 小宇老師</div>
-  <script src="app.js?v=2.8"></script>
+  <script src="app.js?v=3.0"></script>
 </body>
 </html>
