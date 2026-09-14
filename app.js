@@ -1,4 +1,4 @@
-const APP_VERSION = "3.2";
+const APP_VERSION = "3.3";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -898,7 +898,10 @@ function renderGroupScores(){
             <div class="group-name">${escapeHtml(g.name || `第 ${index+1} 組`)}</div>
             <div class="item-sub">${members.length} 人</div>
           </div>
-          <button class="secondary small-btn" onclick="renameGroup('${g.id}')">改名</button>
+          <div class="group-card-actions">
+            <button class="secondary small-btn" onclick="editGroup('${g.id}')">編輯</button>
+            <button class="ghost-danger small-btn" onclick="deleteGroup('${g.id}')">刪除</button>
+          </div>
         </div>
 
         <div class="group-members">
@@ -1019,15 +1022,71 @@ function randomizeGroups(count){
   toast(`已隨機分成 ${count} 組`);
 }
 
-function renameGroup(groupId){
+function editGroup(groupId){
   const group=data.groups.find(g=>g.id===groupId);
   if(!group) return;
-  const next=prompt("輸入小組名稱",group.name);
-  if(next===null) return;
-  const name=next.trim();
-  if(!name) return;
-  group.name=name;
+
+  const memberIds=new Set(group.studentIds || []);
+  const studentOptions=[...data.students]
+    .sort((a,b)=>a.number-b.number)
+    .map(s=>`
+      <label class="group-edit-student">
+        <input type="checkbox" value="${s.id}" ${memberIds.has(s.id) ? "checked" : ""}>
+        <span>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span>
+      </label>
+    `).join("");
+
+  showModal("編輯小組",`
+    <form id="editGroupForm" class="modal-form">
+      <label>
+        <span>小組名稱</span>
+        <input id="editGroupName" value="${escapeAttr(group.name || "")}" required>
+      </label>
+      <div>
+        <span class="form-label">小組成員</span>
+        <div id="editGroupMembers" class="group-edit-students">${studentOptions}</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button class="primary" type="submit">儲存變更</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById("editGroupForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    group.name=document.getElementById("editGroupName").value.trim();
+    group.studentIds=[...document.querySelectorAll("#editGroupMembers input:checked")].map(el=>el.value);
+
+    const selected=new Set(group.studentIds);
+    data.groups.forEach(g=>{
+      if(g.id===group.id) return;
+      g.studentIds=(g.studentIds || []).filter(id=>!selected.has(id));
+    });
+
+    saveData();
+    closeModal();
+    setScoreMode("group");
+    toast("小組資料已更新");
+  });
+}
+
+function deleteGroup(groupId){
+  const group=data.groups.find(g=>g.id===groupId);
+  if(!group) return;
+  const score=groupScore(groupId);
+  const message=score!==0
+    ? `確定要刪除「${group.name}」嗎？\n\n此小組目前有 ${score} 分，刪除後小組成員配置與小組積分都會移除。學生與個人積分不受影響。`
+    : `確定要刪除「${group.name}」嗎？\n\n小組成員配置會移除，但學生與個人積分不受影響。`;
+  if(!confirm(message)) return;
+
+  data.groups=data.groups.filter(g=>g.id!==groupId);
+  if(data.groupScores && typeof data.groupScores==="object"){
+    delete data.groupScores[groupId];
+  }
   saveData();
+  setScoreMode("group");
+  toast("小組已刪除");
 }
 
 function resetGroupScores(){

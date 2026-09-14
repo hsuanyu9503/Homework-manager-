@@ -957,3 +957,41 @@ body::before{
   .manual-group-top{align-items:stretch;flex-direction:column}
   .manual-group-row{grid-template-columns:1fr}
 }
+
+
+/* v3.3 group editing */
+.group-card-actions{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.form-label{
+  display:block;
+  font-weight:800;
+  margin-bottom:8px;
+}
+.group-edit-students{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  max-height:46vh;
+  overflow:auto;
+  padding:4px;
+}
+.group-edit-student{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 12px;
+  background:#fff;
+}
+.group-edit-student input{
+  width:18px;
+  height:18px;
+}
+@media(max-width:520px){
+  .group-edit-students{grid-template-columns:1fr}
+}
