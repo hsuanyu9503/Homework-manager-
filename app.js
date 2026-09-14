@@ -1,6 +1,7 @@
-const APP_VERSION = "2.3";
+const APP_VERSION = "2.6";
 
-const STORAGE_KEY = "homeworkTrackerDataV1";
+const STORAGE_KEY = "homeworkTrackerDataV2";
+const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
 
 const STATUS_ORDER = ["pending","submitted","correction","completed","missing"];
 const STATUS_LABEL = {
@@ -11,7 +12,9 @@ const STATUS_LABEL = {
   missing:"缺交"
 };
 
-let data = loadData();
+let store = loadStore();
+let activeClassId = null;
+let data = defaultData();
 let currentPage = "dashboard";
 let showAllAssignmentsMode = false;
 let showAllContactItemsMode = false;
@@ -27,37 +30,67 @@ function defaultData(){
   };
 }
 
-function loadData(){
+function loadStore(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return defaultData();
-    const parsed = JSON.parse(raw);
-    return normalizeData(parsed);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && Array.isArray(parsed.classes)){
+        return {
+          version:2,
+          classes:parsed.classes.map(c=>({
+            id:c.id || uid("c"),
+            name:c.name || "未命名班級",
+            createdAt:c.createdAt || new Date().toISOString(),
+            data:normalizeData(c.data || {})
+          }))
+        };
+      }
+    }
+
+    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if(legacyRaw){
+      const legacy = normalizeData(JSON.parse(legacyRaw));
+      const migrated = {
+        version:2,
+        classes:[{
+          id:uid("c"),
+          name:legacy.class.name || "我的班級",
+          createdAt:new Date().toISOString(),
+          data:legacy
+        }]
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
   }catch(e){
     console.error(e);
-    return defaultData();
   }
+  return {version:2, classes:[]};
 }
 
 function normalizeData(input){
-  const base = defaultData();
   return {
     version:1,
     class:{name: input?.class?.name || ""},
     students:Array.isArray(input?.students) ? input.students : [],
-    assignments:Array.isArray(input?.assignments) ? input.assignments.map(a => ({...a, dashboardArchived: Boolean(a.dashboardArchived), createdAt: a.createdAt || `${a.date || ""}T00:00:00.000Z`})) : [],
+    assignments:Array.isArray(input?.assignments) ? input.assignments : [],
     records:Array.isArray(input?.records) ? input.records : [],
-    contactItems:Array.isArray(input?.contactItems) ? input.contactItems.map(i => ({
-      ...i,
-      trackAsAssignment:Boolean(i.trackAsAssignment),
-      createdAt:i.createdAt || `${i.date || ""}T00:00:00.000Z`
-    })) : []
+    contactBook:Array.isArray(input?.contactBook) ? input.contactBook : []
   };
 }
 
 function saveData(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  if(activeClassId){
+    const cls = store.classes.find(c=>c.id===activeClassId);
+    if(cls){
+      cls.name = data.class.name || cls.name || "未命名班級";
+      cls.data = data;
+    }
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   renderAll();
+  renderClassHome();
 }
 
 function uid(prefix="id"){
@@ -108,6 +141,132 @@ function assignmentProgress(assignmentId){
   const total = data.students.length;
   const percent = total ? Math.round((counts.completed / total) * 100) : 0;
   return {counts, total, percent};
+}
+
+
+function persistActiveClass(){
+  if(!activeClassId) return;
+  const cls = store.classes.find(c=>c.id===activeClassId);
+  if(!cls) return;
+  cls.name = data.class.name || cls.name || "未命名班級";
+  cls.data = data;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+function renderClassHome(){
+  const list = document.getElementById("classCardList");
+  if(!list) return;
+  if(!store.classes.length){
+    list.innerHTML = `<div class="class-empty">目前還沒有班級。<br>點選「新增班級」開始建立。</div>`;
+    return;
+  }
+
+  list.innerHTML = store.classes.map(cls=>{
+    const d = normalizeData(cls.data);
+    const missing = d.records.filter(r=>r.status==="missing").length;
+    const correction = d.records.filter(r=>r.status==="correction").length;
+    const today = localDateString();
+    const todayAssignments = d.assignments.filter(a=>a.date===today);
+    const unfinishedAssignments = d.assignments.filter(a=>{
+      const related = d.records.filter(r=>r.assignmentId===a.id);
+      if(!d.students.length) return true;
+      const completedStudents = new Set(
+        related.filter(r=>r.status==="completed").map(r=>r.studentId)
+      );
+      return completedStudents.size < d.students.length;
+    });
+    return `
+      <article class="class-card" onclick="enterClass('${cls.id}')">
+        <h3>${escapeHtml(cls.name)}</h3>
+        <div class="item-sub">${d.students.length} 位學生｜${d.assignments.length} 項作業</div>
+        <div class="class-overview-stats">
+          <div class="class-stat">
+            <span>今日作業</span>
+            <strong>${todayAssignments.length}</strong>
+            <small>項</small>
+          </div>
+          <div class="class-stat attention">
+            <span>尚未處理完</span>
+            <strong>${unfinishedAssignments.length}</strong>
+            <small>項</small>
+          </div>
+        </div>
+        <div class="class-card-meta">
+          ${missing ? `<span class="badge missing">缺交 ${missing}</span>`:""}
+          ${correction ? `<span class="badge correction">待訂正 ${correction}</span>`:""}
+          ${(!missing && !correction && !unfinishedAssignments.length) ? `<span class="badge clear">目前無待處理</span>`:""}
+        </div>
+        <div class="class-card-actions" onclick="event.stopPropagation()">
+          <button class="secondary" onclick="enterClass('${cls.id}')">進入班級</button>
+          <button class="secondary" onclick="renameClass('${cls.id}')">重新命名</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function openAddClass(){
+  showModal("新增班級", `
+    <form id="newClassForm" class="modal-form">
+      <label><span>班級名稱</span><input id="newClassName" placeholder="例如：五年甲班" required></label>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button class="primary" type="submit">建立班級</button>
+      </div>
+    </form>
+  `);
+  document.getElementById("newClassForm").addEventListener("submit", e=>{
+    e.preventDefault();
+    const name = document.getElementById("newClassName").value.trim();
+    const classData = defaultData();
+    classData.class.name = name;
+    const cls = {
+      id:uid("c"),
+      name,
+      createdAt:new Date().toISOString(),
+      data:classData
+    };
+    store.classes.push(cls);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    closeModal();
+    renderClassHome();
+    enterClass(cls.id);
+  });
+}
+
+function enterClass(classId){
+  const cls = store.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  activeClassId = classId;
+  data = normalizeData(cls.data);
+  data.class.name = cls.name || data.class.name;
+  document.getElementById("classHome").classList.add("hidden");
+  document.getElementById("workspace").classList.remove("hidden");
+  setPage("dashboard");
+  renderAll();
+}
+
+function leaveClass(){
+  persistActiveClass();
+  activeClassId = null;
+  document.getElementById("workspace").classList.add("hidden");
+  document.getElementById("classHome").classList.remove("hidden");
+  closeModal();
+  renderClassHome();
+}
+
+function renameClass(classId){
+  const cls = store.classes.find(c=>c.id===classId);
+  if(!cls) return;
+  const name = prompt("輸入新的班級名稱：", cls.name);
+  if(name===null) return;
+  const trimmed = name.trim();
+  if(!trimmed) return;
+  cls.name = trimmed;
+  cls.data = normalizeData(cls.data);
+  cls.data.class.name = trimmed;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  renderClassHome();
 }
 
 function setPage(page){
@@ -443,9 +602,9 @@ function openAssignment(id){
                 <span class="student-no">${String(s.number).padStart(2,"0")}</span>
                 <span class="student-name">${escapeHtml(s.name)}</span>
               </div>
-              <button class="status-btn ${r.status}" onclick="cycleStatus('${a.id}','${s.id}',this)">
-                ${STATUS_LABEL[r.status]}
-              </button>
+              <select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">
+                ${STATUS_ORDER.map(status => `<option value="${status}" ${r.status===status ? "selected" : ""}>${STATUS_LABEL[status]}</option>`).join("")}
+              </select>
               <input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}"
                 onchange="updateNote('${a.id}','${s.id}',this.value)" />
             </div>
@@ -458,21 +617,20 @@ function openAssignment(id){
       </div>
     `
   );
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  persistActiveClass();
 }
 
-function cycleStatus(assignmentId, studentId, button){
+function setStatus(assignmentId, studentId, select){
   const r = ensureRecord(assignmentId, studentId);
-  const idx = STATUS_ORDER.indexOf(r.status);
-  r.status = STATUS_ORDER[(idx+1)%STATUS_ORDER.length];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  button.className = `status-btn ${r.status}`;
-  button.textContent = STATUS_LABEL[r.status];
+  r.status = select.value;
+  persistActiveClass();
+  select.className = `status-select ${r.status}`;
   renderDashboard();
   renderAssignments();
-  renderContactBook();
   renderStudents();
-  maybeArchiveCompletedAssignment(assignmentId);
+  if(r.status === "completed"){
+    maybeArchiveCompletedAssignment(assignmentId);
+  }
 }
 
 function maybeArchiveCompletedAssignment(assignmentId){
@@ -483,7 +641,7 @@ function maybeArchiveCompletedAssignment(assignmentId){
   const shouldArchive = confirm(`「${a.title}」完成率已達 100%！\n\n是否從總覽的待處理作業清單移除？\n（作業與學生歷史紀錄仍會保留）`);
   if(shouldArchive){
     a.dashboardArchived = true;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    persistActiveClass();
     renderAll();
     toast("作業已完成，已從總覽移除 🎉");
   }
@@ -492,7 +650,7 @@ function maybeArchiveCompletedAssignment(assignmentId){
 function updateNote(assignmentId, studentId, note){
   const r = ensureRecord(assignmentId, studentId);
   r.note = note.trim();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  persistActiveClass();
 }
 
 function openStudent(studentId){
@@ -647,14 +805,15 @@ async function importBackup(file){
 }
 
 function clearAllData(){
-  const first = confirm("這會清除目前瀏覽器中的所有班級、學生與作業紀錄。要繼續嗎？");
+  const first = confirm("這會清除目前班級中的所有學生、作業與聯絡簿紀錄。要繼續嗎？");
   if(!first) return;
   const second = confirm("再次確認：清除後若沒有備份，資料無法復原。");
   if(!second) return;
-  localStorage.removeItem(STORAGE_KEY);
+  const className = data.class.name;
   data = defaultData();
+  data.class.name = className;
   saveData();
-  toast("所有資料已清除");
+  toast("目前班級資料已清除");
 }
 
 function showModal(title, bodyHtml){
@@ -683,6 +842,8 @@ function escapeAttr(str){ return escapeHtml(str); }
 
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 document.getElementById("quickAddBtn").addEventListener("click",openNewAssignment);
+document.getElementById("addClassBtn").addEventListener("click",openAddClass);
+document.getElementById("backToClassHome").addEventListener("click",leaveClass);
 document.getElementById("dashboardAddAssignment").addEventListener("click",openNewAssignment);
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
 document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
@@ -714,4 +875,4 @@ document.getElementById("modalBackdrop").addEventListener("click",e=>{
   if(e.target.id==="modalBackdrop") closeModal();
 });
 
-renderAll();
+renderClassHome();

@@ -5,15 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>學生作業追蹤</title>
-  <link rel="stylesheet" href="style.css?v=2.3" />
+  <link rel="stylesheet" href="style.css?v=2.6" />
 </head>
 <body>
-  <header class="topbar">
+
+  <section id="classHome" class="class-home">
+    <div class="class-home-inner">
+      <div class="class-home-head">
+        <div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.6</span></div>
+          <h1>班級管理</h1>
+          <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
+        </div>
+        <button class="primary" id="addClassBtn">＋ 新增班級</button>
+      </div>
+      <div id="classCardList" class="class-card-grid"></div>
+    </div>
+  </section>
+
+  <div id="workspace" class="workspace hidden">
+<header class="topbar">
     <div>
-      <div class="eyebrow">HOMEWORK TRACKER <span class="version-badge">v2.3</span></div>
+      <div class="eyebrow">HOMEWORK TRACKER <span class="version-badge">v2.6</span></div>
       <h1 id="headerClassName">學生作業追蹤</h1>
     </div>
-    <button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button>
+    <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button><button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button></div>
   </header>
 
   <main class="container">
@@ -169,6 +185,7 @@
       </div>
     </section>
   </main>
+</div>
 
   <div id="modalBackdrop" class="modal-backdrop hidden">
     <div class="modal" role="dialog" aria-modal="true">
@@ -182,6 +199,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=2.3"></script>
+  <script src="app.js?v=2.6"></script>
 </body>
 </html>
