@@ -995,3 +995,13 @@ body::before{
 @media(max-width:520px){
   .group-edit-students{grid-template-columns:1fr}
 }
+
+/* v3.4 dashboard attention threshold */
+.threshold-input-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.threshold-input-row input{
+  width:110px;
+}

@@ -1,4 +1,4 @@
-const APP_VERSION = "3.3";
+const APP_VERSION = "3.5";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -29,7 +29,8 @@ function defaultData(){
     contactItems:[],
     scores:{},
     groups:[],
-    groupScores:{}
+    groupScores:{},
+    settings:{overdueDays:2}
   };
 }
 
@@ -84,7 +85,10 @@ function normalizeData(input){
       : (Array.isArray(input?.contactBook) ? input.contactBook : []),
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
     groups:Array.isArray(input?.groups) ? input.groups : [],
-    groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {}
+    groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {},
+    settings:{
+      overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2
+    }
   };
 }
 
@@ -120,6 +124,23 @@ function formatToday(){
   const d = new Date();
   const names = ["日","一","二","三","四","五","六"];
   return `${d.getFullYear()} / ${String(d.getMonth()+1).padStart(2,"0")} / ${String(d.getDate()).padStart(2,"0")}　星期${names[d.getDay()]}`;
+}
+
+
+function daysSinceDate(dateStr){
+  if(!dateStr) return 0;
+  const parts = dateStr.split("-").map(Number);
+  if(parts.length!==3 || parts.some(n=>!Number.isFinite(n))) return 0;
+  const target = new Date(parts[0], parts[1]-1, parts[2]);
+  const today = new Date();
+  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  return Math.floor((startToday - startTarget) / 86400000);
+}
+
+function overdueThresholdDays(){
+  const value = Number(data?.settings?.overdueDays);
+  return Number.isFinite(value) ? Math.max(0, value) : 2;
 }
 
 function getRecord(assignmentId, studentId){
@@ -251,7 +272,7 @@ function openClassSettings(classId){
     .map(s=>`${s.number} ${s.name}`)
     .join("\n");
 
-  showModal("班級設定", `
+  showModal("班級資料管理", `
     <form id="classSettingsForm" class="modal-form class-settings-form">
       <label>
         <span>班級名稱</span>
@@ -260,6 +281,15 @@ function openClassSettings(classId){
       <label>
         <span>學生名單</span>
         <textarea id="homeStudentRosterInput" rows="12" placeholder="每行一位學生，例如：&#10;1 王小明&#10;2 李小華">${escapeHtml(rosterText)}</textarea>
+      </label>
+
+      <label>
+        <span>總覽「需留意學生」顯示門檻</span>
+        <div class="threshold-input-row">
+          <input id="overdueDaysInput" type="number" min="0" step="1" value="${d.settings?.overdueDays ?? 2}" required>
+          <span>天</span>
+        </div>
+        <div class="item-sub">作業日期超過此天數仍未完成，才會顯示在總覽的需留意學生清單。</div>
       </label>
 
       <div class="settings-divider"></div>
@@ -302,6 +332,8 @@ function openClassSettings(classId){
     const oldByNumber = new Map(d.students.map(s=>[s.number,s]));
 
     d.class.name = newName;
+    d.settings = d.settings || {};
+    d.settings.overdueDays = Math.max(0, Number(document.getElementById("overdueDaysInput").value) || 0);
     d.students = roster.map(s=>{
       const old = oldByNumber.get(s.number);
       return {id: old?.id || uid("s"), number:s.number, name:s.name};
@@ -332,7 +364,7 @@ function openClassSettings(classId){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
     closeModal();
     renderClassHome();
-    toast("班級設定已儲存");
+    toast("班級資料已儲存");
   });
 }
 
@@ -491,11 +523,16 @@ function renderDashboard(){
       student:data.students.find(s=>s.id===r.studentId),
       assignment:data.assignments.find(a=>a.id===r.assignmentId)
     }))
-    .filter(x=>x.student && x.assignment && !x.assignment.dashboardArchived)
+    .filter(x=>
+      x.student &&
+      x.assignment &&
+      !x.assignment.dashboardArchived &&
+      daysSinceDate(x.assignment.date) > overdueThresholdDays()
+    )
     .sort((a,b)=> b.assignment.date.localeCompare(a.assignment.date));
 
   if(!pendingRecords.length){
-    pendingList.innerHTML = `<div class="empty">目前沒有缺交或待訂正的學生。</div>`;
+    pendingList.innerHTML = `<div class="empty">目前沒有超過 ${overdueThresholdDays()} 天仍未完成、需要留意的學生。</div>`;
   }else{
     pendingList.innerHTML = pendingRecords.map(x=>`
       <div class="item-card clickable" onclick="openAssignment('${x.assignment.id}')">
@@ -699,7 +736,7 @@ function openNewContactItem(){
     }
 
     if(drafts.some(x=>x.trackAsAssignment) && !data.students.length){
-      toast("要登錄為作業前，請先到設定建立學生名單");
+      toast("要登錄為作業前，請先到班級首頁的「班級資料管理」建立學生名單");
       return;
     }
 
@@ -721,8 +758,16 @@ function openNewContactItem(){
       data.contactItems.push(item);
     });
 
+    const contactFilter = document.getElementById("contactDateFilter");
+    if(contactFilter) contactFilter.value = date;
+    showAllContactItemsMode = false;
+    const allContactBtn = document.getElementById("showAllContactItems");
+    if(allContactBtn) allContactBtn.textContent = "顯示全部";
+
     saveData();
     closeModal();
+    renderContactBook();
+
     const trackedCount = drafts.filter(x=>x.trackAsAssignment).length;
     toast(trackedCount
       ? `已新增 ${drafts.length} 項，其中 ${trackedCount} 項同步到作業`
@@ -1109,7 +1154,7 @@ function renderStudents(){
   }
   const list = document.getElementById("studentList");
   if(!students.length){
-    list.innerHTML = `<div class="empty">尚未建立學生名單，請到「設定」加入學生。</div>`;
+    list.innerHTML = `<div class="empty">尚未建立學生名單，請到班級首頁的「班級資料管理」加入學生。</div>`;
     return;
   }
   list.innerHTML = students.map(s=>{
@@ -1238,7 +1283,7 @@ function openStudent(studentId){
 
 function openNewAssignment(){
   if(!data.students.length){
-    toast("請先回到班級首頁，在「班級設定」建立學生名單");
+    toast("請先回到班級首頁，在「班級資料管理」建立學生名單");
     return;
   }
   showModal(
@@ -1268,8 +1313,16 @@ function openNewAssignment(){
     data.students.forEach(s=>{
       data.records.push({assignmentId:assignment.id, studentId:s.id, status:"pending", note:""});
     });
+
+    const assignmentFilter = document.getElementById("assignmentDateFilter");
+    if(assignmentFilter) assignmentFilter.value = assignment.date;
+    showAllAssignmentsMode = false;
+    const allAssignmentsBtn = document.getElementById("showAllAssignments");
+    if(allAssignmentsBtn) allAssignmentsBtn.textContent = "顯示全部";
+
     saveData();
     closeModal();
+    renderAssignments();
     openAssignment(assignment.id);
   });
 }
