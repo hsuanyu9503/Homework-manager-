@@ -42,12 +42,16 @@
     </nav>
 
     <section id="dashboard" class="page active">
-      <div class="hero card">
-        <div>
+      <div class="hero card dashboard-hero">
+        <div class="dashboard-hero-main">
           <div class="muted" id="todayText"></div>
           <h2 id="dashboardClassName">尚未設定班級</h2>
+          <div id="todayNoticeArea" class="today-notice-area"></div>
         </div>
-        <button class="primary" id="dashboardAddAssignment">＋ 新增作業</button>
+        <div class="dashboard-hero-actions">
+          <button class="secondary" id="noticeMemoBtn">備忘錄</button>
+          <button class="primary" id="dashboardAddAssignment">＋ 新增作業</button>
+        </div>
       </div>
 
       <div class="summary-grid">
@@ -60,11 +64,6 @@
           <span>待訂正</span>
           <strong id="correctionCount">0</strong>
           <small id="correctionPeople">0 人</small>
-        </article>
-        <article class="summary-card success">
-          <span>已完成</span>
-          <strong id="completedCount">0</strong>
-          <small>全部紀錄</small>
         </article>
       </div>
 

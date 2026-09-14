@@ -27,6 +27,7 @@ function defaultData(){
     assignments:[],
     records:[],
     contactItems:[],
+    notices:[],
     scores:{},
     groups:[],
     groupScores:{},
@@ -83,6 +84,7 @@ function normalizeData(input){
     contactItems:Array.isArray(input?.contactItems)
       ? input.contactItems
       : (Array.isArray(input?.contactBook) ? input.contactBook : []),
+    notices:Array.isArray(input?.notices) ? input.notices : [],
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
     groups:Array.isArray(input?.groups) ? input.groups : [],
     groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {},
@@ -487,6 +489,7 @@ function renderAll(){
   document.getElementById("headerClassName").textContent = data.class.name || "Classroom Manager";
   document.getElementById("dashboardClassName").textContent = className;
   renderDashboard();
+  renderTodayNotices();
   renderAssignments();
   renderContactBook();
   renderStudents();
@@ -494,16 +497,131 @@ function renderAll(){
   renderGroupScores();
 }
 
+
+function renderTodayNotices(){
+  const area=document.getElementById("todayNoticeArea");
+  if(!area) return;
+  const today=localDateString();
+  const notices=[...(data.notices || [])]
+    .filter(n=>n.date===today && String(n.text || "").trim())
+    .sort((a,b)=>(a.createdAt || "").localeCompare(b.createdAt || ""));
+
+  if(!notices.length){
+    area.innerHTML=`<div class="today-notice-empty">今日無公告</div>`;
+    return;
+  }
+
+  area.innerHTML=`
+    <div class="today-notice-title">今日公告</div>
+    <div class="today-notice-list">
+      ${notices.map(n=>`<div class="today-notice-item">${escapeHtml(n.text)}</div>`).join("")}
+    </div>
+  `;
+}
+
+function openNoticeMemo(){
+  const notices=[...(data.notices || [])]
+    .sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+  const rows=notices.length
+    ? notices.map(n=>`
+        <div class="notice-memo-row">
+          <div class="notice-memo-date">${formatDate(n.date)}</div>
+          <div class="notice-memo-text">${escapeHtml(n.text)}</div>
+          <div class="notice-memo-actions">
+            <button class="secondary small-btn" type="button" onclick="editNotice('${n.id}')">編輯</button>
+            <button class="ghost-danger small-btn" type="button" onclick="deleteNotice('${n.id}')">刪除</button>
+          </div>
+        </div>
+      `).join("")
+    : `<div class="empty">目前還沒有公告備忘。</div>`;
+
+  showModal("公告備忘錄",`
+    <div class="modal-form">
+      <form id="newNoticeForm" class="notice-new-form">
+        <label>
+          <span>顯示日期</span>
+          <input type="date" id="noticeDate" value="${localDateString()}" required>
+        </label>
+        <label class="grow">
+          <span>注意事項</span>
+          <input id="noticeText" placeholder="例如：記得帶美勞用品" required>
+        </label>
+        <button class="primary" type="submit">新增</button>
+      </form>
+      <div class="settings-divider"></div>
+      <div class="notice-memo-list">${rows}</div>
+    </div>
+  `);
+
+  document.getElementById("newNoticeForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const date=document.getElementById("noticeDate").value;
+    const text=document.getElementById("noticeText").value.trim();
+    if(!text) return;
+    if(!Array.isArray(data.notices)) data.notices=[];
+    data.notices.push({
+      id:uid("n"),
+      date,
+      text,
+      createdAt:new Date().toISOString()
+    });
+    saveData();
+    closeModal();
+    renderTodayNotices();
+    toast("公告已新增");
+  });
+}
+
+function editNotice(noticeId){
+  const notice=(data.notices || []).find(n=>n.id===noticeId);
+  if(!notice) return;
+  showModal("編輯公告",`
+    <form id="editNoticeForm" class="modal-form">
+      <label>
+        <span>顯示日期</span>
+        <input type="date" id="editNoticeDate" value="${escapeAttr(notice.date || localDateString())}" required>
+      </label>
+      <label>
+        <span>注意事項</span>
+        <input id="editNoticeText" value="${escapeAttr(notice.text || "")}" required>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal();openNoticeMemo()">取消</button>
+        <button class="primary" type="submit">儲存</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById("editNoticeForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    notice.date=document.getElementById("editNoticeDate").value;
+    notice.text=document.getElementById("editNoticeText").value.trim();
+    saveData();
+    closeModal();
+    renderTodayNotices();
+    toast("公告已更新");
+  });
+}
+
+function deleteNotice(noticeId){
+  const notice=(data.notices || []).find(n=>n.id===noticeId);
+  if(!notice) return;
+  if(!confirm(`確定要刪除 ${formatDate(notice.date)} 的這則公告嗎？`)) return;
+  data.notices=(data.notices || []).filter(n=>n.id!==noticeId);
+  saveData();
+  closeModal();
+  renderTodayNotices();
+  openNoticeMemo();
+}
+
 function renderDashboard(){
   const missing = data.records.filter(r=>r.status==="missing");
   const correction = data.records.filter(r=>r.status==="correction");
-  const completed = data.records.filter(r=>r.status==="completed");
-
   document.getElementById("missingCount").textContent = missing.length;
   document.getElementById("missingPeople").textContent = `${new Set(missing.map(r=>r.studentId)).size} 人`;
   document.getElementById("correctionCount").textContent = correction.length;
   document.getElementById("correctionPeople").textContent = `${new Set(correction.map(r=>r.studentId)).size} 人`;
-  document.getElementById("completedCount").textContent = completed.length;
 
   const activeAssignments = [...data.assignments]
     .filter(a=>!a.dashboardArchived)
@@ -1450,6 +1568,7 @@ document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
 document.getElementById("dashboardAddAssignment").addEventListener("click",openNewAssignment);
+document.getElementById("noticeMemoBtn").addEventListener("click",openNoticeMemo);
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
 document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
   showAllAssignmentsMode=false;
