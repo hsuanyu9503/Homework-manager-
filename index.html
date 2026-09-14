@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#111827" />
+  <title>學生作業追蹤</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">HOMEWORK TRACKER</div>
+      <h1 id="headerClassName">學生作業追蹤</h1>
+    </div>
+    <button class="icon-btn" id="quickAddBtn" title="新增作業">＋</button>
+  </header>
+
+  <main class="container">
+    <nav class="tabs" aria-label="主要功能">
+      <button class="tab active" data-page="dashboard">總覽</button>
+      <button class="tab" data-page="assignments">作業</button>
+      <button class="tab" data-page="students">學生</button>
+      <button class="tab" data-page="settings">設定</button>
+    </nav>
+
+    <section id="dashboard" class="page active">
+      <div class="hero card">
+        <div>
+          <div class="muted" id="todayText"></div>
+          <h2 id="dashboardClassName">尚未設定班級</h2>
+        </div>
+        <button class="primary" id="dashboardAddAssignment">＋ 新增作業</button>
+      </div>
+
+      <div class="summary-grid">
+        <article class="summary-card danger">
+          <span>缺交</span>
+          <strong id="missingCount">0</strong>
+          <small id="missingPeople">0 人</small>
+        </article>
+        <article class="summary-card warning">
+          <span>待訂正</span>
+          <strong id="correctionCount">0</strong>
+          <small id="correctionPeople">0 人</small>
+        </article>
+        <article class="summary-card success">
+          <span>已完成</span>
+          <strong id="completedCount">0</strong>
+          <small>全部紀錄</small>
+        </article>
+      </div>
+
+      <div class="section-head">
+        <div>
+          <h3>待處理</h3>
+          <p>所有尚未完成的缺交與訂正紀錄</p>
+        </div>
+      </div>
+      <div id="pendingList" class="stack"></div>
+
+      <div class="section-head">
+        <div>
+          <h3>最近作業</h3>
+          <p>依日期顯示最近建立的作業</p>
+        </div>
+      </div>
+      <div id="recentAssignments" class="stack"></div>
+    </section>
+
+    <section id="assignments" class="page">
+      <div class="section-head">
+        <div>
+          <h2>作業</h2>
+          <p>依日期查看與管理作業</p>
+        </div>
+        <button class="primary" id="addAssignmentBtn">＋ 新增作業</button>
+      </div>
+
+      <div class="toolbar card">
+        <label>
+          <span>選擇日期</span>
+          <input type="date" id="assignmentDateFilter" />
+        </label>
+        <button class="secondary" id="showAllAssignments">顯示全部</button>
+      </div>
+      <div id="assignmentList" class="stack"></div>
+    </section>
+
+    <section id="students" class="page">
+      <div class="section-head">
+        <div>
+          <h2>學生</h2>
+          <p>查看個別學生的作業紀錄</p>
+        </div>
+      </div>
+
+      <div class="toolbar card">
+        <label class="grow">
+          <span>搜尋學生</span>
+          <input type="search" id="studentSearch" placeholder="輸入座號或姓名" />
+        </label>
+      </div>
+      <div id="studentList" class="student-grid"></div>
+    </section>
+
+    <section id="settings" class="page">
+      <div class="section-head">
+        <div>
+          <h2>設定</h2>
+          <p>班級資料與備份管理</p>
+        </div>
+      </div>
+
+      <form id="classForm" class="card form-card">
+        <h3>班級設定</h3>
+        <label>
+          <span>班級名稱</span>
+          <input id="classNameInput" placeholder="例如：五年甲班" />
+        </label>
+        <label>
+          <span>學生名單</span>
+          <textarea id="studentRosterInput" rows="10" placeholder="每行一位學生，可輸入：
+1 王小明
+2 陳小華
+3 林小安
+
+也可以只輸入姓名，系統會自動編號。"></textarea>
+        </label>
+        <button class="primary" type="submit">儲存班級資料</button>
+      </form>
+
+      <div class="card form-card">
+        <h3>資料備份</h3>
+        <p class="muted">備份檔會包含班級、學生、作業與所有追蹤紀錄。</p>
+        <div class="button-row">
+          <button class="secondary" id="exportBtn">匯出備份</button>
+          <label class="secondary file-label">
+            匯入備份
+            <input type="file" id="importInput" accept=".json,application/json" hidden />
+          </label>
+        </div>
+      </div>
+
+      <div class="card form-card danger-zone">
+        <h3>清除資料</h3>
+        <p>會刪除此瀏覽器中的所有班級與作業紀錄。</p>
+        <button class="danger-btn" id="clearBtn">清除所有資料</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="modalTitle">視窗</h3>
+        <button class="icon-btn small" id="modalClose">×</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
