@@ -200,9 +200,8 @@ function renderClassHome(){
           ${correction ? `<span class="badge correction">待訂正 ${correction}</span>`:""}
           ${(!missing && !correction && !unfinishedAssignments.length) ? `<span class="badge clear">目前無待處理</span>`:""}
         </div>
-        <div class="class-card-actions" onclick="event.stopPropagation()">
-          <button class="secondary" onclick="enterClass('${cls.id}')">進入班級</button>
-          <button class="secondary" onclick="openClassSettings('${cls.id}')">班級設定</button>
+        <div class="class-card-actions single-action" onclick="event.stopPropagation()">
+          <button class="primary enter-class-btn" onclick="enterClass('${cls.id}')">進入班級</button>
         </div>
       </article>
     `;
