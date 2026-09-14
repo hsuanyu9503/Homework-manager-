@@ -1188,3 +1188,157 @@ body::before{
   .settings-compose-grid{grid-template-columns:1fr;}
   .settings-add-btn{grid-column:auto;}
 }
+
+
+/* v3.12 settings form spacing fixes */
+.settings-panel,
+.settings-card,
+.notice-settings-card,
+.memo-settings-card{
+  min-width:0;
+}
+.notice-new-form,
+.memo-new-form,
+.settings-entry-form{
+  align-items:stretch;
+}
+.notice-new-form label,
+.memo-new-form label,
+.settings-entry-form label{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.notice-new-form label > span,
+.memo-new-form label > span,
+.settings-entry-form label > span{
+  position:static;
+  display:block;
+  line-height:1.35;
+  margin:0;
+  white-space:normal;
+}
+.notice-new-form input,
+.memo-new-form input,
+.settings-entry-form input,
+.notice-new-form textarea,
+.memo-new-form textarea,
+.settings-entry-form textarea{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  line-height:1.4;
+  padding:11px 12px;
+}
+.notice-new-form input[type="date"],
+.memo-new-form input[type="date"],
+.settings-entry-form input[type="date"]{
+  min-height:44px;
+}
+.notice-new-form button,
+.memo-new-form button,
+.settings-entry-form button{
+  align-self:end;
+  min-height:44px;
+}
+.notice-memo-row,
+.memo-settings-row,
+.notice-settings-row{
+  min-width:0;
+}
+.notice-memo-text,
+.memo-settings-text,
+.notice-settings-text{
+  min-width:0;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+@media(max-width:900px){
+  .notice-new-form,
+  .memo-new-form,
+  .settings-entry-form{
+    grid-template-columns:1fr !important;
+  }
+  .notice-new-form button,
+  .memo-new-form button,
+  .settings-entry-form button{
+    width:100%;
+    align-self:stretch;
+  }
+}
+
+
+/* v3.13 actual settings-grid overlap fix */
+.settings-compose-grid{
+  align-items:start;
+}
+.settings-compose-grid > *{
+  min-width:0;
+}
+.settings-field{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.settings-field > span{
+  position:static;
+  display:block;
+  margin:0;
+  line-height:1.35;
+  white-space:normal;
+}
+.settings-field input,
+.settings-field textarea,
+.settings-field select{
+  display:block;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+  margin:0;
+  line-height:1.4;
+  padding:11px 12px;
+}
+.settings-field input[type="date"]{
+  min-height:44px;
+}
+.settings-add-btn{
+  box-sizing:border-box;
+  min-height:44px;
+  align-self:end;
+}
+.settings-compose-card{
+  min-width:0;
+  overflow:hidden;
+}
+.settings-item-card{
+  min-width:0;
+}
+.settings-item-date,
+.settings-item-body,
+.settings-item-text{
+  min-width:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+@media(max-width:900px){
+  .settings-compose-grid{
+    grid-template-columns:1fr 1fr;
+  }
+  .settings-add-btn{
+    grid-column:1/-1;
+    width:100%;
+    align-self:stretch;
+  }
+}
+@media(max-width:640px){
+  .settings-compose-grid{
+    grid-template-columns:1fr;
+  }
+  .settings-add-btn{
+    grid-column:auto;
+  }
+}

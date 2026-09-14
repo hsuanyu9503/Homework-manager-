@@ -1,4 +1,4 @@
-const APP_VERSION = "3.11";
+const APP_VERSION = "3.13";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -240,7 +240,7 @@ function renderClassHome(){
 function openAddClass(){
   showModal("新增班級", `
     <form id="newClassForm" class="modal-form">
-      <label><span>班級名稱</span><input id="newClassName" placeholder="例如：五年甲班" required></label>
+      <label><span>班級名稱</span><input id="newClassName" placeholder="例如：作業抽查" required></label>
       <div class="modal-actions">
         <button type="button" class="secondary" onclick="closeModal()">取消</button>
         <button class="primary" type="submit">建立班級</button>
@@ -671,7 +671,7 @@ function openNoticeMemo(){
             </label>
             <label class="settings-field">
               <span>公告內容</span>
-              <input id="noticeText" placeholder="例如：記得帶美勞用品" required>
+              <input id="noticeText" placeholder="例如：藝術深耕" required>
             </label>
             <button class="primary settings-add-btn" type="submit">＋ 新增公告</button>
           </div>
@@ -702,7 +702,7 @@ function openNoticeMemo(){
             </label>
             <label class="settings-field">
               <span>事項</span>
-              <input id="memoText" placeholder="例如：繳交實習手冊" required>
+              <input id="memoText" placeholder="例如：作業抽查" required>
             </label>
             <button class="primary settings-add-btn" type="button" onclick="addMemoFromSettings()">＋ 新增備忘</button>
           </div>
