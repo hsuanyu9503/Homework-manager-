@@ -1099,3 +1099,17 @@ body::before{
     justify-content:flex-start;
   }
 }
+
+
+/* v3.7 dashboard fixes */
+#dashboard .summary-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+@media(max-width:600px){
+  #dashboard .summary-grid{grid-template-columns:1fr;}
+}
+.notice-new-form input[type="date"],
+.notice-new-form input[type="text"],
+.notice-new-form input:not([type]){
+  width:100%;
+}

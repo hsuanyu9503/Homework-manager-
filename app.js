@@ -1,4 +1,4 @@
-const APP_VERSION = "3.5";
+const APP_VERSION = "3.7";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -502,7 +502,7 @@ function renderTodayNotices(){
   const area=document.getElementById("todayNoticeArea");
   if(!area) return;
   const today=localDateString();
-  const notices=[...(data.notices || [])]
+  const notices=[...(Array.isArray(data.notices) ? data.notices : [])]
     .filter(n=>n.date===today && String(n.text || "").trim())
     .sort((a,b)=>(a.createdAt || "").localeCompare(b.createdAt || ""));
 
@@ -1568,7 +1568,10 @@ document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
 document.getElementById("dashboardAddAssignment").addEventListener("click",openNewAssignment);
-document.getElementById("noticeMemoBtn").addEventListener("click",openNoticeMemo);
+const noticeMemoBtn = document.getElementById("noticeMemoBtn");
+if(noticeMemoBtn){
+  noticeMemoBtn.addEventListener("click", openNoticeMemo);
+}
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
 document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
   showAllAssignmentsMode=false;
