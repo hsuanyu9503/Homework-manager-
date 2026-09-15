@@ -1,4 +1,4 @@
-const APP_VERSION = "3.27";
+const APP_VERSION = "3.28";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -831,9 +831,11 @@ function renderDashboard(){
   document.getElementById("correctionCount").textContent = correction.length;
   document.getElementById("correctionPeople").textContent = `${new Set(correction.map(r=>r.studentId)).size} 人`;
 
+  const today = localDateString();
   const activeAssignments = [...data.assignments]
-    .filter(a=>!a.dashboardArchived)
-    .sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    // 作業於隔天才進入「作業處理進度」：只顯示今天以前的作業。
+    .filter(a=>!a.dashboardArchived && a.date < today)
+    .sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt || "").localeCompare(a.createdAt || ""));
   const target = document.getElementById("recentAssignments");
   if(!activeAssignments.length){
     target.innerHTML = `<div class="empty cheerful">🎉 目前沒有需要追蹤的作業，全部處理完畢！</div>`;
