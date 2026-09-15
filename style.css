@@ -1524,3 +1524,28 @@ body::before{
   from{transform:translateX(max(100vw, 100%))}
   to{transform:translateX(-100%)}
 }
+
+/* v3.24 marquee interaction and animation hardening */
+.marquee-stage{position:relative;overflow:hidden}
+.marquee-track{
+  position:absolute;
+  left:100%;
+  width:max-content;
+  min-width:0;
+  padding:0;
+  transform:none;
+}
+.marquee-track span{
+  display:block;
+  padding:0;
+  transform:none;
+  white-space:nowrap;
+}
+.marquee-track.running{
+  animation:classroomMarqueeReliable var(--marquee-duration) linear infinite;
+}
+.marquee-track.running span{animation:none}
+@keyframes classroomMarqueeReliable{
+  from{left:100%;transform:translateX(0)}
+  to{left:0;transform:translateX(-100%)}
+}
