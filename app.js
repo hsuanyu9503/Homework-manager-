@@ -1,4 +1,4 @@
-const APP_VERSION = "3.26";
+const APP_VERSION = "3.27";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1746,7 +1746,7 @@ function openStudent(studentId){
   if(!s) return;
   const history = data.assignments
     .map(a=>({a, r:getRecord(a.id,s.id)}))
-    .filter(x=>x.r)
+    .filter(x=>x.r && x.r.status!=="completed")
     .sort((x,y)=>y.a.date.localeCompare(x.a.date));
   showModal(
     `${String(s.number).padStart(2,"0")} ${s.name}`,
@@ -1754,7 +1754,6 @@ function openStudent(studentId){
       <div class="assignment-summary">
         <span class="badge missing">缺交 ${history.filter(x=>x.r.status==="missing").length}</span>
         <span class="badge correction">待訂正 ${history.filter(x=>x.r.status==="correction").length}</span>
-        <span class="badge completed">完成 ${history.filter(x=>x.r.status==="completed").length}</span>
       </div>
       <div class="tracker-list">
         ${history.length ? history.map(x=>`
