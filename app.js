@@ -1,4 +1,4 @@
-const APP_VERSION = "3.25";
+const APP_VERSION = "3.26";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -106,20 +106,7 @@ function saveData(){
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   renderAll();
-  // v3.24 classroom tool bindings
-document.querySelectorAll(".score-mode-tab").forEach(btn=>{
-  btn.addEventListener("click",()=>setScoreMode(btn.dataset.scoreMode));
-});
-const marqueeInputEl=document.getElementById("marqueeInput");
-if(marqueeInputEl) marqueeInputEl.addEventListener("input",renderMarquee);
-const marqueeSpeedEl=document.getElementById("marqueeSpeed");
-if(marqueeSpeedEl) marqueeSpeedEl.addEventListener("change",renderMarquee);
-const marqueeStartEl=document.getElementById("marqueeStartBtn");
-if(marqueeStartEl) marqueeStartEl.addEventListener("click",startMarquee);
-const marqueeStopEl=document.getElementById("marqueeStopBtn");
-if(marqueeStopEl) marqueeStopEl.addEventListener("click",stopMarquee);
-
-renderClassHome();
+  renderClassHome();
 }
 
 function uid(prefix="id"){
@@ -2006,6 +1993,19 @@ document.getElementById("modalClose").addEventListener("click",closeModal);
 document.getElementById("modalBackdrop").addEventListener("click",e=>{
   if(e.target.id==="modalBackdrop") closeModal();
 });
+
+// v3.26 classroom tool bindings
+document.querySelectorAll(".score-mode-tab").forEach(btn=>{
+  btn.addEventListener("click",()=>setScoreMode(btn.dataset.scoreMode));
+});
+const marqueeInputEl=document.getElementById("marqueeInput");
+if(marqueeInputEl) marqueeInputEl.addEventListener("input",renderMarquee);
+const marqueeSpeedEl=document.getElementById("marqueeSpeed");
+if(marqueeSpeedEl) marqueeSpeedEl.addEventListener("change",renderMarquee);
+const marqueeStartEl=document.getElementById("marqueeStartBtn");
+if(marqueeStartEl) marqueeStartEl.addEventListener("click",startMarquee);
+const marqueeStopEl=document.getElementById("marqueeStopBtn");
+if(marqueeStopEl) marqueeStopEl.addEventListener("click",stopMarquee);
 
 renderClassHome();
 
