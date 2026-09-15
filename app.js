@@ -1,4 +1,4 @@
-const APP_VERSION = "3.28";
+const APP_VERSION = "3.29";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -201,6 +201,8 @@ function renderClassHome(){
     const today = localDateString();
     const todayAssignments = d.assignments.filter(a=>a.date===today);
     const unfinishedAssignments = d.assignments.filter(a=>{
+      // 與總覽「作業處理進度」一致：今天與未來的作業尚未進入批改流程。
+      if(a.date >= today || a.dashboardArchived) return false;
       const related = d.records.filter(r=>r.assignmentId===a.id);
       if(!d.students.length) return true;
       const completedStudents = new Set(
