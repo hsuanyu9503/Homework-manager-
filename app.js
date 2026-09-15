@@ -1,4 +1,4 @@
-const APP_VERSION = "3.21";
+const APP_VERSION = "3.22";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -527,7 +527,7 @@ function renderAll(){
 }
 
 
-function renderTodayNotice(){
+function renderTodayNotices(){
   const area = document.getElementById("todayNoticeArea");
   if(!area) return;
 
