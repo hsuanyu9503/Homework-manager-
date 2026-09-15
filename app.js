@@ -1,4 +1,4 @@
-const APP_VERSION = "3.22";
+const APP_VERSION = "3.23";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1998,8 +1998,3 @@ renderClassHome();
 
 startDateRolloverGuards();
 
-// v3.20 marquee bindings
-document.getElementById("marqueeStartBtn")?.addEventListener("click",startMarquee);
-document.getElementById("marqueeStopBtn")?.addEventListener("click",stopMarquee);
-document.getElementById("marqueeInput")?.addEventListener("input",renderMarquee);
-document.getElementById("marqueeSpeed")?.addEventListener("change",renderMarquee);

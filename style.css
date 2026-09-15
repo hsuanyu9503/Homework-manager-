@@ -1498,3 +1498,29 @@ body::before{
 @media(max-width:720px){
   #scores .score-mode-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* v3.23 marquee runtime/display fix */
+.marquee-stage{position:relative}
+.marquee-track{
+  position:absolute;
+  left:0;
+  width:100%;
+  min-width:100%;
+  padding-left:0;
+  transform:none;
+  overflow:visible;
+}
+.marquee-track span{
+  display:inline-block;
+  padding-right:0;
+  transform:translateX(100vw);
+  white-space:nowrap;
+}
+.marquee-track.running{animation:none}
+.marquee-track.running span{
+  animation:classroomMarqueeText var(--marquee-duration) linear infinite;
+}
+@keyframes classroomMarqueeText{
+  from{transform:translateX(max(100vw, 100%))}
+  to{transform:translateX(-100%)}
+}
