@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.19" />
+  <link rel="stylesheet" href="style.css?v=3.21" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.19</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.21</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.19</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.21</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -195,7 +195,7 @@
       <div class="page-head">
         <div>
           <h2>課堂工具</h2>
-          <p class="muted">個人積分、小組積分、抽籤、蕃茄鐘與跑馬燈集中在這裡使用。</p>
+          <p class="muted">個人、小組積分與課堂工具集中在這裡使用。</p>
         </div>
       </div>
 
@@ -204,7 +204,7 @@
         <button class="score-mode-tab" data-score-mode="group" onclick="setScoreMode('group')">小組積分</button>
         <button class="score-mode-tab" data-score-mode="lottery" onclick="setScoreMode('lottery')">抽籤</button>
         <button class="score-mode-tab" data-score-mode="timer" onclick="setScoreMode('timer')">蕃茄鐘</button>
-        <button class="score-mode-tab" data-score-mode="marquee" onclick="setScoreMode('marquee')">跑馬燈</button>
+        <button class="score-mode-tab" data-score-mode="marquee" onclick="setScoreMode(\'marquee\')">跑馬燈</button>
       </div>
 
       <div id="individualScorePanel" class="score-mode-panel">
@@ -274,46 +274,27 @@
           </div>
         </div>
       </div>
-
+    
       <div id="marqueePanel" class="score-mode-panel hidden">
         <div class="tool-card marquee-card">
           <div class="tool-card-head">
-            <div>
-              <div class="tool-kicker">MARQUEE</div>
-              <h3>課堂跑馬燈</h3>
-              <p class="muted">輸入提醒文字後，可投影在教室螢幕上循環播放。</p>
+            <div><div class="tool-kicker">MARQUEE</div><h3>跑馬燈</h3><p class="muted">適合顯示課堂提醒、活動指令或重要訊息。</p></div>
+            <span class="marquee-status" id="marqueeStatus">準備顯示</span>
+          </div>
+          <div class="marquee-stage"><div class="marquee-track" id="marqueeTrack"><span id="marqueeText">請輸入跑馬燈文字</span></div></div>
+          <div class="marquee-controls">
+            <label for="marqueeInput">顯示文字</label>
+            <input id="marqueeInput" type="text" maxlength="120" placeholder="例如：請準備好課本與鉛筆">
+            <div class="marquee-control-row">
+              <label for="marqueeSpeed">速度</label>
+              <select id="marqueeSpeed"><option value="slow">慢速</option><option value="normal" selected>一般</option><option value="fast">快速</option></select>
+              <button class="primary" id="marqueeStartBtn" type="button">開始</button>
+              <button class="secondary" id="marqueeStopBtn" type="button">停止</button>
             </div>
-            <div class="marquee-status" id="marqueeStatus">準備播放</div>
-          </div>
-
-          <div class="marquee-compose">
-            <label for="marqueeTextInput">跑馬燈文字</label>
-            <input id="marqueeTextInput" type="text" maxlength="120" placeholder="例如：下課前請記得繳交聯絡簿" value="請準備好上課用品">
-          </div>
-
-          <div class="marquee-stage" id="marqueeStage" aria-live="polite">
-            <div class="marquee-track" id="marqueeTrack">
-              <span id="marqueeText">請準備好上課用品</span>
-            </div>
-          </div>
-
-          <div class="marquee-speed-control">
-            <span>播放速度</span>
-            <div class="marquee-speed-buttons">
-              <button type="button" class="marquee-speed" data-speed="slow">慢速</button>
-              <button type="button" class="marquee-speed active" data-speed="normal">一般</button>
-              <button type="button" class="marquee-speed" data-speed="fast">快速</button>
-            </div>
-          </div>
-
-          <div class="tool-actions marquee-actions">
-            <button class="primary" id="marqueeStartPauseBtn" type="button">開始</button>
-            <button class="secondary" id="marqueeApplyBtn" type="button">套用文字</button>
-            <button class="secondary" id="marqueeResetBtn" type="button">重設</button>
           </div>
         </div>
       </div>
-    </section>
+</section>
 
 </main>
 </div>
@@ -331,6 +312,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.19"></script>
+  <script src="app.js?v=3.21"></script>
 </body>
 </html>

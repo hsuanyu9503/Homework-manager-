@@ -1,4 +1,4 @@
-const APP_VERSION = "3.19";
+const APP_VERSION = "3.21";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -527,23 +527,46 @@ function renderAll(){
 }
 
 
-function renderTodayNotices(){
-  const area=document.getElementById("todayNoticeArea");
+function renderTodayNotice(){
+  const area = document.getElementById("todayNoticeArea");
   if(!area) return;
-  const today=localDateString();
-  const notices=[...(Array.isArray(data.notices) ? data.notices : [])]
-    .filter(n=>n.date===today && String(n.text || "").trim())
-    .sort((a,b)=>(a.createdAt || "").localeCompare(b.createdAt || ""));
 
-  if(!notices.length){
-    area.innerHTML=`<div class="today-notice-empty">今日無公告</div>`;
-    return;
-  }
+  const today = localDateString();
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate()+1);
+  const tomorrow = [
+    tomorrowDate.getFullYear(),
+    String(tomorrowDate.getMonth()+1).padStart(2,"0"),
+    String(tomorrowDate.getDate()).padStart(2,"0")
+  ].join("-");
 
-  area.innerHTML=`
-    <div class="today-notice-title">今日公告</div>
-    <div class="today-notice-list">
-      ${notices.map(n=>`<div class="today-notice-item">${escapeHtml(n.text)}</div>`).join("")}
+  const notices = Array.isArray(data.notices) ? data.notices : [];
+  const todayNotices = notices.filter(n=>n.date===today);
+  const tomorrowNotices = notices.filter(n=>n.date===tomorrow);
+
+  const shortDate = dateString => {
+    const [,month,day] = dateString.split("-");
+    return `${Number(month)}/${Number(day)}`;
+  };
+
+  const noticeColumn = (label,dateString,items,kind) => `
+    <div class="notice-day-column ${kind}">
+      <div class="notice-day-head">
+        <span class="notice-day-label">${label}</span>
+        <span class="notice-day-date">${shortDate(dateString)}</span>
+      </div>
+      <div class="notice-day-list">
+        ${items.length
+          ? items.map(n=>`<div class="notice-line">${escapeHtml(n.text)}</div>`).join("")
+          : `<div class="notice-empty">${label}無公告</div>`}
+      </div>
+    </div>
+  `;
+
+  area.innerHTML = `
+    <div class="notice-preview-grid">
+      ${noticeColumn("今日",today,todayNotices,"today")}
+      ${noticeColumn("明日",tomorrow,tomorrowNotices,"tomorrow")}
     </div>
   `;
 }
@@ -1321,90 +1344,12 @@ function resetPomodoro(){
   renderPomodoro();
 }
 
-
-// v3.19 classroom marquee
-let marqueeRunning = false;
-let marqueeSpeed = "normal";
-const marqueeDurations = {slow:18, normal:11, fast:6};
-
-function marqueeDuration(){
-  return marqueeDurations[marqueeSpeed] || marqueeDurations.normal;
-}
-
-function renderMarquee(){
-  const track=document.getElementById("marqueeTrack");
-  const text=document.getElementById("marqueeText");
-  const input=document.getElementById("marqueeTextInput");
-  const status=document.getElementById("marqueeStatus");
-  const startBtn=document.getElementById("marqueeStartPauseBtn");
-  if(!track || !text) return;
-
-  track.style.setProperty("--marquee-duration", `${marqueeDuration()}s`);
-  track.classList.toggle("running", marqueeRunning);
-  track.classList.toggle("paused", !marqueeRunning);
-
-  if(status) status.textContent=marqueeRunning ? "播放中" : "已暫停";
-  if(startBtn) startBtn.textContent=marqueeRunning ? "暫停" : "開始";
-
-  document.querySelectorAll(".marquee-speed").forEach(btn=>{
-    btn.classList.toggle("active", btn.dataset.speed===marqueeSpeed);
-  });
-
-  if(input && !input.value.trim()) input.value=text.textContent || "請準備好上課用品";
-}
-
-function restartMarqueeAnimation(){
-  const track=document.getElementById("marqueeTrack");
-  if(!track) return;
-  track.classList.remove("running");
-  void track.offsetWidth;
-  if(marqueeRunning) track.classList.add("running");
-}
-
-function applyMarqueeText(){
-  const input=document.getElementById("marqueeTextInput");
-  const text=document.getElementById("marqueeText");
-  if(!input || !text) return;
-  const value=input.value.trim();
-  if(!value){
-    toast("請先輸入跑馬燈文字");
-    input.focus();
-    return;
-  }
-  text.textContent=value;
-  restartMarqueeAnimation();
-  renderMarquee();
-}
-
-function toggleMarquee(){
-  const text=document.getElementById("marqueeText");
-  if(!text) return;
-  if(!text.textContent.trim()){
-    applyMarqueeText();
-    return;
-  }
-  marqueeRunning=!marqueeRunning;
-  if(marqueeRunning) restartMarqueeAnimation();
-  renderMarquee();
-}
-
-function resetMarquee(){
-  marqueeRunning=false;
-  marqueeSpeed="normal";
-  const input=document.getElementById("marqueeTextInput");
-  const text=document.getElementById("marqueeText");
-  if(input) input.value="請準備好上課用品";
-  if(text) text.textContent="請準備好上課用品";
-  restartMarqueeAnimation();
-  renderMarquee();
-}
-
-function setMarqueeSpeed(speed){
-  if(!marqueeDurations[speed]) return;
-  marqueeSpeed=speed;
-  restartMarqueeAnimation();
-  renderMarquee();
-}
+// v3.20 classroom tool: marquee
+let marqueeRunning=false;
+function marqueeDuration(){const speed=document.getElementById("marqueeSpeed")?.value||"normal";return speed==="slow"?16:speed==="fast"?7:11;}
+function renderMarquee(){const input=document.getElementById("marqueeInput"),textEl=document.getElementById("marqueeText"),track=document.getElementById("marqueeTrack"),status=document.getElementById("marqueeStatus");if(!input||!textEl||!track)return;const text=String(input.value||"").trim();textEl.textContent=text||"請輸入跑馬燈文字";track.style.setProperty("--marquee-duration",`${marqueeDuration()}s`);track.classList.toggle("running",marqueeRunning&&!!text);if(status)status.textContent=marqueeRunning&&text?"播放中":"準備顯示";}
+function startMarquee(){if(!String(document.getElementById("marqueeInput")?.value||"").trim()){toast("請先輸入跑馬燈文字");return;}marqueeRunning=true;renderMarquee();}
+function stopMarquee(){marqueeRunning=false;renderMarquee();}
 
 function studentScore(studentId){
   const value = Number(data.scores?.[studentId] ?? 0);
@@ -2011,23 +1956,6 @@ if(timerStartPauseBtn) timerStartPauseBtn.addEventListener("click",togglePomodor
 const timerResetBtn=document.getElementById("timerResetBtn");
 if(timerResetBtn) timerResetBtn.addEventListener("click",resetPomodoro);
 
-const marqueeStartPauseBtn=document.getElementById("marqueeStartPauseBtn");
-if(marqueeStartPauseBtn) marqueeStartPauseBtn.addEventListener("click",toggleMarquee);
-const marqueeApplyBtn=document.getElementById("marqueeApplyBtn");
-if(marqueeApplyBtn) marqueeApplyBtn.addEventListener("click",applyMarqueeText);
-const marqueeResetBtn=document.getElementById("marqueeResetBtn");
-if(marqueeResetBtn) marqueeResetBtn.addEventListener("click",resetMarquee);
-const marqueeTextInput=document.getElementById("marqueeTextInput");
-if(marqueeTextInput) marqueeTextInput.addEventListener("keydown",e=>{
-  if(e.key==="Enter"){
-    e.preventDefault();
-    applyMarqueeText();
-  }
-});
-document.querySelectorAll(".marquee-speed").forEach(btn=>btn.addEventListener("click",()=>{
-  setMarqueeSpeed(btn.dataset.speed);
-}));
-
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
@@ -2069,3 +1997,9 @@ document.getElementById("modalBackdrop").addEventListener("click",e=>{
 renderClassHome();
 
 startDateRolloverGuards();
+
+// v3.20 marquee bindings
+document.getElementById("marqueeStartBtn")?.addEventListener("click",startMarquee);
+document.getElementById("marqueeStopBtn")?.addEventListener("click",stopMarquee);
+document.getElementById("marqueeInput")?.addEventListener("input",renderMarquee);
+document.getElementById("marqueeSpeed")?.addEventListener("change",renderMarquee);
