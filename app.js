@@ -1,4 +1,4 @@
-const APP_VERSION = "3.30";
+const APP_VERSION = "3.31";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -213,7 +213,7 @@ function renderClassHome(){
     return `
       <article class="class-card" onclick="enterClass('${cls.id}')">
         <h3>${escapeHtml(cls.name)}</h3>
-        <div class="item-sub">${d.students.length} 位學生｜${d.assignments.length} 項作業</div>
+        <div class="item-sub">${d.students.length} 位學生</div>
         <div class="class-overview-stats">
           <div class="class-stat">
             <span>今日作業</span>
@@ -1202,6 +1202,7 @@ function setScoreMode(mode){
 let lotteryDrawnIds = [];
 let lotteryLastStudentId = null;
 let lotteryClassId = null;
+let lotteryMode = "without-replacement";
 
 function ensureLotteryClass(){
   if(lotteryClassId === activeClassId) return;
@@ -1226,14 +1227,22 @@ function drawRandomStudent(){
   }
   const validIds = new Set(students.map(s=>s.id));
   lotteryDrawnIds = lotteryDrawnIds.filter(id=>validIds.has(id));
-  let available = students.filter(s=>!lotteryDrawnIds.includes(s.id));
-  if(!available.length){
-    toast("本輪已全部抽完，請先重置抽籤");
-    return;
+
+  let pool;
+  if(lotteryMode==="with-replacement"){
+    // 抽後放回：每一次都從完整學生名單重新抽取，同一人可重複出現。
+    pool=students;
+  }else{
+    pool=students.filter(s=>!lotteryDrawnIds.includes(s.id));
+    if(!pool.length){
+      toast("本輪已全部抽完，請先重置抽籤");
+      return;
+    }
   }
-  const picked = available[Math.floor(Math.random()*available.length)];
+
+  const picked=pool[Math.floor(Math.random()*pool.length)];
   lotteryDrawnIds.push(picked.id);
-  lotteryLastStudentId = picked.id;
+  lotteryLastStudentId=picked.id;
   renderLottery();
 }
 
@@ -1245,17 +1254,32 @@ function renderLottery(){
   const validIds=new Set(students.map(s=>s.id));
   lotteryDrawnIds=lotteryDrawnIds.filter(id=>validIds.has(id));
   if(lotteryLastStudentId && !validIds.has(lotteryLastStudentId)) lotteryLastStudentId=null;
-  const remaining=Math.max(0, students.length-lotteryDrawnIds.length);
+
+  document.querySelectorAll(".lottery-mode-btn").forEach(btn=>{
+    btn.classList.toggle("active",btn.dataset.lotteryMode===lotteryMode);
+  });
+  const desc=document.getElementById("lotteryDescription");
   const remainingEl=document.getElementById("lotteryRemaining");
   const countEl=document.getElementById("lotteryDrawnCount");
-  if(remainingEl) remainingEl.textContent=`${remaining} 人待抽`;
-  if(countEl) countEl.textContent=`已抽 ${lotteryDrawnIds.length} 人`;
+  if(lotteryMode==="with-replacement"){
+    if(desc) desc.textContent="每次都從全班重新抽取，抽過的學生仍可能再次被抽到。";
+    if(remainingEl) remainingEl.textContent=`全班 ${students.length} 人`;
+    if(countEl) countEl.textContent=`已抽 ${lotteryDrawnIds.length} 次`;
+  }else{
+    const uniqueDrawn=new Set(lotteryDrawnIds).size;
+    const remaining=Math.max(0,students.length-uniqueDrawn);
+    if(desc) desc.textContent="本輪採不重複抽取，抽完後可重置重新開始。";
+    if(remainingEl) remainingEl.textContent=`${remaining} 人待抽`;
+    if(countEl) countEl.textContent=`已抽 ${uniqueDrawn} 人`;
+  }
+
   const last=students.find(s=>s.id===lotteryLastStudentId);
   stage.innerHTML=last
     ? `<div class="lottery-result"><span>${String(last.number).padStart(2,"0")} 號</span><strong>${escapeHtml(last.name)}</strong></div>`
     : students.length
       ? `<div class="lottery-placeholder">按下「抽一位」開始</div>`
       : `<div class="lottery-placeholder">尚未建立學生名單</div>`;
+
   const history=document.getElementById("lotteryHistory");
   if(history){
     const drawn=[...lotteryDrawnIds].reverse().map(id=>students.find(s=>s.id===id)).filter(Boolean);
@@ -1264,7 +1288,10 @@ function renderLottery(){
       : `<div class="empty compact">本輪尚未抽出學生</div>`;
   }
   const drawBtn=document.getElementById("drawStudentBtn");
-  if(drawBtn) drawBtn.disabled=!students.length || remaining===0;
+  if(drawBtn){
+    const noRemaining=lotteryMode==="without-replacement" && students.length>0 && new Set(lotteryDrawnIds).size>=students.length;
+    drawBtn.disabled=!students.length || noRemaining;
+  }
 }
 
 let pomodoroDurationSec=25*60;
@@ -2013,6 +2040,14 @@ const drawStudentBtn=document.getElementById("drawStudentBtn");
 if(drawStudentBtn) drawStudentBtn.addEventListener("click",drawRandomStudent);
 const resetLotteryBtn=document.getElementById("resetLotteryBtn");
 if(resetLotteryBtn) resetLotteryBtn.addEventListener("click",resetLottery);
+document.querySelectorAll(".lottery-mode-btn").forEach(btn=>btn.addEventListener("click",()=>{
+  const nextMode=btn.dataset.lotteryMode;
+  if(nextMode!=="without-replacement" && nextMode!=="with-replacement") return;
+  lotteryMode=nextMode;
+  lotteryDrawnIds=[];
+  lotteryLastStudentId=null;
+  renderLottery();
+}));
 
 document.querySelectorAll(".timer-preset").forEach(btn=>btn.addEventListener("click",()=>{
   document.querySelectorAll(".timer-preset").forEach(x=>x.classList.toggle("active",x===btn));
