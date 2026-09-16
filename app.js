@@ -1,4 +1,4 @@
-const APP_VERSION = "3.29";
+const APP_VERSION = "3.30";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1401,6 +1401,78 @@ function changeGroupScore(groupId, delta){
   if(!data.groupScores || typeof data.groupScores!=="object") data.groupScores = {};
   data.groupScores[groupId] = groupScore(groupId) + delta;
   saveData();
+}
+
+
+function openTransferGroupScores(){
+  normalizeGroups();
+  const groups=data.groups.filter(g=>g.studentIds.length);
+  if(!groups.length){
+    toast("目前沒有可歸分的小組");
+    return;
+  }
+
+  const rows=groups.map((g,i)=>{
+    const members=g.studentIds.map(id=>data.students.find(s=>s.id===id)).filter(Boolean);
+    const score=groupScore(g.id);
+    return `
+      <div class="transfer-group-row">
+        <div>
+          <strong>${escapeHtml(g.name || `第 ${i+1} 組`)}</strong>
+          <div class="item-sub">${members.length} 人</div>
+        </div>
+        <div class="transfer-score ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score>0?"+":""}${score}</div>
+      </div>`;
+  }).join("");
+
+  showModal("小組積分歸分",`
+    <div class="modal-form">
+      <div class="notice-box">
+        按下「確認歸分」後，每位學生會依目前所屬小組取得該組的全部積分。<br>
+        例如第 1 組目前為 +3 分，該組每位學生的個人積分都會增加 3 分；負分也會一併計入。
+      </div>
+      <div class="transfer-group-list">${rows}</div>
+      <label class="transfer-reset-option">
+        <input id="resetGroupsAfterTransfer" type="checkbox" checked>
+        <span>歸分完成後，將所有小組積分歸零</span>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button type="button" class="primary" onclick="confirmTransferGroupScores()">確認歸分</button>
+      </div>
+    </div>
+  `);
+}
+
+function confirmTransferGroupScores(){
+  normalizeGroups();
+  if(!data.scores || typeof data.scores!=="object") data.scores={};
+
+  let affected=0;
+  data.groups.forEach(g=>{
+    const score=groupScore(g.id);
+    if(score===0) return;
+    g.studentIds.forEach(studentId=>{
+      if(!data.students.some(s=>s.id===studentId)) return;
+      data.scores[studentId]=studentScore(studentId)+score;
+      affected++;
+    });
+  });
+
+  if(!affected){
+    toast("目前沒有可歸分的小組積分");
+    return;
+  }
+
+  const shouldReset=document.getElementById("resetGroupsAfterTransfer")?.checked ?? true;
+  if(shouldReset){
+    if(!data.groupScores || typeof data.groupScores!=="object") data.groupScores={};
+    data.groups.forEach(g=>{ data.groupScores[g.id]=0; });
+  }
+
+  saveData();
+  closeModal();
+  toast(`已將小組積分歸分給 ${affected} 位學生`);
 }
 
 function normalizeGroups(){

@@ -1549,3 +1549,13 @@ body::before{
   from{left:100%;transform:translateX(0)}
   to{left:0;transform:translateX(-100%)}
 }
+
+/* v3.30 group score transfer */
+.transfer-group-list{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto}
+.transfer-group-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 13px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.transfer-score{font-size:20px;font-weight:900;white-space:nowrap}
+.transfer-score.positive{color:var(--primary)}
+.transfer-score.negative{color:#c84b4b}
+.transfer-reset-option{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:9px;padding:11px 13px;border-radius:14px;background:#f7f8fc}
+.transfer-reset-option input{width:auto!important;margin-top:3px}
+@media(max-width:620px){#groupScorePanel .group-toolbar{display:grid;grid-template-columns:1fr 1fr}#groupScorePanel .group-toolbar button{width:100%}}
