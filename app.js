@@ -1,4 +1,4 @@
-const APP_VERSION = "3.31";
+const APP_VERSION = "3.32";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -622,10 +622,23 @@ function renderMemoSummary(){
   }
   list.innerHTML=memos.slice(0,4).map(m=>`
     <div class="memo-summary-item">
-      <div class="memo-summary-text">${escapeHtml(m.text)}</div>
-      <div class="memo-summary-deadline ${memoDaysLeft(m.deadline)<0 ? "overdue" : ""}">${escapeHtml(memoDeadlineLabel(m.deadline))}</div>
+      <button class="memo-complete-btn" type="button" onclick="completeMemo('${m.id}')" aria-label="完成並移除 ${escapeAttr(m.text)}" title="完成並移除">✓</button>
+      <div class="memo-summary-main">
+        <div class="memo-summary-text">${escapeHtml(m.text)}</div>
+        <div class="memo-summary-deadline ${memoDaysLeft(m.deadline)<0 ? "overdue" : ""}">${escapeHtml(memoDeadlineLabel(m.deadline))}</div>
+      </div>
     </div>
   `).join("") + (memos.length>4 ? `<div class="memo-summary-more">另有 ${memos.length-4} 項，請至「設定」查看</div>` : "");
+}
+
+function completeMemo(memoId){
+  const memo=(data.memos || []).find(m=>m.id===memoId);
+  if(!memo) return;
+  if(!confirm(`「${memo.text}」已完成並從備忘錄移除嗎？`)) return;
+  data.memos=(data.memos || []).filter(m=>m.id!==memoId);
+  saveData();
+  renderMemoSummary();
+  toast("備忘事項已完成");
 }
 
 function addMemoFromSettings(){

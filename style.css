@@ -1565,3 +1565,11 @@ body::before{
 .lottery-mode-btn{border:1px solid transparent;background:transparent;border-radius:12px;padding:10px 12px;font-weight:850;cursor:pointer;color:var(--muted)}
 .lottery-mode-btn.active{background:#fff;border-color:var(--line);color:var(--text);box-shadow:0 2px 8px rgba(28,39,60,.06)}
 @media(max-width:560px){.lottery-mode-switch{grid-template-columns:1fr}.lottery-mode-btn{width:100%}}
+
+/* v3.32 memo completion */
+.memo-summary-item{display:flex;align-items:flex-start;gap:10px}
+.memo-summary-main{flex:1;min-width:0}
+.memo-complete-btn{flex:0 0 30px;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:#fff;color:var(--muted);font-size:16px;font-weight:900;line-height:1;cursor:pointer;display:grid;place-items:center;transition:.18s ease}
+.memo-complete-btn:hover{border-color:var(--primary);background:var(--primary);color:#fff;transform:scale(1.05)}
+.memo-complete-btn:focus-visible{outline:3px solid rgba(80,110,255,.22);outline-offset:2px}
+@media(max-width:520px){.memo-complete-btn{flex-basis:32px;width:32px;height:32px}}
