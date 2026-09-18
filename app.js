@@ -1,4 +1,4 @@
-const APP_VERSION = "3.34";
+const APP_VERSION = "3.35";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1404,6 +1404,39 @@ let noiseMode="normal", noiseStream=null, noiseAudioContext=null, noiseAnalyser=
 let noiseActive=false, noiseOverSince=0, noiseLastAlert=0, noiseLevel=0;
 let challengeElapsedMs=0, challengeLastTick=0, challengeComplete=false;
 function noiseEl(id){return document.getElementById(id)}
+let noiseBalls=[], noiseBallCtx=null, noiseBallW=0, noiseBallH=0, noiseBallEnergy=0;
+function initNoiseBallPool(){
+  const canvas=noiseEl("noiseBallCanvas"); if(!canvas)return;
+  const rect=canvas.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=Math.max(280,Math.round(rect.width||620)),h=Math.max(180,Math.round(rect.height||260));
+  if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){
+    canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+"px";canvas.style.height=h+"px";
+    noiseBallCtx=canvas.getContext("2d");noiseBallCtx.setTransform(dpr,0,0,dpr,0,0);noiseBallW=w;noiseBallH=h;
+  }
+  if(!noiseBalls.length){
+    const count=w<430?18:26;
+    for(let i=0;i<count;i++){const r=7+Math.random()*9;noiseBalls.push({x:r+Math.random()*(w-r*2),y:r+Math.random()*(h-r*2),vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r,phase:Math.random()*Math.PI*2,hue:185+Math.random()*85})}
+  }
+}
+function drawNoiseBallPool(now,level,warning){
+  initNoiseBallPool();const ctx=noiseBallCtx;if(!ctx)return;
+  const target=.08+Math.pow(level/100,1.25)*3.4;noiseBallEnergy+=(target-noiseBallEnergy)*.055;
+  ctx.clearRect(0,0,noiseBallW,noiseBallH);
+  for(const b of noiseBalls){
+    const jitter=noiseBallEnergy*.018;
+    b.vx+=(Math.sin(now/190+b.phase))*jitter;b.vy+=(Math.cos(now/230+b.phase*1.3))*jitter;
+    const max=.22+noiseBallEnergy*1.25,speed=Math.hypot(b.vx,b.vy)||1;
+    if(speed>max){b.vx=b.vx/speed*max;b.vy=b.vy/speed*max}
+    b.vx*=.998;b.vy*=.998;b.x+=b.vx;b.y+=b.vy;
+    if(b.x<b.r){b.x=b.r;b.vx=Math.abs(b.vx)}if(b.x>noiseBallW-b.r){b.x=noiseBallW-b.r;b.vx=-Math.abs(b.vx)}
+    if(b.y<b.r){b.y=b.r;b.vy=Math.abs(b.vy)}if(b.y>noiseBallH-b.r){b.y=noiseBallH-b.r;b.vy=-Math.abs(b.vy)}
+  }
+  // lightweight collision response
+  for(let a=0;a<noiseBalls.length;a++)for(let b=a+1;b<noiseBalls.length;b++){const A=noiseBalls[a],B=noiseBalls[b],dx=B.x-A.x,dy=B.y-A.y,dist=Math.hypot(dx,dy)||.01,min=A.r+B.r;if(dist<min){const nx=dx/dist,ny=dy/dist,push=(min-dist)/2;A.x-=nx*push;A.y-=ny*push;B.x+=nx*push;B.y+=ny*push;const rel=(B.vx-A.vx)*nx+(B.vy-A.vy)*ny;if(rel<0){A.vx+=rel*nx*.8;A.vy+=rel*ny*.8;B.vx-=rel*nx*.8;B.vy-=rel*ny*.8}}}
+  for(const b of noiseBalls){ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle=warning?`hsla(8,82%,${58+(b.r%8)}%,.9)`:`hsla(${b.hue},72%,62%,.88)`;ctx.fill();ctx.beginPath();ctx.arc(b.x-b.r*.28,b.y-b.r*.32,b.r*.24,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.45)";ctx.fill()}
+  const pool=noiseEl("noiseBallPool");pool?.classList.toggle("warning",warning);if(pool)pool.style.transform=warning?`translate(${Math.sin(now/34)*2}px,${Math.cos(now/41)*2}px)`:"";
+}
+
 function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||65),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
 function renderNoiseTool(){
   noiseEl("challengeBox")?.classList.toggle("hidden",noiseMode!=="challenge"); noiseEl("challengeTargetSetting")?.classList.toggle("hidden",noiseMode!=="challenge");
@@ -1412,7 +1445,7 @@ function renderNoiseTool(){
   if(noiseEl("sensitivityValue")) noiseEl("sensitivityValue").textContent=`${s.sensitivity}%`;
   document.querySelectorAll("[data-sensitivity]").forEach(b=>b.classList.toggle("active",Number(b.dataset.sensitivity)===s.sensitivity));
   if(noiseEl("thresholdValue"))noiseEl("thresholdValue").textContent=`${s.threshold}%`; if(noiseEl("noiseThresholdMark"))noiseEl("noiseThresholdMark").style.left=`${s.threshold}%`;
-  if(noiseEl("challengeTargetLabel"))noiseEl("challengeTargetLabel").textContent=formatNoiseTime(s.target); renderChallengeTime();
+  if(noiseEl("challengeTargetLabel"))noiseEl("challengeTargetLabel").textContent=formatNoiseTime(s.target); renderChallengeTime(); requestAnimationFrame(t=>drawNoiseBallPool(t,noiseActive?noiseLevel:0,false));
 }
 function formatNoiseTime(ms){const sec=Math.floor(ms/1000),m=Math.floor(sec/60),s=sec%60;return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`}
 function renderChallengeTime(){if(noiseEl("challengeElapsed"))noiseEl("challengeElapsed").textContent=formatNoiseTime(challengeElapsedMs)}
@@ -1430,7 +1463,7 @@ async function startNoiseMonitor(){
 }
 function stopNoiseMonitor(){
   if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
-  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";if(noiseEl("noiseOrb")){noiseEl("noiseOrb").style.transform="scale(1) translate(0,0)";noiseEl("noiseOrb").classList.remove("warning")}
+  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
 }
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return; const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
@@ -1438,8 +1471,8 @@ function noiseLoop(now=performance.now()){
   noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5*sensitivity),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){
-  const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill"),orb=noiseEl("noiseOrb");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}%`;
-  if(orb){const shake=Math.max(0,(noiseLevel-15)/85)*8;orb.style.transform=`scale(${1+noiseLevel/260}) translate(${Math.sin(now/47)*shake}px,${Math.cos(now/61)*shake}px)`;orb.classList.toggle("warning",over)}
+  const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}%`;
+  drawNoiseBallPool(now,noiseLevel,over);
   if(over){if(!noiseOverSince)noiseOverSince=now;const held=now-noiseOverSince>=s.hold;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=held?"🔔 音量超過警戒值":"音量偏高…";if(held&&now-noiseLastAlert>=s.cooldown){noiseLastAlert=now;triggerNoiseAlert(s.alertMode)}}else{noiseOverSince=0;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=noiseLevel<35?"很安靜 👍":"音量正常"}
   if(noiseMode==="challenge"&&!challengeComplete){const dt=Math.max(0,now-challengeLastTick);const paused=over&&noiseOverSince&&now-noiseOverSince>=s.hold;if(!paused)challengeElapsedMs+=dt;challengeLastTick=now;if(noiseEl("challengeState"))noiseEl("challengeState").textContent=paused?"⏸ 音量超標，計時暫停":"挑戰進行中";if(challengeElapsedMs>=s.target){challengeElapsedMs=s.target;challengeComplete=true;if(noiseEl("challengeState"))noiseEl("challengeState").textContent="🎉 挑戰成功！";noiseEl("noiseVisual")?.classList.add("challenge-success");setTimeout(()=>noiseEl("noiseVisual")?.classList.remove("challenge-success"),1800);triggerNoiseAlert("both",true)}renderChallengeTime()}else challengeLastTick=now;
 }
