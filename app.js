@@ -1,4 +1,4 @@
-const APP_VERSION = "3.33";
+const APP_VERSION = "3.34";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1404,11 +1404,14 @@ let noiseMode="normal", noiseStream=null, noiseAudioContext=null, noiseAnalyser=
 let noiseActive=false, noiseOverSince=0, noiseLastAlert=0, noiseLevel=0;
 let challengeElapsedMs=0, challengeLastTick=0, challengeComplete=false;
 function noiseEl(id){return document.getElementById(id)}
-function noiseSettings(){return {threshold:Number(noiseEl("noiseThreshold")?.value||65),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
+function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||65),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
 function renderNoiseTool(){
   noiseEl("challengeBox")?.classList.toggle("hidden",noiseMode!=="challenge"); noiseEl("challengeTargetSetting")?.classList.toggle("hidden",noiseMode!=="challenge");
   document.querySelectorAll(".noise-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.noiseMode===noiseMode));
-  const s=noiseSettings(); if(noiseEl("thresholdValue"))noiseEl("thresholdValue").textContent=`${s.threshold}%`; if(noiseEl("noiseThresholdMark"))noiseEl("noiseThresholdMark").style.left=`${s.threshold}%`;
+  const s=noiseSettings();
+  if(noiseEl("sensitivityValue")) noiseEl("sensitivityValue").textContent=`${s.sensitivity}%`;
+  document.querySelectorAll("[data-sensitivity]").forEach(b=>b.classList.toggle("active",Number(b.dataset.sensitivity)===s.sensitivity));
+  if(noiseEl("thresholdValue"))noiseEl("thresholdValue").textContent=`${s.threshold}%`; if(noiseEl("noiseThresholdMark"))noiseEl("noiseThresholdMark").style.left=`${s.threshold}%`;
   if(noiseEl("challengeTargetLabel"))noiseEl("challengeTargetLabel").textContent=formatNoiseTime(s.target); renderChallengeTime();
 }
 function formatNoiseTime(ms){const sec=Math.floor(ms/1000),m=Math.floor(sec/60),s=sec%60;return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`}
@@ -1431,7 +1434,8 @@ function stopNoiseMonitor(){
 }
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return; const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
-  noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
+  const sensitivity=noiseSettings().sensitivity/100;
+  noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5*sensitivity),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){
   const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill"),orb=noiseEl("noiseOrb");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}%`;
@@ -2180,7 +2184,11 @@ document.querySelectorAll(".noise-mode-btn").forEach(btn=>btn.addEventListener("
 noiseEl("noiseStartBtn")?.addEventListener("click",startNoiseMonitor);
 noiseEl("noiseStopBtn")?.addEventListener("click",stopNoiseMonitor);
 noiseEl("challengeResetBtn")?.addEventListener("click",resetChallenge);
-["noiseThreshold","noiseHold","noiseCooldown","noiseAlertMode","challengeTarget"].forEach(id=>noiseEl(id)?.addEventListener("input",renderNoiseTool));
+["noiseSensitivity","noiseThreshold","noiseHold","noiseCooldown","noiseAlertMode","challengeTarget"].forEach(id=>noiseEl(id)?.addEventListener("input",renderNoiseTool));
+document.querySelectorAll("[data-sensitivity]").forEach(btn=>btn.addEventListener("click",()=>{
+  const input=noiseEl("noiseSensitivity");
+  if(input){input.value=btn.dataset.sensitivity;renderNoiseTool()}
+}));
 
 
 renderClassHome();
