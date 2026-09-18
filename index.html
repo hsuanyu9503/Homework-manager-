@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.32" />
+  <link rel="stylesheet" href="style.css?v=3.33" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.32</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.33</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.32</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.33</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -205,6 +205,7 @@
         <button class="score-mode-tab" data-score-mode="lottery">抽籤</button>
         <button class="score-mode-tab" data-score-mode="timer">蕃茄鐘</button>
         <button class="score-mode-tab" data-score-mode="marquee">跑馬燈</button>
+        <button class="score-mode-tab" data-score-mode="noise">音量偵測</button>
       </div>
 
       <div id="individualScorePanel" class="score-mode-panel">
@@ -299,6 +300,40 @@
           </div>
         </div>
       </div>
+
+      <div id="noisePanel" class="score-mode-panel hidden">
+        <div class="tool-card noise-card">
+          <div class="tool-card-head noise-head">
+            <div><div class="tool-kicker">NOISE MONITOR</div><h3>音量偵測</h3><p class="muted">只分析即時相對音量，不錄音、不保存麥克風內容。</p></div>
+            <span class="noise-status" id="noiseStatus">尚未啟動</span>
+          </div>
+          <div class="noise-mode-switch">
+            <button type="button" class="noise-mode-btn active" data-noise-mode="normal">一般模式</button>
+            <button type="button" class="noise-mode-btn" data-noise-mode="challenge">🤫 挑戰模式</button>
+          </div>
+          <div class="noise-visual" id="noiseVisual">
+            <div class="noise-orb-wrap"><div class="noise-orb" id="noiseOrb"></div></div>
+            <div class="noise-message" id="noiseMessage">按下「開始偵測」使用麥克風</div>
+            <div class="noise-meter"><div class="noise-meter-fill" id="noiseMeterFill"></div><div class="noise-threshold-mark" id="noiseThresholdMark"></div></div>
+            <div class="noise-meter-labels"><span>安靜</span><strong id="noiseLevelText">0%</strong><span>較大聲</span></div>
+          </div>
+          <div id="challengeBox" class="challenge-box hidden">
+            <div class="challenge-title">🤫 安靜挑戰</div>
+            <div class="challenge-time"><strong id="challengeElapsed">00:00</strong><span>/</span><span id="challengeTargetLabel">05:00</span></div>
+            <div class="challenge-state" id="challengeState">等待開始偵測</div>
+            <button type="button" class="secondary" id="challengeResetBtn">重新計時</button>
+          </div>
+          <div class="noise-settings-grid">
+            <label><span>警戒閾值 <b id="thresholdValue">65%</b></span><input id="noiseThreshold" type="range" min="20" max="95" value="65"></label>
+            <label><span>超標容許時間</span><select id="noiseHold"><option value="1">1 秒</option><option value="2" selected>2 秒</option><option value="3">3 秒</option><option value="5">5 秒</option></select></label>
+            <label><span>警告冷卻</span><select id="noiseCooldown"><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option></select></label>
+            <label><span>提醒方式</span><select id="noiseAlertMode"><option value="visual">僅畫面</option><option value="both" selected>畫面＋提示音</option></select></label>
+            <label class="challenge-setting hidden" id="challengeTargetSetting"><span>挑戰目標</span><select id="challengeTarget"><option value="60">1 分鐘</option><option value="180">3 分鐘</option><option value="300" selected>5 分鐘</option><option value="600">10 分鐘</option><option value="900">15 分鐘</option></select></label>
+          </div>
+          <div class="noise-actions"><button type="button" class="primary" id="noiseStartBtn">開始偵測</button><button type="button" class="secondary" id="noiseStopBtn" disabled>停止</button></div>
+          <div class="noise-permission-note">瀏覽器會要求麥克風權限。不同裝置的麥克風靈敏度不同，因此此處顯示的是相對音量，不是校正過的實際分貝值。</div>
+        </div>
+      </div>
 </section>
 
 </main>
@@ -317,6 +352,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.32"></script>
+  <script src="app.js?v=3.33"></script>
 </body>
 </html>

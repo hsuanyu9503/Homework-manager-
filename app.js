@@ -1,4 +1,4 @@
-const APP_VERSION = "3.32";
+const APP_VERSION = "3.33";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1204,10 +1204,13 @@ function setScoreMode(mode){
   document.getElementById("lotteryPanel")?.classList.toggle("hidden", mode!=="lottery");
   document.getElementById("timerPanel")?.classList.toggle("hidden", mode!=="timer");
   document.getElementById("marqueePanel")?.classList.toggle("hidden", mode!=="marquee");
+  document.getElementById("noisePanel")?.classList.toggle("hidden", mode!=="noise");
+  if(mode!=="noise") stopNoiseMonitor();
   if(mode==="group") renderGroupScores();
   if(mode==="lottery") renderLottery();
   if(mode==="timer") renderPomodoro();
   if(mode==="marquee") renderMarquee();
+  if(mode==="noise") renderNoiseTool();
 }
 
 
@@ -1394,6 +1397,50 @@ function marqueeDuration(){const speed=document.getElementById("marqueeSpeed")?.
 function renderMarquee(){const input=document.getElementById("marqueeInput"),textEl=document.getElementById("marqueeText"),track=document.getElementById("marqueeTrack"),status=document.getElementById("marqueeStatus");if(!input||!textEl||!track)return;const text=String(input.value||"").trim();textEl.textContent=text||"請輸入跑馬燈文字";track.style.setProperty("--marquee-duration",`${marqueeDuration()}s`);track.classList.toggle("running",marqueeRunning&&!!text);if(status)status.textContent=marqueeRunning&&text?"播放中":"準備顯示";}
 function startMarquee(){if(!String(document.getElementById("marqueeInput")?.value||"").trim()){toast("請先輸入跑馬燈文字");return;}marqueeRunning=true;renderMarquee();}
 function stopMarquee(){marqueeRunning=false;renderMarquee();}
+
+
+// v3.33 classroom tool: microphone noise monitor + quiet challenge
+let noiseMode="normal", noiseStream=null, noiseAudioContext=null, noiseAnalyser=null, noiseFrame=0;
+let noiseActive=false, noiseOverSince=0, noiseLastAlert=0, noiseLevel=0;
+let challengeElapsedMs=0, challengeLastTick=0, challengeComplete=false;
+function noiseEl(id){return document.getElementById(id)}
+function noiseSettings(){return {threshold:Number(noiseEl("noiseThreshold")?.value||65),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
+function renderNoiseTool(){
+  noiseEl("challengeBox")?.classList.toggle("hidden",noiseMode!=="challenge"); noiseEl("challengeTargetSetting")?.classList.toggle("hidden",noiseMode!=="challenge");
+  document.querySelectorAll(".noise-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.noiseMode===noiseMode));
+  const s=noiseSettings(); if(noiseEl("thresholdValue"))noiseEl("thresholdValue").textContent=`${s.threshold}%`; if(noiseEl("noiseThresholdMark"))noiseEl("noiseThresholdMark").style.left=`${s.threshold}%`;
+  if(noiseEl("challengeTargetLabel"))noiseEl("challengeTargetLabel").textContent=formatNoiseTime(s.target); renderChallengeTime();
+}
+function formatNoiseTime(ms){const sec=Math.floor(ms/1000),m=Math.floor(sec/60),s=sec%60;return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`}
+function renderChallengeTime(){if(noiseEl("challengeElapsed"))noiseEl("challengeElapsed").textContent=formatNoiseTime(challengeElapsedMs)}
+function setNoiseMode(mode){noiseMode=mode; resetChallenge(); renderNoiseTool()}
+function resetChallenge(){challengeElapsedMs=0;challengeLastTick=performance.now();challengeComplete=false;renderChallengeTime();if(noiseEl("challengeState"))noiseEl("challengeState").textContent=noiseActive?"挑戰進行中":"等待開始偵測"}
+async function startNoiseMonitor(){
+  if(noiseActive)return;
+  if(!navigator.mediaDevices?.getUserMedia){toast("此瀏覽器不支援麥克風音量偵測");return}
+  try{
+    noiseStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    noiseAudioContext=new (window.AudioContext||window.webkitAudioContext)(); await noiseAudioContext.resume();
+    const source=noiseAudioContext.createMediaStreamSource(noiseStream); noiseAnalyser=noiseAudioContext.createAnalyser(); noiseAnalyser.fftSize=1024; noiseAnalyser.smoothingTimeConstant=.72; source.connect(noiseAnalyser);
+    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();noiseEl("noiseStartBtn").disabled=true;noiseEl("noiseStopBtn").disabled=false;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="偵測中";noiseLoop();
+  }catch(err){console.warn("Microphone unavailable",err);toast("無法使用麥克風，請確認瀏覽器權限");if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="麥克風未授權"}
+}
+function stopNoiseMonitor(){
+  if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
+  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";if(noiseEl("noiseOrb")){noiseEl("noiseOrb").style.transform="scale(1) translate(0,0)";noiseEl("noiseOrb").classList.remove("warning")}
+}
+function noiseLoop(now=performance.now()){
+  if(!noiseActive||!noiseAnalyser)return; const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
+  noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
+}
+function updateNoiseVisual(now){
+  const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill"),orb=noiseEl("noiseOrb");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}%`;
+  if(orb){const shake=Math.max(0,(noiseLevel-15)/85)*8;orb.style.transform=`scale(${1+noiseLevel/260}) translate(${Math.sin(now/47)*shake}px,${Math.cos(now/61)*shake}px)`;orb.classList.toggle("warning",over)}
+  if(over){if(!noiseOverSince)noiseOverSince=now;const held=now-noiseOverSince>=s.hold;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=held?"🔔 音量超過警戒值":"音量偏高…";if(held&&now-noiseLastAlert>=s.cooldown){noiseLastAlert=now;triggerNoiseAlert(s.alertMode)}}else{noiseOverSince=0;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=noiseLevel<35?"很安靜 👍":"音量正常"}
+  if(noiseMode==="challenge"&&!challengeComplete){const dt=Math.max(0,now-challengeLastTick);const paused=over&&noiseOverSince&&now-noiseOverSince>=s.hold;if(!paused)challengeElapsedMs+=dt;challengeLastTick=now;if(noiseEl("challengeState"))noiseEl("challengeState").textContent=paused?"⏸ 音量超標，計時暫停":"挑戰進行中";if(challengeElapsedMs>=s.target){challengeElapsedMs=s.target;challengeComplete=true;if(noiseEl("challengeState"))noiseEl("challengeState").textContent="🎉 挑戰成功！";noiseEl("noiseVisual")?.classList.add("challenge-success");setTimeout(()=>noiseEl("noiseVisual")?.classList.remove("challenge-success"),1800);triggerNoiseAlert("both",true)}renderChallengeTime()}else challengeLastTick=now;
+}
+function triggerNoiseAlert(mode,success=false){noiseEl("noiseVisual")?.classList.add(success?"success-flash":"alert-flash");setTimeout(()=>noiseEl("noiseVisual")?.classList.remove("alert-flash","success-flash"),700);if(mode==="both")playNoiseTone(success)}
+function playNoiseTone(success=false){try{const ctx=noiseAudioContext;if(!ctx)return;const osc=ctx.createOscillator(),gain=ctx.createGain();osc.frequency.value=success?740:520;gain.gain.setValueAtTime(.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.12,ctx.currentTime+.02);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.22);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.24)}catch(e){}}
 
 function studentScore(studentId){
   const value = Number(data.scores?.[studentId] ?? 0);
@@ -2129,6 +2176,12 @@ const marqueeStartEl=document.getElementById("marqueeStartBtn");
 if(marqueeStartEl) marqueeStartEl.addEventListener("click",startMarquee);
 const marqueeStopEl=document.getElementById("marqueeStopBtn");
 if(marqueeStopEl) marqueeStopEl.addEventListener("click",stopMarquee);
+document.querySelectorAll(".noise-mode-btn").forEach(btn=>btn.addEventListener("click",()=>setNoiseMode(btn.dataset.noiseMode)));
+noiseEl("noiseStartBtn")?.addEventListener("click",startNoiseMonitor);
+noiseEl("noiseStopBtn")?.addEventListener("click",stopNoiseMonitor);
+noiseEl("challengeResetBtn")?.addEventListener("click",resetChallenge);
+["noiseThreshold","noiseHold","noiseCooldown","noiseAlertMode","challengeTarget"].forEach(id=>noiseEl(id)?.addEventListener("input",renderNoiseTool));
+
 
 renderClassHome();
 
