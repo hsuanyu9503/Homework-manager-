@@ -1,4 +1,4 @@
-const APP_VERSION = "3.35";
+const APP_VERSION = "3.36";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1414,27 +1414,27 @@ function initNoiseBallPool(){
     noiseBallCtx=canvas.getContext("2d");noiseBallCtx.setTransform(dpr,0,0,dpr,0,0);noiseBallW=w;noiseBallH=h;
   }
   if(!noiseBalls.length){
-    const count=w<430?18:26;
-    for(let i=0;i<count;i++){const r=7+Math.random()*9;noiseBalls.push({x:r+Math.random()*(w-r*2),y:r+Math.random()*(h-r*2),vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r,phase:Math.random()*Math.PI*2,hue:185+Math.random()*85})}
+    const count=w<430?30:48;
+    for(let i=0;i<count;i++){const r=7+Math.random()*11;noiseBalls.push({x:r+Math.random()*(w-r*2),y:r+Math.random()*(h-r*2),vx:(Math.random()-.5)*.5,vy:(Math.random()-.5)*.5,r,phase:Math.random()*Math.PI*2,hue:185+Math.random()*85})}
   }
 }
 function drawNoiseBallPool(now,level,warning){
   initNoiseBallPool();const ctx=noiseBallCtx;if(!ctx)return;
-  const target=.08+Math.pow(level/100,1.25)*3.4;noiseBallEnergy+=(target-noiseBallEnergy)*.055;
+  const target=.16+Math.pow(level/100,1.08)*5.8;noiseBallEnergy+=(target-noiseBallEnergy)*.065;
   ctx.clearRect(0,0,noiseBallW,noiseBallH);
   for(const b of noiseBalls){
-    const jitter=noiseBallEnergy*.018;
+    const jitter=noiseBallEnergy*.027;
     b.vx+=(Math.sin(now/190+b.phase))*jitter;b.vy+=(Math.cos(now/230+b.phase*1.3))*jitter;
-    const max=.22+noiseBallEnergy*1.25,speed=Math.hypot(b.vx,b.vy)||1;
+    const max=.34+noiseBallEnergy*1.7,speed=Math.hypot(b.vx,b.vy)||1;
     if(speed>max){b.vx=b.vx/speed*max;b.vy=b.vy/speed*max}
-    b.vx*=.998;b.vy*=.998;b.x+=b.vx;b.y+=b.vy;
+    b.vx*=.999;b.vy*=.999;b.x+=b.vx;b.y+=b.vy;
     if(b.x<b.r){b.x=b.r;b.vx=Math.abs(b.vx)}if(b.x>noiseBallW-b.r){b.x=noiseBallW-b.r;b.vx=-Math.abs(b.vx)}
     if(b.y<b.r){b.y=b.r;b.vy=Math.abs(b.vy)}if(b.y>noiseBallH-b.r){b.y=noiseBallH-b.r;b.vy=-Math.abs(b.vy)}
   }
   // lightweight collision response
   for(let a=0;a<noiseBalls.length;a++)for(let b=a+1;b<noiseBalls.length;b++){const A=noiseBalls[a],B=noiseBalls[b],dx=B.x-A.x,dy=B.y-A.y,dist=Math.hypot(dx,dy)||.01,min=A.r+B.r;if(dist<min){const nx=dx/dist,ny=dy/dist,push=(min-dist)/2;A.x-=nx*push;A.y-=ny*push;B.x+=nx*push;B.y+=ny*push;const rel=(B.vx-A.vx)*nx+(B.vy-A.vy)*ny;if(rel<0){A.vx+=rel*nx*.8;A.vy+=rel*ny*.8;B.vx-=rel*nx*.8;B.vy-=rel*ny*.8}}}
   for(const b of noiseBalls){ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle=warning?`hsla(8,82%,${58+(b.r%8)}%,.9)`:`hsla(${b.hue},72%,62%,.88)`;ctx.fill();ctx.beginPath();ctx.arc(b.x-b.r*.28,b.y-b.r*.32,b.r*.24,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.45)";ctx.fill()}
-  const pool=noiseEl("noiseBallPool");pool?.classList.toggle("warning",warning);if(pool)pool.style.transform=warning?`translate(${Math.sin(now/34)*2}px,${Math.cos(now/41)*2}px)`:"";
+  const pool=noiseEl("noiseBallPool");pool?.classList.toggle("warning",warning);if(pool)pool.style.transform=warning?`translate(${Math.sin(now/28)*3.5}px,${Math.cos(now/34)*3.5}px)`:"";
 }
 
 function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||65),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
