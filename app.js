@@ -1,4 +1,4 @@
-const APP_VERSION = "3.38";
+const APP_VERSION = "3.39";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1480,7 +1480,7 @@ function stopNoiseMonitor(){
 }
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return; const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
-  const sensitivity=noiseSettings().sensitivity/100;
+  const sensitivity=noiseSettings().sensitivity/10; // v3.39：新 100% = 舊尺度 1000%
   noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5*sensitivity),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){
