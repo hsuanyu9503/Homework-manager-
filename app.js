@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1447,16 +1447,20 @@ function drawNoiseBallPool(now,level,warning){
   initNoiseBallPool();const ctx=noiseBallCtx;if(!ctx)return;
   // 聲音轉為「向上彈力」；安靜時則由重力把球帶回池底。
   const normalized=level/100;
-  const target=Math.pow(normalized,1.12)*1.35;
-  noiseBallEnergy+=(target-noiseBallEnergy)*(target>noiseBallEnergy?.14:.055);
+  const threshold=Math.max(5,noiseSettings().threshold);
+  const proximity=Math.max(0,Math.min(1,level/threshold));
+  // 越接近警戒閾值，額外擾動會非線性升高；達到警戒值時最明顯。
+  const proximityBoost=Math.pow(proximity,2.25);
+  const target=Math.pow(normalized,1.12)*1.05 + proximityBoost*1.35;
+  noiseBallEnergy+=(target-noiseBallEnergy)*(target>noiseBallEnergy?.16:.055);
   ctx.clearRect(0,0,noiseBallW,noiseBallH);
-  const gravity=.075, lift=noiseBallEnergy*.105;
+  const gravity=.075, lift=noiseBallEnergy*(.085+proximityBoost*.055);
   for(const b of noiseBalls){
     // 每顆球的相位略不同，避免整池同步上下移動。
     const pulse=.55+.45*Math.sin(now/155+b.phase);
     b.vy+=gravity-lift*(.55+pulse*.75);
-    b.vx+=Math.sin(now/210+b.phase)*noiseBallEnergy*.012;
-    const maxX=.65+noiseBallEnergy*2.3,maxY=1.7+noiseBallEnergy*5.6;
+    b.vx+=Math.sin(now/210+b.phase)*noiseBallEnergy*(.010+proximityBoost*.024);
+    const maxX=.65+noiseBallEnergy*(2.0+proximityBoost*2.1),maxY=1.7+noiseBallEnergy*(4.8+proximityBoost*3.8);
     b.vx=Math.max(-maxX,Math.min(maxX,b.vx));
     b.vy=Math.max(-maxY,Math.min(maxY,b.vy));
     b.vx*=.996;b.vy*=.999;
@@ -1518,7 +1522,7 @@ function stopNoiseMonitor(){
 }
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return; const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
-  const sensitivity=noiseSettings().sensitivity/10; // v3.39：新 100% = 舊尺度 1000%
+  const sensitivity=noiseSettings().sensitivity/20; // v1.1：新 100% = v1.0 的 50%
   noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5*sensitivity),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=1.0" />
+  <link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.0</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.1</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.0</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.1</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -323,7 +323,7 @@
             <button type="button" class="secondary" id="challengeResetBtn">重新計時</button>
           </div>
           <div class="noise-settings-grid">
-            <label class="noise-sensitivity-setting"><span>麥克風靈敏度 <b id="sensitivityValue">100%</b></span><input id="noiseSensitivity" type="range" min="10" max="200" step="5" value="100"><div class="sensitivity-presets"><button type="button" data-sensitivity="25">低 25%</button><button type="button" data-sensitivity="50">中低 50%</button><button type="button" data-sensitivity="100" class="active">標準 100%</button><button type="button" data-sensitivity="150">高 150%</button><button type="button" data-sensitivity="200">極高 200%</button></div></label>
+            <label class="noise-sensitivity-setting"><span>麥克風靈敏度 <b id="sensitivityValue">100%</b></span><input id="noiseSensitivity" type="range" min="10" max="200" step="5" value="100"><div class="sensitivity-presets"><button type="button" data-sensitivity="50">低 50%</button><button type="button" data-sensitivity="75">中低 75%</button><button type="button" data-sensitivity="100" class="active">標準 100%</button><button type="button" data-sensitivity="150">高 150%</button><button type="button" data-sensitivity="200">極高 200%</button></div></label>
             <label><span>警戒閾值 <b id="thresholdValue">65%</b></span><input id="noiseThreshold" type="range" min="5" max="100" value="65"></label>
             <label><span>超標容許時間</span><select id="noiseHold"><option value="1">1 秒</option><option value="2" selected>2 秒</option><option value="3">3 秒</option><option value="5">5 秒</option></select></label>
             <label><span>警告冷卻</span><select id="noiseCooldown"><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option></select></label>
@@ -352,6 +352,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=1.0"></script>
+  <script src="app.js?v=1.1"></script>
 </body>
 </html>
