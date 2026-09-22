@@ -1,4 +1,4 @@
-const APP_VERSION = "3.36";
+const APP_VERSION = "3.37";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -289,15 +289,6 @@ function openClassSettings(classId){
         <textarea id="homeStudentRosterInput" rows="12" placeholder="每行一位學生，例如：&#10;1 王小明&#10;2 李小華">${escapeHtml(rosterText)}</textarea>
       </label>
 
-      <label>
-        <span>總覽「需留意學生」顯示門檻</span>
-        <div class="threshold-input-row">
-          <input id="overdueDaysInput" type="number" min="0" step="1" value="${d.settings?.overdueDays ?? 2}" required>
-          <span>天</span>
-        </div>
-        <div class="item-sub">作業日期超過此天數仍未完成，才會顯示在總覽的需留意學生清單。</div>
-      </label>
-
       <div class="settings-divider"></div>
 
       <div class="settings-block">
@@ -338,8 +329,6 @@ function openClassSettings(classId){
     const oldByNumber = new Map(d.students.map(s=>[s.number,s]));
 
     d.class.name = newName;
-    d.settings = d.settings || {};
-    d.settings.overdueDays = Math.max(0, Number(document.getElementById("overdueDaysInput").value) || 0);
     d.students = roster.map(s=>{
       const old = oldByNumber.get(s.number);
       return {id: old?.id || uid("s"), number:s.number, name:s.name};
@@ -858,35 +847,59 @@ function renderDashboard(){
     target.innerHTML = activeAssignments.map(a=>dashboardAssignmentHtml(a)).join("");
   }
 
-  const pendingList = document.getElementById("pendingList");
-  const pendingRecords = data.records
-    .filter(r=>["missing","correction"].includes(r.status))
-    .map(r=>({
-      ...r,
-      student:data.students.find(s=>s.id===r.studentId),
-      assignment:data.assignments.find(a=>a.id===r.assignmentId)
-    }))
-    .filter(x=>
-      x.student &&
-      x.assignment &&
-      !x.assignment.dashboardArchived &&
-      daysSinceDate(x.assignment.date) > overdueThresholdDays()
-    )
-    .sort((a,b)=> b.assignment.date.localeCompare(a.assignment.date));
+  // 「繳交一覽」：今天新出的作業隔天才進入批改流程。
+  // 從今天以前、尚未自總覽封存的作業中，找出最近一個作業日期，
+  // 並把該日期的所有作業直接展開成學生狀態管理介面。
+  const submissionTarget = document.getElementById("submissionOverview");
+  const eligibleForSubmission = [...data.assignments]
+    .filter(a=>!a.dashboardArchived && a.date < today)
+    .sort((a,b)=>b.date.localeCompare(a.date) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const latestSubmissionDate = eligibleForSubmission[0]?.date || "";
+  const latestAssignments = latestSubmissionDate
+    ? eligibleForSubmission.filter(a=>a.date===latestSubmissionDate)
+    : [];
 
-  if(!pendingRecords.length){
-    pendingList.innerHTML = `<div class="empty">目前沒有超過 ${overdueThresholdDays()} 天仍未完成、需要留意的學生。</div>`;
-  }else{
-    pendingList.innerHTML = pendingRecords.map(x=>`
-      <div class="item-card clickable" onclick="openAssignment('${x.assignment.id}')">
-        <div class="item-main">
-          <div class="item-title">${escapeHtml(String(x.student.number).padStart(2,"0"))} ${escapeHtml(x.student.name)}</div>
-          <div class="item-sub">${formatDate(x.assignment.date)}｜${escapeHtml(x.assignment.title)}${x.note ? `｜${escapeHtml(x.note)}`:""}</div>
-        </div>
-        <span class="badge ${x.status}">${STATUS_LABEL[x.status]}</span>
-      </div>
-    `).join("");
+  const hint = document.getElementById("submissionOverviewHint");
+  if(hint){
+    hint.textContent = latestSubmissionDate
+      ? `${formatDate(latestSubmissionDate)}｜最近一批應批改作業，可直接修改學生狀態`
+      : "目前沒有今天以前、需要批改的作業";
   }
+  if(!submissionTarget) return;
+  if(!latestAssignments.length){
+    submissionTarget.innerHTML = `<div class="empty cheerful">🎉 目前沒有需要批改的作業。</div>`;
+  }else{
+    submissionTarget.innerHTML = latestAssignments.map(a=>submissionOverviewHtml(a)).join("");
+  }
+}
+
+
+function submissionOverviewHtml(a){
+  const {counts:c,total,percent}=assignmentProgress(a.id);
+  const students=[...data.students].sort((x,y)=>x.number-y.number);
+  return `
+    <article class="submission-overview-card">
+      <div class="submission-overview-title">
+        <div>
+          <div class="item-title">${escapeHtml(a.title)}</div>
+          <div class="item-sub">${formatDate(a.date)} · 完成 ${c.completed} / ${total}</div>
+        </div>
+        <div class="rate-pill ${percent===100 ? "done" : ""}">${percent}%</div>
+      </div>
+      <div class="submission-student-grid">
+        ${students.map(s=>{
+          const r=ensureRecord(a.id,s.id);
+          return `
+            <label class="submission-student-cell">
+              <span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span>
+              <select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態"
+                onchange="setStatus('${a.id}','${s.id}',this)">
+                ${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status ? "selected" : ""}>${STATUS_LABEL[status]}</option>`).join("")}
+              </select>
+            </label>`;
+        }).join("")}
+      </div>
+    </article>`;
 }
 
 function dashboardAssignmentHtml(a){

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=3.36" />
+  <link rel="stylesheet" href="style.css?v=3.37" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.36</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v3.37</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.36</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v3.37</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -82,13 +82,13 @@
       </div>
       <div id="recentAssignments" class="stack"></div>
 
-      <div class="section-head">
+      <div class="section-head submission-overview-head">
         <div>
-          <h3>需留意學生</h3>
-          <p>僅顯示超過設定天數仍未完成的作業紀錄</p>
+          <h3>繳交一覽</h3>
+          <p id="submissionOverviewHint">顯示最近一個應批改日期的作業，可直接管理每位學生的繳交狀況</p>
         </div>
       </div>
-      <div id="pendingList" class="stack"></div>
+      <div id="submissionOverview" class="submission-overview-stack"></div>
     </section>
 
     <section id="assignments" class="page">
@@ -353,6 +353,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=3.36"></script>
+  <script src="app.js?v=3.37"></script>
 </body>
 </html>

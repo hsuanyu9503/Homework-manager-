@@ -1588,3 +1588,14 @@ body::before{
 .noise-ball-pool canvas{display:block;width:100%;height:100%}
 .noise-ball-pool.warning{background:linear-gradient(180deg,rgba(255,239,235,.96),rgba(255,247,239,.94));border-color:rgba(220,80,55,.35)}
 @media(max-width:620px){.noise-ball-pool{height:210px;border-radius:20px}}
+
+/* v3.37 dashboard submission overview */
+.submission-overview-stack{display:grid;gap:14px}
+.submission-overview-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:var(--shadow)}
+.submission-overview-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.submission-student-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.submission-student-cell{min-width:0;padding:10px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.62)}
+.submission-student-name{display:block;font-weight:800;margin-bottom:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.submission-student-cell .status-select{width:100%;min-width:0}
+@media(max-width:900px){.submission-student-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){.submission-student-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.submission-overview-card{padding:12px}}
