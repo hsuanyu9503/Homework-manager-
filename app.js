@@ -1,4 +1,4 @@
-const APP_VERSION = "3.37";
+const APP_VERSION = "3.38";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -847,7 +847,7 @@ function renderDashboard(){
     target.innerHTML = activeAssignments.map(a=>dashboardAssignmentHtml(a)).join("");
   }
 
-  // 「繳交一覽」：今天新出的作業隔天才進入批改流程。
+  // 「近期繳交狀況」：今天新出的作業隔天才進入批改流程。
   // 從今天以前、尚未自總覽封存的作業中，找出最近一個作業日期，
   // 並把該日期的所有作業直接展開成學生狀態管理介面。
   const submissionTarget = document.getElementById("submissionOverview");
