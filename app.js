@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1418,6 +1418,9 @@ let noiseActive=false, noiseOverSince=0, noiseLastAlert=0, noiseLevel=0;
 let challengeElapsedMs=0, challengeLastTick=0, challengeComplete=false;
 function noiseEl(id){return document.getElementById(id)}
 let noiseBalls=[], noiseBallCtx=null, noiseBallW=0, noiseBallH=0, noiseBallEnergy=0;
+let noiseFloor=.006,noiseSmoothedRms=0,noiseIndicator=0,noiseCalibrating=false,noiseCalibrationUntil=0,noiseCalibrationSamples=[];
+let noiseStandard="normal";
+const NOISE_STANDARDS={quiet:55,normal:70,group:85};
 function initNoiseBallPool(){
   const canvas=noiseEl("noiseBallCanvas"); if(!canvas)return;
   const rect=canvas.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);
@@ -1492,20 +1495,32 @@ function drawNoiseBallPool(now,level,warning){
   if(pool)pool.style.transform=warning?`translate(${Math.sin(now/28)*3}px,${Math.cos(now/34)*3}px)`:"";
 }
 
-function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||65),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
+function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||70),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
 function renderNoiseTool(){
   noiseEl("challengeBox")?.classList.toggle("hidden",noiseMode!=="challenge"); noiseEl("challengeTargetSetting")?.classList.toggle("hidden",noiseMode!=="challenge");
   document.querySelectorAll(".noise-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.noiseMode===noiseMode));
   const s=noiseSettings();
   if(noiseEl("sensitivityValue")) noiseEl("sensitivityValue").textContent=`${s.sensitivity}%`;
-  document.querySelectorAll("[data-sensitivity]").forEach(b=>b.classList.toggle("active",Number(b.dataset.sensitivity)===s.sensitivity));
-  if(noiseEl("thresholdValue"))noiseEl("thresholdValue").textContent=`${s.threshold}%`; if(noiseEl("noiseThresholdMark"))noiseEl("noiseThresholdMark").style.left=`${s.threshold}%`;
+  document.querySelectorAll("[data-noise-standard]").forEach(b=>b.classList.toggle("active",b.dataset.noiseStandard===noiseStandard));
+  if(noiseEl("thresholdValue"))noiseEl("thresholdValue").textContent=s.threshold; if(noiseEl("noiseThresholdMark"))noiseEl("noiseThresholdMark").style.left=`${s.threshold}%`;
   if(noiseEl("challengeTargetLabel"))noiseEl("challengeTargetLabel").textContent=formatNoiseTime(s.target); renderChallengeTime(); requestAnimationFrame(t=>drawNoiseBallPool(t,noiseActive?noiseLevel:0,false));
 }
 function formatNoiseTime(ms){const sec=Math.floor(ms/1000),m=Math.floor(sec/60),s=sec%60;return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`}
 function renderChallengeTime(){if(noiseEl("challengeElapsed"))noiseEl("challengeElapsed").textContent=formatNoiseTime(challengeElapsedMs)}
 function setNoiseMode(mode){noiseMode=mode; resetChallenge(); renderNoiseTool()}
 function resetChallenge(){challengeElapsedMs=0;challengeLastTick=performance.now();challengeComplete=false;renderChallengeTime();if(noiseEl("challengeState"))noiseEl("challengeState").textContent=noiseActive?"挑戰進行中":"等待開始偵測"}
+function setNoiseStandard(mode){
+  noiseStandard=mode;
+  if(mode!=="custom"&&NOISE_STANDARDS[mode]){
+    const slider=noiseEl("noiseThreshold");if(slider)slider.value=NOISE_STANDARDS[mode];
+  }
+  renderNoiseTool();
+}
+function startNoiseCalibration(){
+  if(!noiseActive){toast("請先開始音量偵測，再進行環境校正");return}
+  noiseCalibrating=true;noiseCalibrationSamples=[];noiseCalibrationUntil=performance.now()+3000;
+  if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="校正中…請保持環境安靜";
+}
 async function startNoiseMonitor(){
   if(noiseActive)return;
   if(!navigator.mediaDevices?.getUserMedia){toast("此瀏覽器不支援麥克風音量偵測");return}
@@ -1513,7 +1528,9 @@ async function startNoiseMonitor(){
     noiseStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     noiseAudioContext=new (window.AudioContext||window.webkitAudioContext)(); await noiseAudioContext.resume();
     const source=noiseAudioContext.createMediaStreamSource(noiseStream); noiseAnalyser=noiseAudioContext.createAnalyser(); noiseAnalyser.fftSize=1024; noiseAnalyser.smoothingTimeConstant=.72; source.connect(noiseAnalyser);
-    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();noiseEl("noiseStartBtn").disabled=true;noiseEl("noiseStopBtn").disabled=false;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="偵測中";noiseLoop();
+    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();
+    noiseSmoothedRms=0;noiseIndicator=0;noiseCalibrating=true;noiseCalibrationSamples=[];noiseCalibrationUntil=performance.now()+3000;
+    if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="校正中…請保持環境安靜";noiseEl("noiseStartBtn").disabled=true;noiseEl("noiseStopBtn").disabled=false;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="偵測中";noiseLoop();
   }catch(err){console.warn("Microphone unavailable",err);toast("無法使用麥克風，請確認瀏覽器權限");if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="麥克風未授權"}
 }
 function stopNoiseMonitor(){
@@ -1521,14 +1538,47 @@ function stopNoiseMonitor(){
   const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
 }
 function noiseLoop(now=performance.now()){
-  if(!noiseActive||!noiseAnalyser)return; const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
-  const sensitivity=noiseSettings().sensitivity/20; // v1.1：新 100% = v1.0 的 50%
-  noiseLevel=Math.max(0,Math.min(100,Math.round(Math.pow(Math.min(1,rms*5.5*sensitivity),.72)*100))); updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
+  if(!noiseActive||!noiseAnalyser)return;
+  const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);
+  let sum=0;for(const v of arr){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/arr.length);
+
+  if(noiseCalibrating){
+    noiseCalibrationSamples.push(rms);
+    if(now>=noiseCalibrationUntil){
+      const sorted=[...noiseCalibrationSamples].sort((a,b)=>a-b);
+      // 使用中位數降低校正期間偶發聲響的影響。
+      noiseFloor=Math.max(.0015,sorted[Math.floor(sorted.length*.5)]||rms||.006);
+      noiseCalibrating=false;noiseSmoothedRms=noiseFloor;noiseIndicator=0;
+      if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="已完成";
+    }
+    noiseLevel=0;updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop);return;
+  }
+
+  // 第一層：裝置微調；第二層：相對背景噪音；第三層：快升慢降平滑，抑制咳嗽、關門等瞬間尖峰。
+  const trim=noiseSettings().sensitivity/100;
+  const relative=Math.max(0,(rms-noiseFloor)*trim);
+  const attack=relative>noiseSmoothedRms?.18:.045;
+  noiseSmoothedRms+=(relative-noiseSmoothedRms)*attack;
+  const ratio=noiseSmoothedRms/Math.max(.0025,noiseFloor);
+  const targetIndicator=Math.max(0,Math.min(100,Math.pow(Math.min(1,ratio/7.5),.62)*100));
+  const indicatorAttack=targetIndicator>noiseIndicator?.16:.055;
+  noiseIndicator+=(targetIndicator-noiseIndicator)*indicatorAttack;
+  noiseLevel=Math.round(noiseIndicator);
+  updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){
-  const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}%`;
+  const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}`;
   drawNoiseBallPool(now,noiseLevel,over);
-  if(over){if(!noiseOverSince)noiseOverSince=now;const held=now-noiseOverSince>=s.hold;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=held?"🔔 音量超過警戒值":"音量偏高…";if(held&&now-noiseLastAlert>=s.cooldown){noiseLastAlert=now;triggerNoiseAlert(s.alertMode)}}else{noiseOverSince=0;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=noiseLevel<35?"很安靜 👍":"音量正常"}
+  const ratioToLimit=noiseLevel/Math.max(1,s.threshold);
+  let state="安靜",stateClass="quiet";
+  if(ratioToLimit>=1){state="超過警戒",stateClass="over"}
+  else if(ratioToLimit>=.85){state="接近警戒",stateClass="near"}
+  else if(ratioToLimit>=.62){state="偏吵",stateClass="busy"}
+  else if(ratioToLimit>=.35){state="正常",stateClass="normal"}
+  if(noiseEl("noiseStateBadge")){noiseEl("noiseStateBadge").textContent=noiseCalibrating?"環境校正中":state;noiseEl("noiseStateBadge").className=`noise-state-badge ${noiseCalibrating?"calibrating":stateClass}`}
+  if(noiseCalibrating){noiseOverSince=0;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="請保持環境安靜，正在建立背景基準…"}
+  else if(over){if(!noiseOverSince)noiseOverSince=now;const held=now-noiseOverSince>=s.hold;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=held?"🔔 音量超過警戒標準":"接近警戒…";if(held&&now-noiseLastAlert>=s.cooldown){noiseLastAlert=now;triggerNoiseAlert(s.alertMode)}}
+  else{noiseOverSince=0;if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent=state}
   if(noiseMode==="challenge"&&!challengeComplete){const dt=Math.max(0,now-challengeLastTick);const paused=over&&noiseOverSince&&now-noiseOverSince>=s.hold;if(!paused)challengeElapsedMs+=dt;challengeLastTick=now;if(noiseEl("challengeState"))noiseEl("challengeState").textContent=paused?"⏸ 音量超標，計時暫停":"挑戰進行中";if(challengeElapsedMs>=s.target){challengeElapsedMs=s.target;challengeComplete=true;if(noiseEl("challengeState"))noiseEl("challengeState").textContent="🎉 挑戰成功！";noiseEl("noiseVisual")?.classList.add("challenge-success");setTimeout(()=>noiseEl("noiseVisual")?.classList.remove("challenge-success"),1800);triggerNoiseAlert("both",true)}renderChallengeTime()}else challengeLastTick=now;
 }
 function triggerNoiseAlert(mode,success=false){noiseEl("noiseVisual")?.classList.add(success?"success-flash":"alert-flash");setTimeout(()=>noiseEl("noiseVisual")?.classList.remove("alert-flash","success-flash"),700);if(mode==="both")playNoiseTone(success)}
@@ -2273,10 +2323,9 @@ noiseEl("noiseStartBtn")?.addEventListener("click",startNoiseMonitor);
 noiseEl("noiseStopBtn")?.addEventListener("click",stopNoiseMonitor);
 noiseEl("challengeResetBtn")?.addEventListener("click",resetChallenge);
 ["noiseSensitivity","noiseThreshold","noiseHold","noiseCooldown","noiseAlertMode","challengeTarget"].forEach(id=>noiseEl(id)?.addEventListener("input",renderNoiseTool));
-document.querySelectorAll("[data-sensitivity]").forEach(btn=>btn.addEventListener("click",()=>{
-  const input=noiseEl("noiseSensitivity");
-  if(input){input.value=btn.dataset.sensitivity;renderNoiseTool()}
-}));
+document.querySelectorAll("[data-noise-standard]").forEach(btn=>btn.addEventListener("click",()=>setNoiseStandard(btn.dataset.noiseStandard)));
+noiseEl("noiseCalibrateBtn")?.addEventListener("click",startNoiseCalibration);
+noiseEl("noiseThreshold")?.addEventListener("input",()=>{noiseStandard="custom";renderNoiseTool()});
 
 
 renderClassHome();

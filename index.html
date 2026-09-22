@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=1.1" />
+  <link rel="stylesheet" href="style.css?v=1.2" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.1</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.2</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.1</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.2</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -314,7 +314,7 @@
             <div class="noise-ball-pool" id="noiseBallPool"><canvas id="noiseBallCanvas" aria-label="音量球池動畫"></canvas></div>
             <div class="noise-message" id="noiseMessage">按下「開始偵測」使用麥克風</div>
             <div class="noise-meter"><div class="noise-meter-fill" id="noiseMeterFill"></div><div class="noise-threshold-mark" id="noiseThresholdMark"></div></div>
-            <div class="noise-meter-labels"><span>安靜</span><strong id="noiseLevelText">0%</strong><span>較大聲</span></div>
+            <div class="noise-meter-labels"><span>安靜</span><strong id="noiseLevelText">0</strong><span>警戒</span></div><div class="noise-state-badge" id="noiseStateBadge">等待偵測</div>
           </div>
           <div id="challengeBox" class="challenge-box hidden">
             <div class="challenge-title">🤫 安靜挑戰</div>
@@ -322,16 +322,29 @@
             <div class="challenge-state" id="challengeState">等待開始偵測</div>
             <button type="button" class="secondary" id="challengeResetBtn">重新計時</button>
           </div>
+          <div class="noise-calibration-card">
+            <div><strong>環境基準</strong><span id="calibrationStatus">尚未校正</span><p>開始偵測後先安靜 3 秒，讓系統適應目前教室與裝置。</p></div>
+            <button type="button" class="secondary" id="noiseCalibrateBtn">重新校正 3 秒</button>
+          </div>
+          <div class="noise-standard-box">
+            <span class="setting-title">課堂音量標準</span>
+            <div class="noise-standard-presets">
+              <button type="button" data-noise-standard="quiet">🤫 自習</button>
+              <button type="button" data-noise-standard="normal" class="active">✏️ 一般課堂</button>
+              <button type="button" data-noise-standard="group">💬 小組討論</button>
+              <button type="button" data-noise-standard="custom">⚙️ 自訂</button>
+            </div>
+          </div>
           <div class="noise-settings-grid">
-            <label class="noise-sensitivity-setting"><span>麥克風靈敏度 <b id="sensitivityValue">100%</b></span><input id="noiseSensitivity" type="range" min="10" max="200" step="5" value="100"><div class="sensitivity-presets"><button type="button" data-sensitivity="50">低 50%</button><button type="button" data-sensitivity="75">中低 75%</button><button type="button" data-sensitivity="100" class="active">標準 100%</button><button type="button" data-sensitivity="150">高 150%</button><button type="button" data-sensitivity="200">極高 200%</button></div></label>
-            <label><span>警戒閾值 <b id="thresholdValue">65%</b></span><input id="noiseThreshold" type="range" min="5" max="100" value="65"></label>
+            <label><span>警戒標準 <b id="thresholdValue">70</b></span><input id="noiseThreshold" type="range" min="35" max="95" value="70"></label>
+            <label class="noise-sensitivity-setting advanced-noise-setting"><span>進階：麥克風微調 <b id="sensitivityValue">100%</b></span><input id="noiseSensitivity" type="range" min="50" max="150" step="5" value="100"><small>通常維持 100% 即可；只有裝置收音明顯偏弱或偏強時才調整。</small></label>
             <label><span>超標容許時間</span><select id="noiseHold"><option value="1">1 秒</option><option value="2" selected>2 秒</option><option value="3">3 秒</option><option value="5">5 秒</option></select></label>
             <label><span>警告冷卻</span><select id="noiseCooldown"><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option></select></label>
             <label><span>提醒方式</span><select id="noiseAlertMode"><option value="visual">僅畫面</option><option value="both" selected>畫面＋提示音</option></select></label>
             <label class="challenge-setting hidden" id="challengeTargetSetting"><span>挑戰目標</span><select id="challengeTarget"><option value="60">1 分鐘</option><option value="180">3 分鐘</option><option value="300" selected>5 分鐘</option><option value="600">10 分鐘</option><option value="900">15 分鐘</option></select></label>
           </div>
           <div class="noise-actions"><button type="button" class="primary" id="noiseStartBtn">開始偵測</button><button type="button" class="secondary" id="noiseStopBtn" disabled>停止</button></div>
-          <div class="noise-permission-note">瀏覽器會要求麥克風權限。不同裝置的麥克風靈敏度不同，因此此處顯示的是相對音量，不是校正過的實際分貝值。</div>
+          <div class="noise-permission-note">瀏覽器會要求麥克風權限。系統會依目前環境建立背景基準並平滑短暫聲響；畫面顯示的是 Classroom Manager 相對音量指標，不是實際分貝值。</div>
         </div>
       </div>
 </section>
@@ -352,6 +365,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=1.1"></script>
+  <script src="app.js?v=1.2"></script>
 </body>
 </html>
