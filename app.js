@@ -1,4 +1,4 @@
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -82,9 +82,12 @@ function normalizeData(input){
     students:Array.isArray(input?.students) ? input.students : [],
     assignments:Array.isArray(input?.assignments) ? input.assignments : [],
     records:Array.isArray(input?.records) ? input.records : [],
-    contactItems:Array.isArray(input?.contactItems)
+    contactItems:(Array.isArray(input?.contactItems)
       ? input.contactItems
-      : (Array.isArray(input?.contactBook) ? input.contactBook : []),
+      : (Array.isArray(input?.contactBook) ? input.contactBook : [])).map((item,index)=>({
+        ...item,
+        order:Number.isFinite(Number(item?.order)) ? Number(item.order) : index
+      })),
     notices:Array.isArray(input?.notices) ? input.notices : [],
     memos:Array.isArray(input?.memos) ? input.memos : [],
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
@@ -961,7 +964,7 @@ function renderContactBook(){
   if(!input) return;
   if(!input.value) input.value = localDateString();
 
-  let items = [...data.contactItems].sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  let items = [...data.contactItems].sort((a,b)=> b.date.localeCompare(a.date) || (a.order??0)-(b.order??0) || a.createdAt.localeCompare(b.createdAt));
   if(!showAllContactItemsMode){
     items = items.filter(i=>i.date===input.value);
   }
@@ -977,7 +980,7 @@ function renderContactBook(){
     return `
       <div class="contact-card">
         <div class="contact-card-main">
-          <div class="contact-date">${formatDate(i.date)}</div>
+          <div class="contact-date">${formatDate(i.date)} <span class="contact-order-label">第 ${contactOrderIndex(i)+1} 項</span></div>
           <div class="item-title">${escapeHtml(i.title)}</div>
           ${i.note ? `<div class="item-sub">${escapeHtml(i.note)}</div>` : ""}
         </div>
@@ -988,10 +991,47 @@ function renderContactBook(){
             <span>登錄到作業</span>
           </label>
           ${linked ? `<button class="secondary small-btn" onclick="openAssignment('${i.assignmentId}')">查看作業</button>` : ""}
+          <button class="secondary small-btn" onclick="editContactItem('${i.id}')">編輯</button>
+          <button class="secondary small-btn contact-move-btn" onclick="moveContactItem('${i.id}',-1)" ${contactOrderIndex(i)===0?"disabled":""} title="往前移">↑</button>
+          <button class="secondary small-btn contact-move-btn" onclick="moveContactItem('${i.id}',1)" ${contactOrderIndex(i)===contactItemsForDate(i.date).length-1?"disabled":""} title="往後移">↓</button>
           <button class="ghost-danger small-btn" onclick="deleteContactItem('${i.id}')">刪除</button>
         </div>
       </div>`;
   }).join("");
+}
+
+function contactItemsForDate(date){
+  return data.contactItems.filter(i=>i.date===date).sort((a,b)=>(a.order??0)-(b.order??0)||a.createdAt.localeCompare(b.createdAt));
+}
+function normalizeContactOrder(date){
+  contactItemsForDate(date).forEach((item,index)=>item.order=index);
+}
+function contactOrderIndex(item){return Math.max(0,contactItemsForDate(item.date).findIndex(i=>i.id===item.id))}
+function moveContactItem(contactId,direction){
+  const item=data.contactItems.find(i=>i.id===contactId);if(!item)return;
+  const items=contactItemsForDate(item.date),index=items.findIndex(i=>i.id===contactId),target=index+direction;
+  if(index<0||target<0||target>=items.length)return;
+  [items[index].order,items[target].order]=[items[target].order??target,items[index].order??index];
+  normalizeContactOrder(item.date);saveData();renderContactBook();
+}
+function editContactItem(contactId){
+  const item=data.contactItems.find(i=>i.id===contactId);if(!item)return;
+  showModal("編輯聯絡事項",`
+    <form id="editContactItemForm" class="modal-form">
+      <label><span>日期</span><input type="date" id="editContactDate" value="${escapeAttr(item.date)}" required></label>
+      <label><span>事項</span><input id="editContactTitle" value="${escapeAttr(item.title)}" required></label>
+      <label><span>補充說明</span><input id="editContactNote" value="${escapeAttr(item.note||"")}" placeholder="選填"></label>
+      <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary" type="submit">儲存修改</button></div>
+    </form>`);
+  document.getElementById("editContactItemForm").addEventListener("submit",e=>{
+    e.preventDefault();const oldDate=item.date,newDate=document.getElementById("editContactDate").value;
+    item.date=newDate;item.title=document.getElementById("editContactTitle").value.trim();item.note=document.getElementById("editContactNote").value.trim();
+    if(!item.title){toast("請輸入聯絡事項");return}
+    const linked=data.assignments.find(a=>a.id===item.assignmentId);
+    if(linked){linked.date=item.date;linked.title=item.title}
+    if(oldDate!==newDate){normalizeContactOrder(oldDate);item.order=contactItemsForDate(newDate).filter(i=>i.id!==item.id).length}
+    normalizeContactOrder(newDate);saveData();closeModal();renderContactBook();renderAssignments();renderDashboard();toast("聯絡事項已更新");
+  });
 }
 
 function contactDraftRowHtml(index){
@@ -1105,6 +1145,7 @@ function openNewContactItem(){
         subject:"",
         trackAsAssignment:draft.trackAsAssignment,
         assignmentId:null,
+        order:contactItemsForDate(date).length,
         createdAt:new Date().toISOString()
       };
       if(item.trackAsAssignment){
@@ -1199,6 +1240,7 @@ function deleteContactItem(contactId){
     data.records = data.records.filter(r=>r.assignmentId!==linkedAssignment.id);
   }
   data.contactItems = data.contactItems.filter(i=>i.id!==contactId);
+  normalizeContactOrder(item.date);
   saveData();
   toast("聯絡事項已刪除");
 }
@@ -1535,7 +1577,7 @@ async function startNoiseMonitor(){
 }
 function stopNoiseMonitor(){
   if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
-  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
+  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseLevel=0;noiseIndicator=0;noiseSmoothedRms=0;noiseCalibrating=false;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent="0";if(noiseEl("noiseStateBadge")){noiseEl("noiseStateBadge").textContent="等待偵測";noiseEl("noiseStateBadge").className="noise-state-badge"}noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
 }
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return;
