@@ -1,4 +1,4 @@
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2088,6 +2088,25 @@ function updateNote(assignmentId, studentId, note){
   persistActiveClass();
 }
 
+function studentIssueDetailsHtml(history){
+  const groups=[
+    {status:"correction",label:"待訂正",items:history.filter(x=>x.r.status==="correction")},
+    {status:"missing",label:"缺交",items:history.filter(x=>x.r.status==="missing")}
+  ].filter(g=>g.items.length);
+  if(!groups.length) return `<div class="student-issue-clear">目前沒有待訂正或缺交的作業。</div>`;
+  return `<div class="student-issue-details">${groups.map(g=>`
+    <section class="student-issue-group ${g.status}">
+      <div class="student-issue-heading"><span>${g.label}</span><b>${g.items.length} 項</b></div>
+      <div class="student-issue-list">
+        ${g.items.map(x=>`
+          <button type="button" class="student-issue-item" onclick="closeModal();openAssignment('${x.a.id}')">
+            <span class="student-issue-title">${escapeHtml(x.a.title)}</span>
+            <span class="student-issue-date">${formatDate(x.a.date)}</span>
+          </button>`).join("")}
+      </div>
+    </section>`).join("")}</div>`;
+}
+
 function openStudent(studentId){
   const s = data.students.find(x=>x.id===studentId);
   if(!s) return;
@@ -2102,6 +2121,7 @@ function openStudent(studentId){
         <span class="badge missing">缺交 ${history.filter(x=>x.r.status==="missing").length}</span>
         <span class="badge correction">待訂正 ${history.filter(x=>x.r.status==="correction").length}</span>
       </div>
+      ${studentIssueDetailsHtml(history)}
       <div class="tracker-list">
         ${history.length ? history.map(x=>`
           <div class="item-card clickable" onclick="closeModal();openAssignment('${x.a.id}')">

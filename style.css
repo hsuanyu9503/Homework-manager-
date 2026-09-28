@@ -1621,3 +1621,18 @@ body::before{
 .contact-order-label{margin-left:7px;padding:3px 7px;border-radius:999px;background:#fff4cc;color:#806000;font-size:11px}
 .contact-move-btn{min-width:34px;padding-left:8px;padding-right:8px;font-size:16px;line-height:1}
 .contact-move-btn:disabled{opacity:.35;cursor:not-allowed}
+
+/* v1.4 student assignment issue details */
+.student-issue-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0 16px}
+.student-issue-group{border:1px solid var(--line);border-radius:16px;padding:12px;background:rgba(255,255,255,.72);min-width:0}
+.student-issue-group.correction{background:rgba(255,247,220,.66)}
+.student-issue-group.missing{background:rgba(255,235,232,.62)}
+.student-issue-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-weight:900}
+.student-issue-heading b{font-size:.82rem;white-space:nowrap}
+.student-issue-list{display:grid;gap:7px}
+.student-issue-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:1px solid rgba(0,0,0,.07);border-radius:11px;padding:9px 10px;background:rgba(255,255,255,.86);text-align:left;cursor:pointer}
+.student-issue-item:hover{transform:translateY(-1px)}
+.student-issue-title{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.student-issue-date{font-size:.8rem;color:var(--muted);white-space:nowrap}
+.student-issue-clear{margin:14px 0 16px;padding:11px 13px;border-radius:13px;background:#eef8f2;color:#357052;font-weight:800}
+@media(max-width:620px){.student-issue-details{grid-template-columns:1fr}}
