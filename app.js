@@ -1,4 +1,4 @@
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -93,6 +93,12 @@ function normalizeData(input){
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
     groups:Array.isArray(input?.groups) ? input.groups : [],
     groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {},
+    seating:{
+      rows:Math.max(1,Math.min(10,Number(input?.seating?.rows)||5)),
+      cols:Math.max(1,Math.min(10,Number(input?.seating?.cols)||3)),
+      slots:Array.isArray(input?.seating?.slots) ? input.seating.slots : [],
+      view:input?.seating?.view==="student" ? "student" : "teacher"
+    },
     settings:{
       overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2
     }
@@ -514,6 +520,7 @@ function renderAll(){
   renderAssignments();
   renderContactBook();
   renderStudents();
+  renderSeats();
   renderScores();
   renderGroupScores();
   renderLottery();
@@ -1983,6 +1990,74 @@ function resetGroupScores(){
 }
 
 
+
+function normalizeSeating(){
+  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],view:"teacher"};
+  data.seating.rows=Math.max(1,Math.min(10,Number(data.seating.rows)||5));
+  data.seating.cols=Math.max(1,Math.min(10,Number(data.seating.cols)||3));
+  const count=data.seating.rows*data.seating.cols;
+  const valid=new Set(data.students.map(s=>s.id)),used=new Set();
+  const old=Array.isArray(data.seating.slots)?data.seating.slots:[];
+  data.seating.slots=Array.from({length:count},(_,i)=>{
+    const id=old[i];
+    if(id&&valid.has(id)&&!used.has(id)){used.add(id);return id}
+    return null;
+  });
+  data.seating.view=data.seating.view==="student"?"student":"teacher";
+}
+function renderSeats(){
+  const grid=document.getElementById("seatGrid");if(!grid)return;
+  normalizeSeating();
+  const s=data.seating, order=[...Array(s.slots.length).keys()];
+  if(s.view==="student")order.reverse();
+  grid.style.gridTemplateColumns=`repeat(${s.cols},minmax(0,1fr))`;
+  grid.innerHTML=order.map(index=>{
+    const student=data.students.find(x=>x.id===s.slots[index]);
+    return `<div class="seat-slot ${student?"occupied":"empty"}" data-seat-index="${index}" draggable="${student?"true":"false"}">
+      ${student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong>`:`<span>空位</span>`}
+    </div>`;
+  }).join("");
+  const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
+  if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
+  const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
+  grid.querySelectorAll(".seat-slot").forEach(el=>{
+    el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
+    el.addEventListener("dragend",()=>el.classList.remove("dragging"));
+    el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drag-over")});
+    el.addEventListener("dragleave",()=>el.classList.remove("drag-over"));
+    el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("drag-over");const from=Number(e.dataTransfer.getData("text/plain")),to=Number(el.dataset.seatIndex);moveSeat(from,to)});
+  });
+}
+function moveSeat(from,to){
+  normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;
+  [data.seating.slots[from],data.seating.slots[to]]=[data.seating.slots[to],data.seating.slots[from]];
+  saveData();
+}
+function applySeatGrid(){
+  normalizeSeating();
+  const rows=Math.max(1,Math.min(10,Number(document.getElementById("seatRows")?.value)||5));
+  const cols=Math.max(1,Math.min(10,Number(document.getElementById("seatCols")?.value)||3));
+  if(rows*cols<data.students.length&&!confirm(`目前只有 ${rows*cols} 個座位，但班上有 ${data.students.length} 位學生。仍要套用嗎？`))return;
+  data.seating.rows=rows;data.seating.cols=cols;normalizeSeating();saveData();
+}
+function randomizeSeats(){
+  normalizeSeating();const count=data.seating.rows*data.seating.cols;
+  if(count<data.students.length){toast("座位數不足，請先增加列數或欄數");return}
+  const ids=data.students.map(s=>s.id);
+  for(let i=ids.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[ids[i],ids[k]]=[ids[k],ids[i]]}
+  const slots=Array(count).fill(null),positions=[...Array(count).keys()];
+  for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
+  ids.forEach((id,i)=>slots[positions[i]]=id);data.seating.slots=slots;saveData();
+}
+function clearSeats(){
+  if(!confirm("確定要清空目前座位安排嗎？"))return;
+  normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
+}
+function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
+function toggleSeatPresentation(){
+  const room=document.getElementById("seatRoom");if(!room)return;
+  room.classList.toggle("presentation");document.getElementById("seatPresentationBtn").textContent=room.classList.contains("presentation")?"結束展示":"展示模式";
+}
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
   let students = [...data.students].sort((a,b)=>a.number-b.number);
@@ -2394,3 +2469,10 @@ renderClassHome();
 
 startDateRolloverGuards();
 
+
+
+document.getElementById("applySeatGridBtn")?.addEventListener("click",applySeatGrid);
+document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSeats);
+document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
+document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
+document.getElementById("seatPresentationBtn")?.addEventListener("click",toggleSeatPresentation);
