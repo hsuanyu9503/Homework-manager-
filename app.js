@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.6";
+const APP_VERSION = "2.0.9";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2053,65 +2053,126 @@ function openSeatSettings(){
     <div class="seat-setting-note">「隨機分配」會自動套用所有已啟用的隱藏規則。</div>
   </div>`);
 }
+function seatRuleKindLabel(kind){
+  return {around8:"周圍八格不相鄰",fixedSeat:"指定特定座位",front2:"指定坐前兩排",noCorner:"不能坐角落",back2:"指定坐後兩排",horizontalAdjacent:"左右相鄰"}[kind]||"規則";
+}
+function seatRuleTargetLabel(r){
+  if(r.type==="tag")return `標籤：${escapeHtml(r.tag||"")}`;
+  const names=(r.studentIds||[]).map(id=>data.students.find(s=>s.id===id)?.name).filter(Boolean);
+  return names.length?escapeHtml(names.join("、")):`${(r.studentIds||[]).length} 位學生`;
+}
+function seatRuleSeatOptions(selectedIndex=""){
+  normalizeSeating();const {rows,cols,blocked}=data.seating;let html="";
+  for(let i=0;i<rows*cols;i++){
+    const row=Math.floor(i/cols)+1,col=i%cols+1,isBlocked=blocked[i]===true;
+    html+=`<option value="${i}" ${String(i)===String(selectedIndex)?"selected":""} ${isBlocked?"disabled":""}>第 ${row} 排・第 ${col} 位${isBlocked?"（已封鎖）":""}</option>`;
+  }
+  return html;
+}
+function updateSeatRuleFormUI(){
+  const type=document.getElementById("seatRuleType"),kind=document.getElementById("seatRuleKind");
+  if(!type||!kind)return;
+  const group=document.getElementById("seatRuleGroupBox"),tag=document.getElementById("seatRuleTagBox"),fixed=document.getElementById("seatRuleFixedBox"),hint=document.getElementById("seatRuleTargetHint");
+  group.style.display=type.value==="group"?"block":"none";
+  tag.style.display=type.value==="tag"?"block":"none";
+  fixed.style.display=kind.value==="fixedSeat"?"block":"none";
+  if(hint)hint.textContent=kind.value==="fixedSeat"?"指定特定座位需選擇 1 位學生。":kind.value==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生；多人時會安排在同一排連續座位。":"可選擇 1 位以上學生，或改用學生標籤。";
+  if(kind.value==="fixedSeat"&&type.value==="tag"){type.value="group";group.style.display="block";tag.style.display="none"}
+}
+function seatRuleKindOptions(selected=""){
+  return [
+    ["around8","周圍八格不相鄰"],
+    ["fixedSeat","指定特定座位"],
+    ["front2","指定坐前兩排"],
+    ["noCorner","不能坐角落"],
+    ["back2","指定坐後兩排"],
+    ["horizontalAdjacent","左右相鄰"]
+  ].map(([v,t])=>`<option value="${v}" ${selected===v?"selected":""}>${t}</option>`).join("");
+}
 function openSeatRules(){
-  normalizeSeating();const rules=data.seating.rules;
+  normalizeSeating();
+  // v2.0.7：舊版「左右不相鄰／前後左右不相鄰」正式退場，不再參與分配。
+  data.seating.rules=data.seating.rules.filter(r=>!["horizontal","orthogonal","front"].includes(r.kind));
+  const rules=data.seating.rules;
   showModal("隱藏分配規則",`
     <p class="muted">規則只供教師分配座位使用，不會出現在展示模式或學生視角。</p>
     <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回座位區設定</button><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
-    <div class="seat-rule-list">${rules.length?rules.map(r=>`<div class="seat-rule-card"><div><strong>${escapeHtml(r.name||"未命名規則")}</strong><div class="item-sub">${r.type==="tag"?`標籤：${escapeHtml(r.tag||"")}`:`${(r.studentIds||[]).length} 位學生`}｜${r.kind==="around8"?"周圍八格不相鄰":r.kind==="orthogonal"?"前後左右不相鄰":r.kind==="horizontal"?"左右不相鄰":r.kind==="front"?"優先前排":"規則"}</div></div><label class="rule-toggle"><input type="checkbox" ${r.enabled!==false?"checked":""} onchange="toggleSeatRule('${r.id}',this.checked)">啟用</label><button class="secondary" onclick="editSeatRule('${r.id}')">編輯</button><button class="secondary" onclick="deleteSeatRule('${r.id}')">刪除</button></div>`).join(""):`<div class="empty">尚未建立分配規則。</div>`}</div>`);
+    <div class="seat-rule-list">${rules.length?rules.map(r=>`<div class="seat-rule-card"><div><strong>${escapeHtml(r.name||"未命名規則")}</strong><div class="item-sub">${seatRuleTargetLabel(r)}｜${seatRuleKindLabel(r.kind)}${r.kind==="fixedSeat"&&Number.isInteger(Number(r.seatIndex))?`（${Math.floor(Number(r.seatIndex)/data.seating.cols)+1}排${Number(r.seatIndex)%data.seating.cols+1}位）`:""}</div></div><label class="rule-toggle"><input type="checkbox" ${r.enabled!==false?"checked":""} onchange="toggleSeatRule('${r.id}',this.checked)">啟用</label><button class="secondary" onclick="editSeatRule('${r.id}')">編輯</button><button class="secondary" onclick="deleteSeatRule('${r.id}')">刪除</button></div>`).join(""):`<div class="empty">尚未建立分配規則。</div>`}</div>`);
+}
+function seatRuleFormMarkup(r=null){
+  const tags=allStudentTags(),type=r?.type||"group";
+  return `<form id="${r?"seatRuleEditForm":"seatRuleForm"}" class="modal-form">
+    <label><span>規則名稱</span><input id="seatRuleName" value="${escapeHtml(r?.name||"")}" placeholder="例如：小明坐前兩排" required></label>
+    <label><span>規則</span><select id="seatRuleKind">${seatRuleKindOptions(r?.kind||"around8")}</select></label>
+    <label><span>套用方式</span><select id="seatRuleType"><option value="group" ${type==="group"?"selected":""}>指定學生</option><option value="tag" ${type==="tag"?"selected":""}>依學生標籤</option></select></label>
+    <div id="seatRuleGroupBox" style="${type==="tag"?"display:none":""}"><span class="setting-title">選擇學生</span><div id="seatRuleTargetHint" class="item-sub"></div><div class="rule-student-grid">${seatingStudentOptions(r?.studentIds||[])}</div></div>
+    <label id="seatRuleTagBox" style="${type==="tag"?"":"display:none"}"><span>學生標籤</span><select id="seatRuleTag">${tags.map(t=>`<option ${t===r?.tag?"selected":""}>${escapeHtml(t)}</option>`).join("")}</select></label>
+    <label id="seatRuleFixedBox" style="${r?.kind==="fixedSeat"?"":"display:none"}"><span>指定座位</span><select id="seatRuleFixedSeat">${seatRuleSeatOptions(r?.seatIndex??"")}</select></label>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="openSeatRules()">取消</button><button class="primary">${r?"儲存修改":"建立規則"}</button></div>
+  </form>`;
+}
+function readSeatRuleForm(){
+  const type=document.getElementById("seatRuleType").value,kind=document.getElementById("seatRuleKind").value;
+  const ids=[...document.querySelectorAll("#seatRuleGroupBox input:checked")].map(x=>x.value);
+  const tag=document.getElementById("seatRuleTag")?.value||"";
+  const seatIndex=kind==="fixedSeat"?Number(document.getElementById("seatRuleFixedSeat").value):null;
+  if(type==="group"){
+    const min=kind==="horizontalAdjacent"?2:1,max=kind==="fixedSeat"?1:Infinity;
+    if(ids.length<min){toast(kind==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生":"請至少選擇 1 位學生");return null}
+    if(ids.length>max){toast("指定特定座位一次只能選擇 1 位學生");return null}
+  }
+  if(type==="tag"&&!tag){toast("請先替學生建立標籤");return null}
+  if(kind==="fixedSeat"&&type!=="group"){toast("指定特定座位請直接選擇 1 位學生");return null}
+  if(kind==="fixedSeat"&&data.seating.blocked[seatIndex]){toast("指定的座位目前已封鎖");return null}
+  return {name:document.getElementById("seatRuleName").value.trim(),type,studentIds:ids,tag,kind,seatIndex};
+}
+function bindSeatRuleForm(formId,onSubmit){
+  const type=document.getElementById("seatRuleType"),kind=document.getElementById("seatRuleKind");
+  type.addEventListener("change",updateSeatRuleFormUI);kind.addEventListener("change",updateSeatRuleFormUI);updateSeatRuleFormUI();
+  document.getElementById(formId).addEventListener("submit",e=>{e.preventDefault();const v=readSeatRuleForm();if(v)onSubmit(v)});
 }
 function openNewSeatRule(){
-  const tags=allStudentTags();
-  showModal("新增分配規則",`<form id="seatRuleForm" class="modal-form">
-    <label><span>規則名稱</span><input id="seatRuleName" placeholder="例如：容易聊天彼此分開" required></label>
-    <label><span>套用方式</span><select id="seatRuleType"><option value="group">指定學生群組</option><option value="tag">依學生標籤</option></select></label>
-    <div id="seatRuleGroupBox"><span class="setting-title">選擇學生（至少 2 人）</span><div class="rule-student-grid">${seatingStudentOptions()}</div></div>
-    <label id="seatRuleTagBox" style="display:none"><span>學生標籤</span><select id="seatRuleTag">${tags.map(t=>`<option>${escapeHtml(t)}</option>`).join("")}</select></label>
-    <label><span>規則</span><select id="seatRuleKind"><option value="horizontal">左右不相鄰</option><option value="orthogonal">前後左右不相鄰</option><option value="around8">周圍八格不相鄰</option><option value="front">優先前排（軟性規則）</option></select></label>
-    <div class="modal-actions"><button type="button" class="secondary" onclick="openSeatRules()">取消</button><button class="primary">建立規則</button></div>
-  </form>`);
-  const type=document.getElementById("seatRuleType");type.addEventListener("change",()=>{document.getElementById("seatRuleGroupBox").style.display=type.value==="group"?"block":"none";document.getElementById("seatRuleTagBox").style.display=type.value==="tag"?"block":"none"});
-  document.getElementById("seatRuleForm").addEventListener("submit",e=>{e.preventDefault();const type=document.getElementById("seatRuleType").value,ids=[...document.querySelectorAll("#seatRuleGroupBox input:checked")].map(x=>x.value),tag=document.getElementById("seatRuleTag").value,kind=document.getElementById("seatRuleKind").value;if(type==="group"&&ids.length<2){toast("群組規則至少選擇 2 位學生");return}if(type==="tag"&&!tag){toast("請先替學生建立標籤");return}data.seating.rules.push({id:uid("sr"),name:document.getElementById("seatRuleName").value.trim(),type,studentIds:ids,tag,kind,enabled:true});saveData();openSeatRules()});
+  showModal("新增分配規則",seatRuleFormMarkup());
+  bindSeatRuleForm("seatRuleForm",v=>{data.seating.rules.push({id:uid("sr"),...v,enabled:true});saveData();openSeatRules()});
 }
-
 function editSeatRule(id){
   const r=data.seating.rules.find(x=>x.id===id);if(!r)return;
-  const tags=allStudentTags();
-  showModal("編輯分配規則",`<form id="seatRuleEditForm" class="modal-form">
-    <label><span>規則名稱</span><input id="seatRuleName" value="${escapeHtml(r.name||"")}" required></label>
-    <label><span>套用方式</span><select id="seatRuleType"><option value="group" ${r.type==="group"?"selected":""}>指定學生群組</option><option value="tag" ${r.type==="tag"?"selected":""}>依學生標籤</option></select></label>
-    <div id="seatRuleGroupBox" style="${r.type==="tag"?"display:none":""}"><span class="setting-title">選擇學生（至少 2 人）</span><div class="rule-student-grid">${seatingStudentOptions(r.studentIds||[])}</div></div>
-    <label id="seatRuleTagBox" style="${r.type==="tag"?"":"display:none"}"><span>學生標籤</span><select id="seatRuleTag">${tags.map(t=>`<option ${t===r.tag?"selected":""}>${escapeHtml(t)}</option>`).join("")}</select></label>
-    <label><span>規則</span><select id="seatRuleKind"><option value="horizontal" ${r.kind==="horizontal"?"selected":""}>左右不相鄰</option><option value="orthogonal" ${r.kind==="orthogonal"?"selected":""}>前後左右不相鄰</option><option value="around8" ${r.kind==="around8"?"selected":""}>周圍八格不相鄰</option><option value="front" ${r.kind==="front"?"selected":""}>優先前排（軟性規則）</option></select></label>
-    <div class="modal-actions"><button type="button" class="secondary" onclick="openSeatRules()">取消</button><button class="primary">儲存修改</button></div>
-  </form>`);
-  const type=document.getElementById("seatRuleType");
-  type.addEventListener("change",()=>{document.getElementById("seatRuleGroupBox").style.display=type.value==="group"?"block":"none";document.getElementById("seatRuleTagBox").style.display=type.value==="tag"?"block":"none"});
-  document.getElementById("seatRuleEditForm").addEventListener("submit",e=>{
-    e.preventDefault();const type=document.getElementById("seatRuleType").value,ids=[...document.querySelectorAll("#seatRuleGroupBox input:checked")].map(x=>x.value),tag=document.getElementById("seatRuleTag").value,kind=document.getElementById("seatRuleKind").value;
-    if(type==="group"&&ids.length<2){toast("群組規則至少選擇 2 位學生");return}
-    if(type==="tag"&&!tag){toast("請先替學生建立標籤");return}
-    Object.assign(r,{name:document.getElementById("seatRuleName").value.trim(),type,studentIds:ids,tag,kind});
-    saveData();openSeatRules();
-  });
+  showModal("編輯分配規則",seatRuleFormMarkup(r));
+  bindSeatRuleForm("seatRuleEditForm",v=>{Object.assign(r,v);saveData();openSeatRules()});
 }
 function toggleSeatRule(id,enabled){const r=data.seating.rules.find(x=>x.id===id);if(r){r.enabled=enabled;saveData();openSeatRules()}}
 function deleteSeatRule(id){if(!confirm("確定刪除這條分配規則嗎？"))return;data.seating.rules=data.seating.rules.filter(x=>x.id!==id);saveData();openSeatRules()}
 function seatCoords(i,cols){return {r:Math.floor(i/cols),c:i%cols}}
+function seatRuleIds(rule){
+  return rule.type==="tag"?data.students.filter(s=>(s.tags||[]).includes(rule.tag)).map(s=>s.id):(rule.studentIds||[]);
+}
 function violatesSeatRules(slots){
-  const cols=data.seating.cols,position={};slots.forEach((id,i)=>{if(id)position[id]=i});
-  for(const rule of data.seating.rules.filter(r=>r.enabled!==false&&r.kind!=="front")){
-    const ids=rule.type==="tag"?data.students.filter(s=>(s.tags||[]).includes(rule.tag)).map(s=>s.id):(rule.studentIds||[]);
-    for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){if(position[ids[a]]==null||position[ids[b]]==null)continue;const A=seatCoords(position[ids[a]],cols),B=seatCoords(position[ids[b]],cols),dr=Math.abs(A.r-B.r),dc=Math.abs(A.c-B.c);if(rule.kind==="horizontal"&&dr===0&&dc===1)return true;if(rule.kind==="orthogonal"&&dr+dc===1)return true;if(rule.kind==="around8"&&Math.max(dr,dc)===1)return true}
-  }return false;
+  const cols=data.seating.cols,rows=data.seating.rows,position={};slots.forEach((id,i)=>{if(id)position[id]=i});
+  for(const rule of data.seating.rules.filter(r=>r.enabled!==false)){
+    const ids=seatRuleIds(rule).filter(id=>position[id]!=null);
+    if(rule.kind==="around8"){
+      for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){const A=seatCoords(position[ids[a]],cols),B=seatCoords(position[ids[b]],cols);if(Math.max(Math.abs(A.r-B.r),Math.abs(A.c-B.c))===1)return true}
+    }else if(rule.kind==="fixedSeat"){
+      if(ids.length&&position[ids[0]]!==Number(rule.seatIndex))return true;
+    }else if(rule.kind==="front2"){
+      if(ids.some(id=>seatCoords(position[id],cols).r>Math.min(1,rows-1)))return true;
+    }else if(rule.kind==="back2"){
+      if(ids.some(id=>seatCoords(position[id],cols).r<Math.max(0,rows-2)))return true;
+    }else if(rule.kind==="noCorner"){
+      const corners=new Set([0,cols-1,(rows-1)*cols,rows*cols-1]);
+      if(ids.some(id=>corners.has(position[id])))return true;
+    }else if(rule.kind==="horizontalAdjacent"){
+      if(ids.length>=2){
+        const coords=ids.map(id=>seatCoords(position[id],cols)).sort((a,b)=>a.c-b.c);
+        if(coords.some(x=>x.r!==coords[0].r))return true;
+        for(let i=1;i<coords.length;i++)if(coords[i].c!==coords[i-1].c+1)return true;
+      }
+    }
+  }
+  return false;
 }
-function seatSoftScore(slots){
-  const cols=data.seating.cols,rows=data.seating.rows;let score=0;
-  for(const rule of data.seating.rules.filter(r=>r.enabled!==false&&r.kind==="front")){
-    const ids=new Set(rule.type==="tag"?data.students.filter(s=>(s.tags||[]).includes(rule.tag)).map(s=>s.id):(rule.studentIds||[]));
-    slots.forEach((id,i)=>{if(ids.has(id)){const row=Math.floor(i/cols);score+=Math.max(0,(rows-1)-row)}})
-  }return score;
-}
+function seatSoftScore(){return 0}
+
 function createSeatHistorySnapshot(label="手動儲存"){
   normalizeSeating();if(!data.seating.slots.some(Boolean))return false;
   data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots],blocked:[...data.seating.blocked]});
@@ -2231,15 +2292,175 @@ function applySeatGrid(){
   if(rows*cols<data.students.length&&!confirm(`目前只有 ${rows*cols} 個座位，但班上有 ${data.students.length} 位學生。仍要套用嗎？`))return;
   data.seating.rows=rows;data.seating.cols=cols;normalizeSeating();saveData();
 }
-function randomizeSeats(){
-  normalizeSeating();const count=data.seating.rows*data.seating.cols,available=[...Array(count).keys()].filter(i=>!data.seating.blocked[i]);if(available.length<data.students.length){toast(`可分配座位不足：目前有 ${available.length} 個未封鎖座位，班上有 ${data.students.length} 位學生`);return}
-  const old=[...data.seating.slots],ids=data.students.map(s=>s.id);let best=null,bestScore=-Infinity;
-  for(let attempt=0;attempt<1200;attempt++){
-    const people=[...ids];for(let i=people.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[people[i],people[k]]=[people[k],people[i]]}
-    const positions=[...available];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
-    const slots=Array(count).fill(null);people.forEach((id,i)=>slots[positions[i]]=id);if(violatesSeatRules(slots))continue;const score=seatSoftScore(slots);if(score>bestScore){best=slots;bestScore=score}
+function normalizeLegacySeatRules(){
+  normalizeSeating();
+  const before=data.seating.rules.length;
+  data.seating.rules=data.seating.rules.filter(r=>!["horizontal","orthogonal","front"].includes(r.kind));
+  return data.seating.rules.length!==before;
+}
+function shuffleArray(arr){
+  const out=[...arr];
+  for(let i=out.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[out[i],out[k]]=[out[k],out[i]]}
+  return out;
+}
+function seatAllowedByIndividualRules(studentId,index,rules,rows,cols){
+  const rc=seatCoords(index,cols);
+  for(const rule of rules){
+    const ids=seatRuleIds(rule);
+    if(!ids.includes(studentId))continue;
+    if(rule.kind==="fixedSeat"&&index!==Number(rule.seatIndex))return false;
+    if(rule.kind==="front2"&&rc.r>Math.min(1,rows-1))return false;
+    if(rule.kind==="back2"&&rc.r<Math.max(0,rows-2))return false;
+    if(rule.kind==="noCorner"){
+      const corners=new Set([0,cols-1,(rows-1)*cols,rows*cols-1]);
+      if(corners.has(index))return false;
+    }
   }
-  if(!best){toast("目前座位格局與啟用規則無法產生符合條件的安排，請調整規則。");return}
+  return true;
+}
+function seatAround8Conflict(studentId,index,slots,rules,cols){
+  const A=seatCoords(index,cols);
+  for(const rule of rules.filter(r=>r.kind==="around8")){
+    const ids=seatRuleIds(rule);if(!ids.includes(studentId))continue;
+    for(let i=0;i<slots.length;i++){
+      if(!slots[i]||!ids.includes(slots[i]))continue;
+      const B=seatCoords(i,cols);
+      if(Math.max(Math.abs(A.r-B.r),Math.abs(A.c-B.c))===1)return true;
+    }
+  }
+  return false;
+}
+function buildAdjacentCandidates(ids,availableSet,rules,rows,cols){
+  const candidates=[];
+  for(let r=0;r<rows;r++){
+    for(let start=0;start<=cols-ids.length;start++){
+      const seats=Array.from({length:ids.length},(_,i)=>r*cols+start+i);
+      if(seats.every(i=>availableSet.has(i)))candidates.push(seats);
+    }
+  }
+  return shuffleArray(candidates);
+}
+function solveSeatAssignment(){
+  normalizeSeating();normalizeLegacySeatRules();
+  const {rows,cols,blocked}=data.seating,count=rows*cols;
+  const rules=data.seating.rules.filter(r=>r.enabled!==false);
+  const students=data.students.map(s=>s.id),studentSet=new Set(students);
+  const slots=Array(count).fill(null);
+  const available=new Set([...Array(count).keys()].filter(i=>blocked[i]!==true));
+  if(available.size<students.length)return null;
+
+  // 將所有規則先正規化成「學生 -> 個別限制」與相鄰群組。
+  const fixed=new Map(),aroundGroups=[],adjacentGroups=[];
+  for(const rule of rules){
+    const ids=seatRuleIds(rule).filter(id=>studentSet.has(id));
+    if(rule.kind==="fixedSeat"){
+      if(ids.length!==1)return null;
+      const idx=Number(rule.seatIndex),id=ids[0];
+      if(!Number.isInteger(idx)||idx<0||idx>=count||blocked[idx])return null;
+      if(fixed.has(id)&&fixed.get(id)!==idx)return null;
+      fixed.set(id,idx);
+    }else if(rule.kind==="around8"&&ids.length>1)aroundGroups.push(new Set(ids));
+    else if(rule.kind==="horizontalAdjacent"&&ids.length>1)adjacentGroups.push([...new Set(ids)]);
+  }
+
+  // 同一座位不可指定給不同學生。
+  const fixedSeatOwner=new Map();
+  for(const [id,idx] of fixed){
+    if(fixedSeatOwner.has(idx)&&fixedSeatOwner.get(idx)!==id)return null;
+    fixedSeatOwner.set(idx,id);
+  }
+
+  function individualAllowed(id,idx){
+    if(fixed.has(id)&&fixed.get(id)!==idx)return false;
+    return seatAllowedByIndividualRules(id,idx,rules,rows,cols);
+  }
+  function aroundConflict(id,idx){
+    const A=seatCoords(idx,cols);
+    for(const group of aroundGroups){
+      if(!group.has(id))continue;
+      for(let i=0;i<slots.length;i++){
+        if(!slots[i]||!group.has(slots[i]))continue;
+        const B=seatCoords(i,cols);
+        if(Math.max(Math.abs(A.r-B.r),Math.abs(A.c-B.c))===1)return true;
+      }
+    }
+    return false;
+  }
+  function adjacentFeasible(group){
+    const placed=group.filter(id=>slots.includes(id));
+    if(!placed.length)return true;
+    const positions=placed.map(id=>slots.indexOf(id)),coords=positions.map(i=>seatCoords(i,cols));
+    if(coords.some(x=>x.r!==coords[0].r))return false;
+    const row=coords[0].r;
+    // 整組最後必須能塞進同一排的一段連續區間；枚舉仍可能成立的區間。
+    for(let start=0;start<=cols-group.length;start++){
+      const segment=Array.from({length:group.length},(_,k)=>row*cols+start+k);
+      if(positions.some(p=>!segment.includes(p)))continue;
+      let ok=true;
+      for(const idx of segment){
+        const occupant=slots[idx];
+        if(occupant&&!group.includes(occupant)){ok=false;break}
+        if(!occupant&&!available.has(idx)){ok=false;break}
+      }
+      if(ok)return true;
+    }
+    return false;
+  }
+  function allAdjacentFeasible(id){
+    for(const group of adjacentGroups)if(group.includes(id)&&!adjacentFeasible(group))return false;
+    return true;
+  }
+
+  // 固定座位先落位；此時也立刻驗證其他個別限制與八格限制。
+  for(const [id,idx] of shuffleArray([...fixed.entries()])){
+    if(!available.has(idx)||!individualAllowed(id,idx)||aroundConflict(id,idx))return null;
+    slots[idx]=id;available.delete(idx);
+  }
+  for(const group of adjacentGroups)if(!adjacentFeasible(group))return null;
+
+  const unplaced=()=>students.filter(id=>!slots.includes(id));
+  let nodes=0;
+  const NODE_LIMIT=120000;
+
+  function candidateSeats(id){
+    return shuffleArray([...available].filter(idx=>{
+      if(!individualAllowed(id,idx)||aroundConflict(id,idx))return false;
+      slots[idx]=id;available.delete(idx);
+      const ok=allAdjacentFeasible(id);
+      slots[idx]=null;available.add(idx);
+      return ok;
+    }));
+  }
+
+  function dfs(){
+    if(++nodes>NODE_LIMIT)return false;
+    const remaining=unplaced();
+    if(!remaining.length)return !violatesSeatRules(slots);
+
+    // MRV：每一步重新計算候選，讓固定座位、相鄰群組與八格規則可自由交疊。
+    let chosen=null,candidates=null;
+    for(const id of shuffleArray(remaining)){
+      const cand=candidateSeats(id);
+      if(!cand.length)return false;
+      if(candidates===null||cand.length<candidates.length){chosen=id;candidates=cand;if(cand.length===1)break}
+    }
+    for(const idx of candidates){
+      slots[idx]=chosen;available.delete(idx);
+      if(allAdjacentFeasible(chosen)&&dfs())return true;
+      slots[idx]=null;available.add(idx);
+    }
+    return false;
+  }
+  return dfs()?[...slots]:null;
+}
+function randomizeSeats(){
+  normalizeSeating();
+  const legacyChanged=normalizeLegacySeatRules();
+  const count=data.seating.rows*data.seating.cols;
+  const availableCount=[...Array(count).keys()].filter(i=>!data.seating.blocked[i]).length;
+  if(availableCount<data.students.length){toast(`可分配座位不足：目前有 ${availableCount} 個未封鎖座位，班上有 ${data.students.length} 位學生`);return}
+  const old=[...data.seating.slots],best=solveSeatAssignment();
+  if(!best){if(legacyChanged)saveData();toast("目前座位格局與啟用規則彼此衝突，無法完成分配，請調整規則。");return}
   if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old,blocked:[...data.seating.blocked]});data.seating.history=data.seating.history.slice(0,20)}
   data.seating.slots=best;saveData();toast("已依啟用規則完成座位分配");
 }
