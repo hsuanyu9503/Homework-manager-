@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8";
+const APP_VERSION = "2.0.5";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -32,6 +32,7 @@ function defaultData(){
     scores:{},
     groups:[],
     groupScores:{},
+    assignmentGroups:[],
     settings:{overdueDays:2}
   };
 }
@@ -93,6 +94,7 @@ function normalizeData(input){
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
     groups:Array.isArray(input?.groups) ? input.groups : [],
     groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {},
+    assignmentGroups:Array.isArray(input?.assignmentGroups) ? input.assignmentGroups : [],
     seating:{
       rows:Math.max(1,Math.min(10,Number(input?.seating?.rows)||5)),
       cols:Math.max(1,Math.min(10,Number(input?.seating?.cols)||3)),
@@ -116,8 +118,8 @@ function saveData(){
     }
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  renderAll();
-  renderClassHome();
+  if(activeClassId) renderPage(currentPage);
+  else renderClassHome();
 }
 
 function uid(prefix="id"){
@@ -454,11 +456,12 @@ function enterClass(classId){
   document.getElementById("classHome").classList.add("hidden");
   document.getElementById("workspace").classList.remove("hidden");
   setPage("dashboard");
-  renderAll();
 }
 
 function leaveClass(){
   persistActiveClass();
+  unmountSeatModule();
+  stopNoiseMonitor();
   activeClassId = null;
   document.getElementById("workspace").classList.add("hidden");
   document.getElementById("classHome").classList.remove("hidden");
@@ -480,11 +483,37 @@ function renameClass(classId){
   renderClassHome();
 }
 
+function renderPage(page=currentPage){
+  __lastRenderedDate=localDateString();
+  const today=document.getElementById("todayText");if(today)today.textContent=formatToday();
+  const header=document.getElementById("headerClassName");if(header)header.textContent=data.class.name||"Classroom Manager";
+  switch(page){
+    case "dashboard":
+      {const name=document.getElementById("dashboardClassName");if(name)name.textContent=data.class.name||"尚未設定班級";}
+      renderDashboard();renderTodayNotices();renderMemoSummary();break;
+    case "assignments":renderAssignments();break;
+    case "contactbook":renderContactBook();break;
+    case "students":renderStudents();break;
+    case "seats":renderSeats();break;
+    case "scores":
+      if(currentScoreMode==="individual")renderScores();
+      else if(currentScoreMode==="group")renderGroupScores();
+      else if(currentScoreMode==="lottery")renderLottery();
+      else if(currentScoreMode==="timer")renderPomodoro();
+      else if(currentScoreMode==="marquee")renderMarquee();
+      else if(currentScoreMode==="noise")renderNoiseTool();
+      break;
+    case "settings":renderSettingsRoster();break;
+  }
+}
 function setPage(page){
+  const previousPage=currentPage;
+  if(previousPage==="seats" && page!=="seats") unmountSeatModule();
   currentPage = page;
   document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active", el.id===page));
   document.querySelectorAll(".tab").forEach(el=>el.classList.toggle("active", el.dataset.page===page));
-  renderAll();
+  if(page!=="scores") stopNoiseMonitor();
+  renderPage(page);
 }
 
 
@@ -494,7 +523,8 @@ function refreshForDateRollover(){
   const currentDate = localDateString();
   if(currentDate === __lastRenderedDate) return;
   __lastRenderedDate = currentDate;
-  renderAll();
+  if(activeClassId) renderPage(currentPage);
+  else renderClassHome();
 }
 
 function startDateRolloverGuards(){
@@ -511,22 +541,9 @@ function startDateRolloverGuards(){
 }
 
 function renderAll(){
-  __lastRenderedDate = localDateString();
-  document.getElementById("todayText").textContent = formatToday();
-  const className = data.class.name || "尚未設定班級";
-  document.getElementById("headerClassName").textContent = data.class.name || "Classroom Manager";
-  document.getElementById("dashboardClassName").textContent = className;
-  renderDashboard();
-  renderTodayNotices();
-  renderMemoSummary();
-  renderAssignments();
-  renderContactBook();
-  renderStudents();
-  renderSeats();
-  renderScores();
-  renderGroupScores();
-  renderLottery();
-  renderPomodoro();
+  // v2.0.3：保留相容入口，但正式流程只繪製目前頁面。
+  if(activeClassId) renderPage(currentPage);
+  else renderClassHome();
 }
 
 
@@ -888,7 +905,7 @@ function renderDashboard(){
 
 function submissionOverviewHtml(a){
   const {counts:c,total,percent}=assignmentProgress(a.id);
-  const students=[...data.students].sort((x,y)=>x.number-y.number);
+  const students=assignmentSortedStudents();
   return `
     <article class="submission-overview-card">
       <div class="submission-overview-title">
@@ -898,18 +915,10 @@ function submissionOverviewHtml(a){
         </div>
         <div class="rate-pill ${percent===100 ? "done" : ""}">${percent}%</div>
       </div>
-      <div class="submission-student-grid">
-        ${students.map(s=>{
-          const r=ensureRecord(a.id,s.id);
-          return `
-            <label class="submission-student-cell">
-              <span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span>
-              <select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態"
-                onchange="setStatus('${a.id}','${s.id}',this)">
-                ${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status ? "selected" : ""}>${STATUS_LABEL[status]}</option>`).join("")}
-              </select>
-            </label>`;
-        }).join("")}
+      <div class="submission-student-grid ${assignmentStudentSortMode==="group"?"grouped":""}">
+        ${assignmentStudentSortMode==="group"
+          ? (()=>{const buckets=[];students.forEach(s=>{const g=assignmentGroupForStudent(s.id),key=g?.id||"ungrouped";let b=buckets.find(x=>x.key===key);if(!b){b={key,label:g?.name||"未分組",students:[]};buckets.push(b)}b.students.push(s)});return buckets.map(b=>`<section class="submission-group-section"><div class="assignment-group-heading">${escapeHtml(b.label)}</div><div class="submission-group-cells">${b.students.map(s=>{const r=ensureRecord(a.id,s.id);return `<label class="submission-student-cell"><span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span><select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status?"selected":""}>${STATUS_LABEL[status]}</option>`).join("")}</select></label>`}).join("")}</div></section>`).join("")})()
+          : students.map(s=>{const r=ensureRecord(a.id,s.id);return `<label class="submission-student-cell"><span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span><select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status?"selected":""}>${STATUS_LABEL[status]}</option>`).join("")}</select></label>`}).join("")}
       </div>
     </article>`;
 }
@@ -1548,6 +1557,7 @@ function drawNoiseBallPool(now,level,warning){
 
 function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||70),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
 function renderNoiseTool(){
+  if(currentPage!=="scores" || currentScoreMode!=="noise") return;
   noiseEl("challengeBox")?.classList.toggle("hidden",noiseMode!=="challenge"); noiseEl("challengeTargetSetting")?.classList.toggle("hidden",noiseMode!=="challenge");
   document.querySelectorAll(".noise-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.noiseMode===noiseMode));
   const s=noiseSettings();
@@ -1579,15 +1589,16 @@ async function startNoiseMonitor(){
     noiseStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     noiseAudioContext=new (window.AudioContext||window.webkitAudioContext)(); await noiseAudioContext.resume();
     const source=noiseAudioContext.createMediaStreamSource(noiseStream); noiseAnalyser=noiseAudioContext.createAnalyser(); noiseAnalyser.fftSize=1024; noiseAnalyser.smoothingTimeConstant=.72; source.connect(noiseAnalyser);
-    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();
+    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();noiseLastVisualFrame=0;
     noiseSmoothedRms=0;noiseIndicator=0;noiseCalibrating=true;noiseCalibrationSamples=[];noiseCalibrationUntil=performance.now()+3000;
     if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="校正中…請保持環境安靜";noiseEl("noiseStartBtn").disabled=true;noiseEl("noiseStopBtn").disabled=false;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="偵測中";noiseLoop();
   }catch(err){console.warn("Microphone unavailable",err);toast("無法使用麥克風，請確認瀏覽器權限");if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="麥克風未授權"}
 }
 function stopNoiseMonitor(){
-  if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
+  if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseLastVisualFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
   const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseLevel=0;noiseIndicator=0;noiseSmoothedRms=0;noiseCalibrating=false;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent="0";if(noiseEl("noiseStateBadge")){noiseEl("noiseStateBadge").textContent="等待偵測";noiseEl("noiseStateBadge").className="noise-state-badge"}noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
 }
+let noiseLastVisualFrame=0;
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return;
   const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);
@@ -1602,7 +1613,9 @@ function noiseLoop(now=performance.now()){
       noiseCalibrating=false;noiseSmoothedRms=noiseFloor;noiseIndicator=0;
       if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="已完成";
     }
-    noiseLevel=0;updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop);return;
+    noiseLevel=0;
+    if(now-noiseLastVisualFrame>=33){noiseLastVisualFrame=now;updateNoiseVisual(now)}
+    noiseFrame=requestAnimationFrame(noiseLoop);return;
   }
 
   // 第一層：裝置微調；第二層：相對背景噪音；第三層：快升慢降平滑，抑制咳嗽、關門等瞬間尖峰。
@@ -1615,7 +1628,8 @@ function noiseLoop(now=performance.now()){
   const indicatorAttack=targetIndicator>noiseIndicator?.16:.055;
   noiseIndicator+=(targetIndicator-noiseIndicator)*indicatorAttack;
   noiseLevel=Math.round(noiseIndicator);
-  updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
+  if(now-noiseLastVisualFrame>=33){noiseLastVisualFrame=now;updateNoiseVisual(now)}
+  noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){
   const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}`;
@@ -1646,6 +1660,31 @@ function changeStudentScore(studentId, delta){
   saveData();
 }
 
+function openScoreAdjust(kind,id){
+  const isGroup=kind==="group",label=isGroup?(data.groups.find(g=>g.id===id)?.name||"小組"):(data.students.find(s=>s.id===id)?.name||"學生");
+  let scoreAdjustMode="plus";
+  showModal(`調整${isGroup?"小組":"個人"}積分`,`<form id="scoreAdjustForm" class="modal-form">
+    <div class="notice-box">${escapeHtml(label)}｜先選擇加分或減分，再輸入分數。</div>
+    <div class="score-adjust-mode" role="group" aria-label="積分調整方式">
+      <button type="button" class="score-adjust-mode-btn active" data-score-adjust-mode="plus">＋ 加分</button>
+      <button type="button" class="score-adjust-mode-btn" data-score-adjust-mode="minus">－ 減分</button>
+    </div>
+    <label><span>分數</span><input id="scoreAdjustValue" type="number" min="1" step="1" value="2" inputmode="numeric" required></label>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary">套用</button></div>
+  </form>`);
+  document.querySelectorAll("[data-score-adjust-mode]").forEach(btn=>btn.addEventListener("click",()=>{
+    scoreAdjustMode=btn.dataset.scoreAdjustMode==="minus"?"minus":"plus";
+    document.querySelectorAll("[data-score-adjust-mode]").forEach(x=>x.classList.toggle("active",x===btn));
+  }));
+  document.getElementById("scoreAdjustForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const value=Number(document.getElementById("scoreAdjustValue").value);
+    if(!Number.isFinite(value)||value<=0){toast("請輸入大於 0 的分數");return}
+    const delta=scoreAdjustMode==="minus"?-value:value;
+    isGroup?changeGroupScore(id,delta):changeStudentScore(id,delta);
+    closeModal();
+  });
+}
 function renderScores(){
   const list = document.getElementById("scoreList");
   if(!list) return;
@@ -1665,7 +1704,7 @@ function renderScores(){
         <div class="score-controls">
           <button class="score-btn minus" onclick="changeStudentScore('${s.id}',-1)">−</button>
           <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
-          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)">＋</button>
+          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)">＋</button><button class="score-btn score-more" onclick="openScoreAdjust('student','${s.id}')">±</button>
         </div>
       </div>
     `;
@@ -1802,7 +1841,7 @@ function renderGroupScores(){
         <div class="score-controls group-score-controls">
           <button class="score-btn minus" onclick="changeGroupScore('${g.id}',-1)">−</button>
           <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
-          <button class="score-btn plus" onclick="changeGroupScore('${g.id}',1)">＋</button>
+          <button class="score-btn plus" onclick="changeGroupScore('${g.id}',1)">＋</button><button class="score-btn score-more" onclick="openScoreAdjust('group','${g.id}')">±</button>
         </div>
       </div>
     `;
@@ -2006,11 +2045,19 @@ function seatingStudentOptions(selected=[]){
   return [...data.students].sort((a,b)=>a.number-b.number).map(s=>`<label class="rule-student"><input type="checkbox" value="${s.id}" ${selected.includes(s.id)?"checked":""}> ${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</label>`).join("");
 }
 function allStudentTags(){return [...new Set(data.students.flatMap(s=>s.tags||[]))].sort((a,b)=>a.localeCompare(b,"zh-Hant"))}
+function openSeatSettings(){
+  normalizeSeating();
+  showModal("座位區設定",`<div class="seat-backstage">
+    <div><strong>教師後台</strong><p class="muted">以下設定不會出現在座位展示模式中。</p></div>
+    <button type="button" class="seat-setting-entry" onclick="openSeatRules()"><span><b>隱藏分配規則</b><small>管理群組、學生標籤與座位限制</small></span><span>›</span></button>
+    <div class="seat-setting-note">「隨機分配」會自動套用所有已啟用的隱藏規則。</div>
+  </div>`);
+}
 function openSeatRules(){
   normalizeSeating();const rules=data.seating.rules;
   showModal("隱藏分配規則",`
     <p class="muted">規則只供教師分配座位使用，不會出現在展示模式或學生視角。</p>
-    <div class="seat-rule-actions"><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
+    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回座位區設定</button><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
     <div class="seat-rule-list">${rules.length?rules.map(r=>`<div class="seat-rule-card"><div><strong>${escapeHtml(r.name||"未命名規則")}</strong><div class="item-sub">${r.type==="tag"?`標籤：${escapeHtml(r.tag||"")}`:`${(r.studentIds||[]).length} 位學生`}｜${r.kind==="around8"?"周圍八格不相鄰":r.kind==="orthogonal"?"前後左右不相鄰":r.kind==="horizontal"?"左右不相鄰":r.kind==="front"?"優先前排":"規則"}</div></div><label class="rule-toggle"><input type="checkbox" ${r.enabled!==false?"checked":""} onchange="toggleSeatRule('${r.id}',this.checked)">啟用</label><button class="secondary" onclick="editSeatRule('${r.id}')">編輯</button><button class="secondary" onclick="deleteSeatRule('${r.id}')">刪除</button></div>`).join(""):`<div class="empty">尚未建立分配規則。</div>`}</div>`);
 }
 function openNewSeatRule(){
@@ -2067,7 +2114,7 @@ function seatSoftScore(slots){
 }
 function createSeatHistorySnapshot(label="手動儲存"){
   normalizeSeating();if(!data.seating.slots.some(Boolean))return false;
-  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots]});
+  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots],blocked:[...data.seating.blocked]});
   data.seating.history=data.seating.history.slice(0,20);return true;
 }
 function saveSeatHistory(label="手動儲存"){
@@ -2081,7 +2128,7 @@ function openSeatHistory(){
 function seatSnapshotHtml(x){
   const order=[...Array(x.rows*x.cols).keys()];
   if(data.seating.view==="student")order.reverse();
-  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]);return `<div class="seat-slot ${s?"occupied":"empty"}">${s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div><div class="seat-back">教室後方</div></div>`;
+  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i]===true;return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div><div class="seat-back">教室後方</div></div>`;
 }
 function previewSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x)return;
@@ -2089,14 +2136,14 @@ function previewSeatHistory(id){
 }
 function restoreSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x||!confirm("確定恢復這份座位配置嗎？目前座位會先自動備份。"))return;
-  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots]};
+  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots],blocked:Array.isArray(x.blocked)?[...x.blocked]:Array(x.rows*x.cols).fill(false)};
   createSeatHistorySnapshot("恢復前自動備份");
-  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;
+  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;data.seating.blocked=snapshot.blocked;
   saveData();closeModal();toast("已恢復座位配置");
 }
 function deleteSeatHistory(id){if(!confirm("確定刪除這份座位歷史嗎？"))return;data.seating.history=data.seating.history.filter(x=>x.id!==id);saveData();openSeatHistory()}
 function normalizeSeating(){
-  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],view:"teacher",rules:[],history:[]};
+  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],blocked:[],view:"teacher",rules:[],history:[]};
   data.seating.rows=Math.max(1,Math.min(10,Number(data.seating.rows)||5));
   data.seating.cols=Math.max(1,Math.min(10,Number(data.seating.cols)||3));
   const count=data.seating.rows*data.seating.cols;
@@ -2107,10 +2154,24 @@ function normalizeSeating(){
     if(id&&valid.has(id)&&!used.has(id)){used.add(id);return id}
     return null;
   });
+  const oldBlocked=Array.isArray(data.seating.blocked)?data.seating.blocked:[];
+  data.seating.blocked=Array.from({length:count},(_,i)=>oldBlocked[i]===true);
   data.seating.view=data.seating.view==="student"?"student":"teacher";
   if(!Array.isArray(data.seating.rules))data.seating.rules=[];
   if(!Array.isArray(data.seating.history))data.seating.history=[];
 }
+
+function unmountSeatModule(){
+  const grid=document.getElementById("seatGrid");
+  if(grid){grid.replaceChildren();grid.style.gridTemplateColumns="";}
+  const room=document.getElementById("seatRoom");
+  if(room){
+    room.classList.remove("presentation","step-reveal","front-step-reveal","student-view");
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-grid-wrap"),back=room.querySelector(".seat-back");
+    if(front&&wrap&&back)room.append(front,wrap,back);
+  }
+}
+
 function renderSeats(){
   const grid=document.getElementById("seatGrid");if(!grid)return;
   normalizeSeating();
@@ -2118,26 +2179,50 @@ function renderSeats(){
   if(s.view==="student")order.reverse();
   grid.style.gridTemplateColumns=`repeat(${s.cols},minmax(0,1fr))`;
   grid.innerHTML=order.map(index=>{
-    const student=data.students.find(x=>x.id===s.slots[index]);
-    return `<div class="seat-slot ${student?"occupied":"empty"}" data-seat-index="${index}" draggable="${student?"true":"false"}">
-      ${student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong>`:`<span>空位</span>`}
+    const student=data.students.find(x=>x.id===s.slots[index]),blocked=s.blocked[index]===true;
+    return `<div class="seat-slot ${blocked?"blocked":student?"occupied":"empty"}" data-seat-index="${index}" draggable="${!blocked&&student?"true":"false"}">
+      ${blocked?`<span class="seat-blocked-label">已封鎖</span>`:student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong><div class="seat-reveal-cover"><span>點擊揭曉</span></div>`:`<span>空位</span>`}
     </div>`;
   }).join("");
   const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
-  const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
+  const room=document.getElementById("seatRoom");
+  if(room){
+    room.classList.toggle("student-view",s.view==="student");
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-grid-wrap"),back=room.querySelector(".seat-back");
+    if(front&&wrap&&back){
+      if(s.view==="student"){room.append(back,wrap,front)}
+      else{room.append(front,wrap,back)}
+    }
+  }
+  const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
+    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")){if(room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed");return}toggleSeatBlocked(Number(el.dataset.seatIndex))});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
     el.addEventListener("dragend",()=>el.classList.remove("dragging"));
-    el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drag-over")});
+    el.addEventListener("dragover",e=>{if(el.classList.contains("blocked"))return;e.preventDefault();el.classList.add("drag-over")});
     el.addEventListener("dragleave",()=>el.classList.remove("drag-over"));
-    el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("drag-over");const from=Number(e.dataTransfer.getData("text/plain")),to=Number(el.dataset.seatIndex);moveSeat(from,to)});
+    el.addEventListener("drop",e=>{if(el.classList.contains("blocked"))return;e.preventDefault();el.classList.remove("drag-over");const from=Number(e.dataTransfer.getData("text/plain")),to=Number(el.dataset.seatIndex);moveSeat(from,to)});
   });
 }
+function toggleSeatBlocked(index){
+  normalizeSeating();if(!Number.isInteger(index)||index<0||index>=data.seating.slots.length)return;
+  const blocking=!data.seating.blocked[index];
+  if(blocking&&data.seating.slots[index]){
+    if(!confirm("這個座位目前有學生。封鎖後會將學生移出座位，確定要封鎖嗎？"))return;
+    data.seating.slots[index]=null;
+  }
+  data.seating.blocked[index]=blocking;
+  saveData();
+  toast(blocking?"已封鎖此座位，不會加入隨機分配":"已解除座位封鎖");
+}
 function moveSeat(from,to){
-  normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;
+  normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to||data.seating.blocked[from]||data.seating.blocked[to])return;
   [data.seating.slots[from],data.seating.slots[to]]=[data.seating.slots[to],data.seating.slots[from]];
   saveData();
+  const seatRoom=document.getElementById("seatRoom");
+  if(seatRoom)seatRoom.classList.toggle("front-step-reveal",seatRevealMode==="step");
+
 }
 function applySeatGrid(){
   normalizeSeating();
@@ -2147,15 +2232,15 @@ function applySeatGrid(){
   data.seating.rows=rows;data.seating.cols=cols;normalizeSeating();saveData();
 }
 function randomizeSeats(){
-  normalizeSeating();const count=data.seating.rows*data.seating.cols;if(count<data.students.length){toast("座位數不足，請先增加列數或欄數");return}
+  normalizeSeating();const count=data.seating.rows*data.seating.cols,available=[...Array(count).keys()].filter(i=>!data.seating.blocked[i]);if(available.length<data.students.length){toast(`可分配座位不足：目前有 ${available.length} 個未封鎖座位，班上有 ${data.students.length} 位學生`);return}
   const old=[...data.seating.slots],ids=data.students.map(s=>s.id);let best=null,bestScore=-Infinity;
-  for(let attempt=0;attempt<5000;attempt++){
+  for(let attempt=0;attempt<1200;attempt++){
     const people=[...ids];for(let i=people.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[people[i],people[k]]=[people[k],people[i]]}
-    const positions=[...Array(count).keys()];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
+    const positions=[...available];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
     const slots=Array(count).fill(null);people.forEach((id,i)=>slots[positions[i]]=id);if(violatesSeatRules(slots))continue;const score=seatSoftScore(slots);if(score>bestScore){best=slots;bestScore=score}
   }
   if(!best){toast("目前座位格局與啟用規則無法產生符合條件的安排，請調整規則。");return}
-  if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old});data.seating.history=data.seating.history.slice(0,20)}
+  if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old,blocked:[...data.seating.blocked]});data.seating.history=data.seating.history.slice(0,20)}
   data.seating.slots=best;saveData();toast("已依啟用規則完成座位分配");
 }
 function clearSeats(){
@@ -2163,9 +2248,32 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
-function toggleSeatPresentation(){
+let seatRevealMode=localStorage.getItem("cmSeatRevealMode")==="step"?"step":"direct";
+function setSeatRevealMode(mode){
+  seatRevealMode=mode==="step"?"step":"direct";
+  localStorage.setItem("cmSeatRevealMode",seatRevealMode);
+  document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.classList.toggle("active",btn.dataset.seatRevealMode===seatRevealMode));
+  const room=document.getElementById("seatRoom");
+  if(room){
+    room.classList.toggle("front-step-reveal",seatRevealMode==="step");
+    if(seatRevealMode==="direct"){
+      room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
+    }
+  }
+}
+function toggleSeatPresentation(forceOff=false){
   const room=document.getElementById("seatRoom");if(!room)return;
-  room.classList.toggle("presentation");document.getElementById("seatPresentationBtn").textContent=room.classList.contains("presentation")?"結束展示":"展示模式";
+  const shouldForceOff=forceOff===true;
+  const entering=shouldForceOff?false:!room.classList.contains("presentation");
+  room.classList.toggle("presentation",entering);
+  room.classList.toggle("step-reveal",entering&&seatRevealMode==="step");
+  document.body.classList.toggle("seat-presentation-active",entering);
+  document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
+  let back=document.getElementById("seatPresentationBackBtn");
+  if(entering){
+    room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
+    if(!back){back=document.createElement("button");back.id="seatPresentationBackBtn";back.className="seat-presentation-back";back.textContent="← 返回座位管理";back.addEventListener("click",()=>toggleSeatPresentation(true));room.prepend(back)}
+  }else if(back)back.remove();
 }
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
@@ -2206,38 +2314,38 @@ function renderSettingsRoster(){
   if(ta && document.activeElement !== ta) ta.value = text;
 }
 
+
+let assignmentStudentSortMode=localStorage.getItem("cmAssignmentStudentSort")==="group"?"group":"number";
+function normalizeAssignmentGroups(){if(!Array.isArray(data.assignmentGroups))data.assignmentGroups=[];const valid=new Set(data.students.map(s=>s.id)),seen=new Set();data.assignmentGroups=data.assignmentGroups.map((g,i)=>({id:g.id||uid("ag"),name:g.name||`第 ${i+1} 組`,studentIds:(Array.isArray(g.studentIds)?g.studentIds:[]).filter(id=>valid.has(id)&&!seen.has(id)&&seen.add(id))}))}
+function assignmentGroupForStudent(id){normalizeAssignmentGroups();return data.assignmentGroups.find(g=>g.studentIds.includes(id))}
+function assignmentSortedStudents(){normalizeAssignmentGroups();if(assignmentStudentSortMode!=="group")return [...data.students].sort((a,b)=>a.number-b.number);const order=new Map();data.assignmentGroups.forEach((g,i)=>g.studentIds.forEach(id=>order.set(id,i)));return [...data.students].sort((a,b)=>(order.get(a.id)??999)-(order.get(b.id)??999)||a.number-b.number)}
+function assignmentGroupHeadingHtml(s,i,list){if(assignmentStudentSortMode!=="group")return "";const g=assignmentGroupForStudent(s.id),p=i?assignmentGroupForStudent(list[i-1].id):null;if(i&&g?.id===p?.id)return "";if(i&&!g&&!p)return "";return `<div class="assignment-group-heading">${escapeHtml(g?.name||"未分組")}</div>`}
+function setAssignmentStudentSort(mode,id){assignmentStudentSortMode=mode==="group"?"group":"number";localStorage.setItem("cmAssignmentStudentSort",assignmentStudentSortMode);openAssignment(id)}
+function openAssignmentGroups(){normalizeAssignmentGroups();if(!data.assignmentGroups.length)data.assignmentGroups=[{id:uid("ag"),name:"第 1 組",studentIds:[]}];const opts=data.assignmentGroups.map((g,i)=>`<option value="${g.id}">${escapeHtml(g.name||`第 ${i+1} 組`)}</option>`).join("");const rows=[...data.students].sort((a,b)=>a.number-b.number).map(s=>{const cur=assignmentGroupForStudent(s.id)?.id||"";return `<div class="manual-group-row"><div class="manual-student">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</div><select data-assignment-group-student="${s.id}"><option value="">未分組</option>${opts.replace(`value="${cur}"`,`value="${cur}" selected`)}</select></div>`}).join("");showModal("作業小組設定",`<div class="modal-form"><div class="manual-group-top"><label><span>小組數量</span><input id="assignmentGroupCount" type="number" min="1" max="20" value="${data.assignmentGroups.length}"></label><button type="button" class="secondary" onclick="rebuildAssignmentGroups()">套用組數</button></div><div class="notice-box">作業小組獨立於課堂工具的小組積分。</div><div class="assignment-group-name-list">${data.assignmentGroups.map((g,i)=>`<label><span>第 ${i+1} 組名稱</span><input data-assignment-group-name="${g.id}" value="${escapeAttr(g.name)}"></label>`).join("")}</div><div class="manual-group-list">${rows}</div><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button type="button" class="primary" onclick="saveAssignmentGroups()">儲存作業小組</button></div></div>`)}
+function rebuildAssignmentGroups(){
+  const n=Math.max(1,Math.min(20,Number(document.getElementById("assignmentGroupCount")?.value)||1));
+  normalizeAssignmentGroups();
+  document.querySelectorAll("[data-assignment-group-name]").forEach(x=>{
+    const g=data.assignmentGroups.find(g=>g.id===x.dataset.assignmentGroupName);
+    if(g)g.name=x.value.trim()||g.name;
+  });
+  const currentMembership=new Map();
+  document.querySelectorAll("[data-assignment-group-student]").forEach(x=>currentMembership.set(x.dataset.assignmentGroupStudent,x.value));
+  const old=[...data.assignmentGroups];
+  data.assignmentGroups=Array.from({length:n},(_,i)=>old[i]||{id:uid("ag"),name:`第 ${i+1} 組`,studentIds:[]});
+  const validGroups=new Set(data.assignmentGroups.map(g=>g.id));
+  data.assignmentGroups.forEach(g=>g.studentIds=[]);
+  currentMembership.forEach((groupId,studentId)=>{
+    const g=data.assignmentGroups.find(g=>g.id===groupId);
+    if(g&&validGroups.has(groupId))g.studentIds.push(studentId);
+  });
+  openAssignmentGroups();
+}
+function saveAssignmentGroups(){normalizeAssignmentGroups();data.assignmentGroups.forEach(g=>g.studentIds=[]);document.querySelectorAll("[data-assignment-group-name]").forEach(x=>{const g=data.assignmentGroups.find(g=>g.id===x.dataset.assignmentGroupName);if(g)g.name=x.value.trim()||g.name});document.querySelectorAll("[data-assignment-group-student]").forEach(x=>{const g=data.assignmentGroups.find(g=>g.id===x.value);if(g)g.studentIds.push(x.dataset.assignmentGroupStudent)});persistActiveClass();closeModal();renderDashboard();toast("作業小組已儲存")}
+
 function openAssignment(id){
-  const a = data.assignments.find(x=>x.id===id);
-  if(!a) return;
-  showModal(
-    `${a.title}`,
-    `
-      <div class="item-sub">${formatDate(a.date)}</div>
-      <div class="tracker-grid">
-        ${[...data.students].sort((x,y)=>x.number-y.number).map(s=>{
-          const r = ensureRecord(a.id,s.id);
-          return `
-            <div class="tracker-tile">
-              <div class="tracker-tile-head">
-                <span class="student-no">${String(s.number).padStart(2,"0")}</span>
-                <span class="student-name">${escapeHtml(s.name)}</span>
-              </div>
-              <select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">
-                ${STATUS_ORDER.map(status => `<option value="${status}" ${r.status===status ? "selected" : ""}>${STATUS_LABEL[status]}</option>`).join("")}
-              </select>
-              <input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}"
-                onchange="updateNote('${a.id}','${s.id}',this.value)" />
-            </div>
-          `;
-        }).join("")}
-      </div>
-      <div class="modal-actions">
-        <button class="secondary" onclick="deleteAssignment('${a.id}')">刪除作業</button>
-        <button class="primary" onclick="closeModal()">完成</button>
-      </div>
-    `
-  );
-  persistActiveClass();
+  const a=data.assignments.find(x=>x.id===id);if(!a)return;const students=assignmentSortedStudents();
+  showModal(`${a.title}`,`<div class="assignment-modal-top"><div class="item-sub">${formatDate(a.date)}</div><div class="assignment-sort-switch"><button class="secondary ${assignmentStudentSortMode==="number"?"active":""}" onclick="setAssignmentStudentSort('number','${a.id}')">座號排序</button><button class="secondary ${assignmentStudentSortMode==="group"?"active":""}" onclick="setAssignmentStudentSort('group','${a.id}')">作業小組排序</button></div></div><div class="tracker-grid assignment-tracker-grid">${students.map((s,i)=>{const r=ensureRecord(a.id,s.id);return `${assignmentGroupHeadingHtml(s,i,students)}<div class="tracker-tile"><div class="tracker-tile-head"><span class="student-no">${String(s.number).padStart(2,"0")}</span><span class="student-name">${escapeHtml(s.name)}</span></div><select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(st=>`<option value="${st}" ${r.status===st?"selected":""}>${STATUS_LABEL[st]}</option>`).join("")}</select><input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}" onchange="updateNote('${a.id}','${s.id}',this.value)" /></div>`}).join("")}</div><div class="modal-actions"><button class="secondary" onclick="deleteAssignment('${a.id}')">刪除作業</button><button class="primary" onclick="closeModal()">完成</button></div>`);persistActiveClass()
 }
 
 function setStatus(assignmentId, studentId, select){
@@ -2245,9 +2353,8 @@ function setStatus(assignmentId, studentId, select){
   r.status = select.value;
   persistActiveClass();
   select.className = `status-select ${r.status}`;
-  renderDashboard();
-  renderAssignments();
-  renderStudents();
+  // 保留目前下拉選單即時更新；其餘統計只更新使用者正在看的頁面。
+  renderPage(currentPage);
   if(r.status === "completed"){
     maybeArchiveCompletedAssignment(assignmentId);
   }
@@ -2262,7 +2369,7 @@ function maybeArchiveCompletedAssignment(assignmentId){
   if(shouldArchive){
     a.dashboardArchived = true;
     persistActiveClass();
-    renderAll();
+    renderPage(currentPage);
     toast("作業已完成，已從總覽移除 🎉");
   }
 }
@@ -2470,7 +2577,6 @@ function showModal(title, bodyHtml){
 
 function closeModal(){
   document.getElementById("modalBackdrop").classList.add("hidden");
-  renderAll();
 }
 
 function toast(msg){
@@ -2525,6 +2631,7 @@ if(noticeMemoBtn){
   noticeMemoBtn.addEventListener("click", openNoticeMemo);
 }
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
+document.getElementById("assignmentGroupsBtn")?.addEventListener("click",openAssignmentGroups);
 document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
   showAllAssignmentsMode=false;
   renderAssignments();
@@ -2586,8 +2693,10 @@ document.getElementById("applySeatGridBtn")?.addEventListener("click",applySeatG
 document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSeats);
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
-document.getElementById("seatPresentationBtn")?.addEventListener("click",toggleSeatPresentation);
+document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));
+document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.addEventListener("click",()=>setSeatRevealMode(btn.dataset.seatRevealMode)));
+setSeatRevealMode(seatRevealMode);
 
-document.getElementById("seatRulesBtn")?.addEventListener("click",openSeatRules);
+document.getElementById("seatSettingsBtn")?.addEventListener("click",openSeatSettings);
 document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
