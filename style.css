@@ -1797,3 +1797,56 @@ body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
   .seat-room .seat-front{margin-bottom:20px}
   .seat-room.student-view .seat-front{margin-top:20px;margin-bottom:0}
 }
+
+/* v2.0.10 seat-rule card layout */
+.seat-rule-card{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto auto;
+  align-items:center;
+  gap:10px;
+}
+.seat-rule-card>div:first-child{min-width:0}
+.seat-rule-card .item-sub{white-space:normal;overflow-wrap:anywhere}
+.seat-rule-card .rule-toggle{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-width:74px;
+  width:auto;
+  flex:none;
+  white-space:nowrap;
+  overflow:visible;
+  padding:8px 10px;
+  line-height:1.2;
+}
+.seat-rule-card .rule-toggle input{
+  width:18px;
+  height:18px;
+  min-width:18px;
+  flex:0 0 18px;
+  margin:0;
+}
+@media(max-width:700px){
+  .seat-rule-card{
+    grid-template-columns:minmax(0,1fr) auto auto;
+  }
+  .seat-rule-card .rule-toggle{
+    grid-column:2 / 4;
+    grid-row:1;
+    justify-self:end;
+  }
+  .seat-rule-card>button{min-width:64px}
+}
+@media(max-width:480px){
+  .seat-rule-card{
+    grid-template-columns:1fr 1fr;
+    align-items:center;
+  }
+  .seat-rule-card>div:first-child{grid-column:1 / -1}
+  .seat-rule-card .rule-toggle{
+    grid-column:1 / -1;
+    grid-row:auto;
+    justify-self:start;
+  }
+}
