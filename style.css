@@ -1765,3 +1765,16 @@ body::before{position:absolute}
   .progress-card,.class-card,.settings-item-card,.memo-complete-btn{transition:none}
   .progress-card:hover,.class-card:hover,.settings-item-card:hover,.memo-complete-btn:hover{transform:none}
 }
+
+/* v2.0.2 targeted rendering performance */
+.page:not(.active){display:none!important}
+.page.active{contain:layout style}
+#noiseBallCanvas{contain:strict}
+
+/* v2.0.3 performance consolidation */
+.page.active{contain:none}
+.assignment-card,.contact-card,.student-card,.score-card,.submission-overview-card{content-visibility:auto;contain-intrinsic-size:auto 96px}
+.seat-slot{contain:layout paint style}
+@media (prefers-reduced-motion:reduce){
+  .seat-slot,.noise-ball,.marquee-track{animation-duration:.001ms!important;animation-iteration-count:1!important}
+}

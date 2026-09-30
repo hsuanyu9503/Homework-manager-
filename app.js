@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.0.3";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -118,8 +118,8 @@ function saveData(){
     }
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  renderAll();
-  if(!activeClassId) renderClassHome();
+  if(activeClassId) renderPage(currentPage);
+  else renderClassHome();
 }
 
 function uid(prefix="id"){
@@ -456,7 +456,6 @@ function enterClass(classId){
   document.getElementById("classHome").classList.add("hidden");
   document.getElementById("workspace").classList.remove("hidden");
   setPage("dashboard");
-  renderAll();
 }
 
 function leaveClass(){
@@ -482,11 +481,35 @@ function renameClass(classId){
   renderClassHome();
 }
 
+function renderPage(page=currentPage){
+  __lastRenderedDate=localDateString();
+  const today=document.getElementById("todayText");if(today)today.textContent=formatToday();
+  const header=document.getElementById("headerClassName");if(header)header.textContent=data.class.name||"Classroom Manager";
+  switch(page){
+    case "dashboard":
+      {const name=document.getElementById("dashboardClassName");if(name)name.textContent=data.class.name||"尚未設定班級";}
+      renderDashboard();renderTodayNotices();renderMemoSummary();break;
+    case "assignments":renderAssignments();break;
+    case "contactbook":renderContactBook();break;
+    case "students":renderStudents();break;
+    case "seats":renderSeats();break;
+    case "scores":
+      if(currentScoreMode==="individual")renderScores();
+      else if(currentScoreMode==="group")renderGroupScores();
+      else if(currentScoreMode==="lottery")renderLottery();
+      else if(currentScoreMode==="timer")renderPomodoro();
+      else if(currentScoreMode==="marquee")renderMarquee();
+      else if(currentScoreMode==="noise")renderNoiseTool();
+      break;
+    case "settings":renderSettingsRoster();break;
+  }
+}
 function setPage(page){
   currentPage = page;
   document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active", el.id===page));
   document.querySelectorAll(".tab").forEach(el=>el.classList.toggle("active", el.dataset.page===page));
-  renderAll();
+  if(page!=="scores") stopNoiseMonitor();
+  renderPage(page);
 }
 
 
@@ -496,7 +519,8 @@ function refreshForDateRollover(){
   const currentDate = localDateString();
   if(currentDate === __lastRenderedDate) return;
   __lastRenderedDate = currentDate;
-  renderAll();
+  if(activeClassId) renderPage(currentPage);
+  else renderClassHome();
 }
 
 function startDateRolloverGuards(){
@@ -513,22 +537,9 @@ function startDateRolloverGuards(){
 }
 
 function renderAll(){
-  __lastRenderedDate = localDateString();
-  document.getElementById("todayText").textContent = formatToday();
-  const className = data.class.name || "尚未設定班級";
-  document.getElementById("headerClassName").textContent = data.class.name || "Classroom Manager";
-  document.getElementById("dashboardClassName").textContent = className;
-  renderDashboard();
-  renderTodayNotices();
-  renderMemoSummary();
-  renderAssignments();
-  renderContactBook();
-  renderStudents();
-  renderSeats();
-  renderScores();
-  renderGroupScores();
-  renderLottery();
-  renderPomodoro();
+  // v2.0.3：保留相容入口，但正式流程只繪製目前頁面。
+  if(activeClassId) renderPage(currentPage);
+  else renderClassHome();
 }
 
 
@@ -1542,6 +1553,7 @@ function drawNoiseBallPool(now,level,warning){
 
 function noiseSettings(){return {sensitivity:Number(noiseEl("noiseSensitivity")?.value||100),threshold:Number(noiseEl("noiseThreshold")?.value||70),hold:Number(noiseEl("noiseHold")?.value||2)*1000,cooldown:Number(noiseEl("noiseCooldown")?.value||10)*1000,alertMode:noiseEl("noiseAlertMode")?.value||"both",target:Number(noiseEl("challengeTarget")?.value||300)*1000}}
 function renderNoiseTool(){
+  if(currentPage!=="scores" || currentScoreMode!=="noise") return;
   noiseEl("challengeBox")?.classList.toggle("hidden",noiseMode!=="challenge"); noiseEl("challengeTargetSetting")?.classList.toggle("hidden",noiseMode!=="challenge");
   document.querySelectorAll(".noise-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.noiseMode===noiseMode));
   const s=noiseSettings();
@@ -1573,15 +1585,16 @@ async function startNoiseMonitor(){
     noiseStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     noiseAudioContext=new (window.AudioContext||window.webkitAudioContext)(); await noiseAudioContext.resume();
     const source=noiseAudioContext.createMediaStreamSource(noiseStream); noiseAnalyser=noiseAudioContext.createAnalyser(); noiseAnalyser.fftSize=1024; noiseAnalyser.smoothingTimeConstant=.72; source.connect(noiseAnalyser);
-    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();
+    noiseActive=true;noiseOverSince=0;challengeLastTick=performance.now();noiseLastVisualFrame=0;
     noiseSmoothedRms=0;noiseIndicator=0;noiseCalibrating=true;noiseCalibrationSamples=[];noiseCalibrationUntil=performance.now()+3000;
     if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="校正中…請保持環境安靜";noiseEl("noiseStartBtn").disabled=true;noiseEl("noiseStopBtn").disabled=false;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="偵測中";noiseLoop();
   }catch(err){console.warn("Microphone unavailable",err);toast("無法使用麥克風，請確認瀏覽器權限");if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="麥克風未授權"}
 }
 function stopNoiseMonitor(){
-  if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
+  if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseLastVisualFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
   const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseLevel=0;noiseIndicator=0;noiseSmoothedRms=0;noiseCalibrating=false;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent="0";if(noiseEl("noiseStateBadge")){noiseEl("noiseStateBadge").textContent="等待偵測";noiseEl("noiseStateBadge").className="noise-state-badge"}noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
 }
+let noiseLastVisualFrame=0;
 function noiseLoop(now=performance.now()){
   if(!noiseActive||!noiseAnalyser)return;
   const arr=new Uint8Array(noiseAnalyser.fftSize);noiseAnalyser.getByteTimeDomainData(arr);
@@ -1596,7 +1609,9 @@ function noiseLoop(now=performance.now()){
       noiseCalibrating=false;noiseSmoothedRms=noiseFloor;noiseIndicator=0;
       if(noiseEl("calibrationStatus"))noiseEl("calibrationStatus").textContent="已完成";
     }
-    noiseLevel=0;updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop);return;
+    noiseLevel=0;
+    if(now-noiseLastVisualFrame>=33){noiseLastVisualFrame=now;updateNoiseVisual(now)}
+    noiseFrame=requestAnimationFrame(noiseLoop);return;
   }
 
   // 第一層：裝置微調；第二層：相對背景噪音；第三層：快升慢降平滑，抑制咳嗽、關門等瞬間尖峰。
@@ -1609,7 +1624,8 @@ function noiseLoop(now=performance.now()){
   const indicatorAttack=targetIndicator>noiseIndicator?.16:.055;
   noiseIndicator+=(targetIndicator-noiseIndicator)*indicatorAttack;
   noiseLevel=Math.round(noiseIndicator);
-  updateNoiseVisual(now);noiseFrame=requestAnimationFrame(noiseLoop)
+  if(now-noiseLastVisualFrame>=33){noiseLastVisualFrame=now;updateNoiseVisual(now)}
+  noiseFrame=requestAnimationFrame(noiseLoop)
 }
 function updateNoiseVisual(now){
   const s=noiseSettings(),over=noiseLevel>=s.threshold,fill=noiseEl("noiseMeterFill");if(fill)fill.style.width=`${noiseLevel}%`;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent=`${noiseLevel}`;
@@ -2202,7 +2218,7 @@ function applySeatGrid(){
 function randomizeSeats(){
   normalizeSeating();const count=data.seating.rows*data.seating.cols,available=[...Array(count).keys()].filter(i=>!data.seating.blocked[i]);if(available.length<data.students.length){toast(`可分配座位不足：目前有 ${available.length} 個未封鎖座位，班上有 ${data.students.length} 位學生`);return}
   const old=[...data.seating.slots],ids=data.students.map(s=>s.id);let best=null,bestScore=-Infinity;
-  for(let attempt=0;attempt<5000;attempt++){
+  for(let attempt=0;attempt<1200;attempt++){
     const people=[...ids];for(let i=people.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[people[i],people[k]]=[people[k],people[i]]}
     const positions=[...available];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
     const slots=Array(count).fill(null);people.forEach((id,i)=>slots[positions[i]]=id);if(violatesSeatRules(slots))continue;const score=seatSoftScore(slots);if(score>bestScore){best=slots;bestScore=score}
@@ -2321,9 +2337,8 @@ function setStatus(assignmentId, studentId, select){
   r.status = select.value;
   persistActiveClass();
   select.className = `status-select ${r.status}`;
-  renderDashboard();
-  renderAssignments();
-  renderStudents();
+  // 保留目前下拉選單即時更新；其餘統計只更新使用者正在看的頁面。
+  renderPage(currentPage);
   if(r.status === "completed"){
     maybeArchiveCompletedAssignment(assignmentId);
   }
@@ -2338,7 +2353,7 @@ function maybeArchiveCompletedAssignment(assignmentId){
   if(shouldArchive){
     a.dashboardArchived = true;
     persistActiveClass();
-    renderAll();
+    renderPage(currentPage);
     toast("作業已完成，已從總覽移除 🎉");
   }
 }
@@ -2546,7 +2561,6 @@ function showModal(title, bodyHtml){
 
 function closeModal(){
   document.getElementById("modalBackdrop").classList.add("hidden");
-  renderAll();
 }
 
 function toast(msg){
