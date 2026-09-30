@@ -1,4 +1,4 @@
-const APP_VERSION = "2.10";
+const APP_VERSION = "2.11";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2054,7 +2054,7 @@ function openSeatSettings(){
   </div>`);
 }
 function seatRuleKindLabel(kind){
-  return {around8:"周圍八格不相鄰",fixedSeat:"指定特定座位",front2:"指定坐前兩排",noCorner:"不能坐角落",back2:"指定坐後兩排",horizontalAdjacent:"左右相鄰"}[kind]||"規則";
+  return {around8:"周圍八格不相鄰",checkerboard:"梅花座",fixedSeat:"指定特定座位",front2:"指定坐前兩排",noCorner:"不能坐角落",back2:"指定坐後兩排",horizontalAdjacent:"左右相鄰"}[kind]||"規則";
 }
 function seatRuleTargetLabel(r){
   if(r.type==="tag")return `標籤：${escapeHtml(r.tag||"")}`;
@@ -2076,12 +2076,13 @@ function updateSeatRuleFormUI(){
   group.style.display=type.value==="group"?"block":"none";
   tag.style.display=type.value==="tag"?"block":"none";
   fixed.style.display=kind.value==="fixedSeat"?"block":"none";
-  if(hint)hint.textContent=kind.value==="fixedSeat"?"指定特定座位需選擇 1 位學生。":kind.value==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生；多人時會安排在同一排連續座位。":"可選擇 1 位以上學生，或改用學生標籤。";
+  if(hint)hint.textContent=kind.value==="fixedSeat"?"指定特定座位需選擇 1 位學生。":kind.value==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生；多人時會安排在同一排連續座位。":kind.value==="checkerboard"?"梅花座中的學生彼此前後左右不可相鄰，但斜角可以相鄰。":"可選擇 1 位以上學生，或改用學生標籤。";
   if(kind.value==="fixedSeat"&&type.value==="tag"){type.value="group";group.style.display="block";tag.style.display="none"}
 }
 function seatRuleKindOptions(selected=""){
   return [
     ["around8","周圍八格不相鄰"],
+    ["checkerboard","梅花座"],
     ["fixedSeat","指定特定座位"],
     ["front2","指定坐前兩排"],
     ["noCorner","不能坐角落"],
@@ -2152,6 +2153,8 @@ function violatesSeatRules(slots){
     const ids=seatRuleIds(rule).filter(id=>position[id]!=null);
     if(rule.kind==="around8"){
       for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){const A=seatCoords(position[ids[a]],cols),B=seatCoords(position[ids[b]],cols);if(Math.max(Math.abs(A.r-B.r),Math.abs(A.c-B.c))===1)return true}
+    }else if(rule.kind==="checkerboard"){
+      for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){const A=seatCoords(position[ids[a]],cols),B=seatCoords(position[ids[b]],cols);if(Math.abs(A.r-B.r)+Math.abs(A.c-B.c)===1)return true}
     }else if(rule.kind==="fixedSeat"){
       if(ids.length&&position[ids[0]]!==Number(rule.seatIndex))return true;
     }else if(rule.kind==="front2"){
@@ -2350,7 +2353,7 @@ function solveSeatAssignment(){
   if(available.size<students.length)return null;
 
   // 將所有規則先正規化成「學生 -> 個別限制」與相鄰群組。
-  const fixed=new Map(),aroundGroups=[],adjacentGroups=[];
+  const fixed=new Map(),aroundGroups=[],checkerboardGroups=[],adjacentGroups=[];
   for(const rule of rules){
     const ids=seatRuleIds(rule).filter(id=>studentSet.has(id));
     if(rule.kind==="fixedSeat"){
@@ -2360,6 +2363,7 @@ function solveSeatAssignment(){
       if(fixed.has(id)&&fixed.get(id)!==idx)return null;
       fixed.set(id,idx);
     }else if(rule.kind==="around8"&&ids.length>1)aroundGroups.push(new Set(ids));
+    else if(rule.kind==="checkerboard"&&ids.length>1)checkerboardGroups.push(new Set(ids));
     else if(rule.kind==="horizontalAdjacent"&&ids.length>1)adjacentGroups.push([...new Set(ids)]);
   }
 
@@ -2382,6 +2386,18 @@ function solveSeatAssignment(){
         if(!slots[i]||!group.has(slots[i]))continue;
         const B=seatCoords(i,cols);
         if(Math.max(Math.abs(A.r-B.r),Math.abs(A.c-B.c))===1)return true;
+      }
+    }
+    return false;
+  }
+  function checkerboardConflict(id,idx){
+    const A=seatCoords(idx,cols);
+    for(const group of checkerboardGroups){
+      if(!group.has(id))continue;
+      for(let i=0;i<slots.length;i++){
+        if(!slots[i]||!group.has(slots[i]))continue;
+        const B=seatCoords(i,cols);
+        if(Math.abs(A.r-B.r)+Math.abs(A.c-B.c)===1)return true;
       }
     }
     return false;
@@ -2413,7 +2429,7 @@ function solveSeatAssignment(){
 
   // 固定座位先落位；此時也立刻驗證其他個別限制與八格限制。
   for(const [id,idx] of shuffleArray([...fixed.entries()])){
-    if(!available.has(idx)||!individualAllowed(id,idx)||aroundConflict(id,idx))return null;
+    if(!available.has(idx)||!individualAllowed(id,idx)||aroundConflict(id,idx)||checkerboardConflict(id,idx))return null;
     slots[idx]=id;available.delete(idx);
   }
   for(const group of adjacentGroups)if(!adjacentFeasible(group))return null;
@@ -2424,7 +2440,7 @@ function solveSeatAssignment(){
 
   function candidateSeats(id){
     return shuffleArray([...available].filter(idx=>{
-      if(!individualAllowed(id,idx)||aroundConflict(id,idx))return false;
+      if(!individualAllowed(id,idx)||aroundConflict(id,idx)||checkerboardConflict(id,idx))return false;
       slots[idx]=id;available.delete(idx);
       const ok=allAdjacentFeasible(id);
       slots[idx]=null;available.add(idx);
