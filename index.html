@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=1.5" />
+  <link rel="stylesheet" href="style.css?v=1.7" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.5</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.7</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.5</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.7</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -152,7 +152,7 @@
       <div class="seat-toolbar card">
         <label><span>列數</span><input id="seatRows" type="number" min="1" max="10" value="5"></label>
         <label><span>欄數</span><input id="seatCols" type="number" min="1" max="10" value="3"></label>
-        <button class="secondary" id="applySeatGridBtn">套用格局</button><button class="secondary" id="randomSeatsBtn">隨機排座位</button><button class="secondary" id="seatViewBtn">教師視角</button><button class="danger-btn" id="clearSeatsBtn">清空</button>
+        <button class="secondary" id="applySeatGridBtn">套用格局</button><button class="secondary" id="randomSeatsBtn">依規則分配</button><button class="secondary" id="seatRulesBtn">分配規則</button><button class="secondary" id="seatHistoryBtn">歷史記錄</button><button class="secondary" id="saveSeatSnapshotBtn">儲存目前座位</button><button class="secondary" id="seatViewBtn">教師視角</button><button class="danger-btn" id="clearSeatsBtn">清空</button>
       </div>
       <div class="seat-room card" id="seatRoom"><div class="seat-front">黑板／講臺</div><div id="seatGrid" class="seat-grid"></div><div class="seat-back">教室後方</div></div>
       <p class="muted seat-help">拖曳學生到其他座位即可移動；若目標已有學生，兩人會直接交換座位。空格可保留作為空位。</p>
@@ -378,6 +378,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=1.5"></script>
+  <script src="app.js?v=1.7"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.7";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -79,7 +79,7 @@ function normalizeData(input){
   return {
     version:1,
     class:{name: input?.class?.name || ""},
-    students:Array.isArray(input?.students) ? input.students : [],
+    students:Array.isArray(input?.students) ? input.students.map(s=>({...s,tags:Array.isArray(s.tags)?s.tags:[]})) : [],
     assignments:Array.isArray(input?.assignments) ? input.assignments : [],
     records:Array.isArray(input?.records) ? input.records : [],
     contactItems:(Array.isArray(input?.contactItems)
@@ -97,7 +97,9 @@ function normalizeData(input){
       rows:Math.max(1,Math.min(10,Number(input?.seating?.rows)||5)),
       cols:Math.max(1,Math.min(10,Number(input?.seating?.cols)||3)),
       slots:Array.isArray(input?.seating?.slots) ? input.seating.slots : [],
-      view:input?.seating?.view==="student" ? "student" : "teacher"
+      view:input?.seating?.view==="student" ? "student" : "teacher",
+      rules:Array.isArray(input?.seating?.rules)?input.seating.rules:[],
+      history:Array.isArray(input?.seating?.history)?input.seating.history.slice(0,20):[]
     },
     settings:{
       overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2
@@ -1991,8 +1993,110 @@ function resetGroupScores(){
 
 
 
+
+function addStudentTag(studentId){
+  const s=data.students.find(x=>x.id===studentId),input=document.getElementById("newStudentTag");if(!s||!input)return;
+  const tag=input.value.trim();if(!tag)return;if(!Array.isArray(s.tags))s.tags=[];if(!s.tags.includes(tag))s.tags.push(tag);saveData();openStudent(studentId);
+}
+function removeStudentTag(studentId,encoded){
+  const s=data.students.find(x=>x.id===studentId);if(!s)return;const tag=decodeURIComponent(encoded);
+  s.tags=(s.tags||[]).filter(t=>t!==tag);saveData();openStudent(studentId);
+}
+function seatingStudentOptions(selected=[]){
+  return [...data.students].sort((a,b)=>a.number-b.number).map(s=>`<label class="rule-student"><input type="checkbox" value="${s.id}" ${selected.includes(s.id)?"checked":""}> ${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</label>`).join("");
+}
+function allStudentTags(){return [...new Set(data.students.flatMap(s=>s.tags||[]))].sort((a,b)=>a.localeCompare(b,"zh-Hant"))}
+function openSeatRules(){
+  normalizeSeating();const rules=data.seating.rules;
+  showModal("隱藏分配規則",`
+    <p class="muted">規則只供教師分配座位使用，不會出現在展示模式或學生視角。</p>
+    <div class="seat-rule-actions"><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
+    <div class="seat-rule-list">${rules.length?rules.map(r=>`<div class="seat-rule-card"><div><strong>${escapeHtml(r.name||"未命名規則")}</strong><div class="item-sub">${r.type==="tag"?`標籤：${escapeHtml(r.tag||"")}`:`${(r.studentIds||[]).length} 位學生`}｜${r.kind==="around8"?"周圍八格不相鄰":r.kind==="orthogonal"?"前後左右不相鄰":r.kind==="horizontal"?"左右不相鄰":r.kind==="front"?"優先前排":"規則"}</div></div><label class="rule-toggle"><input type="checkbox" ${r.enabled!==false?"checked":""} onchange="toggleSeatRule('${r.id}',this.checked)">啟用</label><button class="secondary" onclick="editSeatRule('${r.id}')">編輯</button><button class="secondary" onclick="deleteSeatRule('${r.id}')">刪除</button></div>`).join(""):`<div class="empty">尚未建立分配規則。</div>`}</div>`);
+}
+function openNewSeatRule(){
+  const tags=allStudentTags();
+  showModal("新增分配規則",`<form id="seatRuleForm" class="modal-form">
+    <label><span>規則名稱</span><input id="seatRuleName" placeholder="例如：容易聊天彼此分開" required></label>
+    <label><span>套用方式</span><select id="seatRuleType"><option value="group">指定學生群組</option><option value="tag">依學生標籤</option></select></label>
+    <div id="seatRuleGroupBox"><span class="setting-title">選擇學生（至少 2 人）</span><div class="rule-student-grid">${seatingStudentOptions()}</div></div>
+    <label id="seatRuleTagBox" style="display:none"><span>學生標籤</span><select id="seatRuleTag">${tags.map(t=>`<option>${escapeHtml(t)}</option>`).join("")}</select></label>
+    <label><span>規則</span><select id="seatRuleKind"><option value="horizontal">左右不相鄰</option><option value="orthogonal">前後左右不相鄰</option><option value="around8">周圍八格不相鄰</option><option value="front">優先前排（軟性規則）</option></select></label>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="openSeatRules()">取消</button><button class="primary">建立規則</button></div>
+  </form>`);
+  const type=document.getElementById("seatRuleType");type.addEventListener("change",()=>{document.getElementById("seatRuleGroupBox").style.display=type.value==="group"?"block":"none";document.getElementById("seatRuleTagBox").style.display=type.value==="tag"?"block":"none"});
+  document.getElementById("seatRuleForm").addEventListener("submit",e=>{e.preventDefault();const type=document.getElementById("seatRuleType").value,ids=[...document.querySelectorAll("#seatRuleGroupBox input:checked")].map(x=>x.value),tag=document.getElementById("seatRuleTag").value,kind=document.getElementById("seatRuleKind").value;if(type==="group"&&ids.length<2){toast("群組規則至少選擇 2 位學生");return}if(type==="tag"&&!tag){toast("請先替學生建立標籤");return}data.seating.rules.push({id:uid("sr"),name:document.getElementById("seatRuleName").value.trim(),type,studentIds:ids,tag,kind,enabled:true});saveData();openSeatRules()});
+}
+
+function editSeatRule(id){
+  const r=data.seating.rules.find(x=>x.id===id);if(!r)return;
+  const tags=allStudentTags();
+  showModal("編輯分配規則",`<form id="seatRuleEditForm" class="modal-form">
+    <label><span>規則名稱</span><input id="seatRuleName" value="${escapeHtml(r.name||"")}" required></label>
+    <label><span>套用方式</span><select id="seatRuleType"><option value="group" ${r.type==="group"?"selected":""}>指定學生群組</option><option value="tag" ${r.type==="tag"?"selected":""}>依學生標籤</option></select></label>
+    <div id="seatRuleGroupBox" style="${r.type==="tag"?"display:none":""}"><span class="setting-title">選擇學生（至少 2 人）</span><div class="rule-student-grid">${seatingStudentOptions(r.studentIds||[])}</div></div>
+    <label id="seatRuleTagBox" style="${r.type==="tag"?"":"display:none"}"><span>學生標籤</span><select id="seatRuleTag">${tags.map(t=>`<option ${t===r.tag?"selected":""}>${escapeHtml(t)}</option>`).join("")}</select></label>
+    <label><span>規則</span><select id="seatRuleKind"><option value="horizontal" ${r.kind==="horizontal"?"selected":""}>左右不相鄰</option><option value="orthogonal" ${r.kind==="orthogonal"?"selected":""}>前後左右不相鄰</option><option value="around8" ${r.kind==="around8"?"selected":""}>周圍八格不相鄰</option><option value="front" ${r.kind==="front"?"selected":""}>優先前排（軟性規則）</option></select></label>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="openSeatRules()">取消</button><button class="primary">儲存修改</button></div>
+  </form>`);
+  const type=document.getElementById("seatRuleType");
+  type.addEventListener("change",()=>{document.getElementById("seatRuleGroupBox").style.display=type.value==="group"?"block":"none";document.getElementById("seatRuleTagBox").style.display=type.value==="tag"?"block":"none"});
+  document.getElementById("seatRuleEditForm").addEventListener("submit",e=>{
+    e.preventDefault();const type=document.getElementById("seatRuleType").value,ids=[...document.querySelectorAll("#seatRuleGroupBox input:checked")].map(x=>x.value),tag=document.getElementById("seatRuleTag").value,kind=document.getElementById("seatRuleKind").value;
+    if(type==="group"&&ids.length<2){toast("群組規則至少選擇 2 位學生");return}
+    if(type==="tag"&&!tag){toast("請先替學生建立標籤");return}
+    Object.assign(r,{name:document.getElementById("seatRuleName").value.trim(),type,studentIds:ids,tag,kind});
+    saveData();openSeatRules();
+  });
+}
+function toggleSeatRule(id,enabled){const r=data.seating.rules.find(x=>x.id===id);if(r){r.enabled=enabled;saveData();openSeatRules()}}
+function deleteSeatRule(id){if(!confirm("確定刪除這條分配規則嗎？"))return;data.seating.rules=data.seating.rules.filter(x=>x.id!==id);saveData();openSeatRules()}
+function seatCoords(i,cols){return {r:Math.floor(i/cols),c:i%cols}}
+function violatesSeatRules(slots){
+  const cols=data.seating.cols,position={};slots.forEach((id,i)=>{if(id)position[id]=i});
+  for(const rule of data.seating.rules.filter(r=>r.enabled!==false&&r.kind!=="front")){
+    const ids=rule.type==="tag"?data.students.filter(s=>(s.tags||[]).includes(rule.tag)).map(s=>s.id):(rule.studentIds||[]);
+    for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){if(position[ids[a]]==null||position[ids[b]]==null)continue;const A=seatCoords(position[ids[a]],cols),B=seatCoords(position[ids[b]],cols),dr=Math.abs(A.r-B.r),dc=Math.abs(A.c-B.c);if(rule.kind==="horizontal"&&dr===0&&dc===1)return true;if(rule.kind==="orthogonal"&&dr+dc===1)return true;if(rule.kind==="around8"&&Math.max(dr,dc)===1)return true}
+  }return false;
+}
+function seatSoftScore(slots){
+  const cols=data.seating.cols,rows=data.seating.rows;let score=0;
+  for(const rule of data.seating.rules.filter(r=>r.enabled!==false&&r.kind==="front")){
+    const ids=new Set(rule.type==="tag"?data.students.filter(s=>(s.tags||[]).includes(rule.tag)).map(s=>s.id):(rule.studentIds||[]));
+    slots.forEach((id,i)=>{if(ids.has(id)){const row=Math.floor(i/cols);score+=Math.max(0,(rows-1)-row)}})
+  }return score;
+}
+function createSeatHistorySnapshot(label="手動儲存"){
+  normalizeSeating();if(!data.seating.slots.some(Boolean))return false;
+  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots]});
+  data.seating.history=data.seating.history.slice(0,20);return true;
+}
+function saveSeatHistory(label="手動儲存"){
+  if(!createSeatHistorySnapshot(label)){toast("目前沒有座位可以儲存");return}
+  saveData();toast("已儲存座位快照");
+}
+function openSeatHistory(){
+  normalizeSeating();showModal("座位歷史",`<p class="muted">每班保留最近 20 份座位紀錄。</p><div class="seat-history-list">${data.seating.history.length?data.seating.history.map(x=>`<div class="seat-history-card"><div><strong>${escapeHtml(x.label)}</strong><div class="item-sub">${new Date(x.at).toLocaleString("zh-TW")}｜${x.rows} × ${x.cols}</div></div><button class="secondary" onclick="previewSeatHistory('${x.id}')">查看</button><button class="secondary" onclick="restoreSeatHistory('${x.id}')">恢復</button><button class="secondary" onclick="deleteSeatHistory('${x.id}')">刪除</button></div>`).join(""):`<div class="empty">目前沒有座位歷史。</div>`}</div>`);
+}
+
+function seatSnapshotHtml(x){
+  const order=[...Array(x.rows*x.cols).keys()];
+  if(data.seating.view==="student")order.reverse();
+  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]);return `<div class="seat-slot ${s?"occupied":"empty"}">${s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div><div class="seat-back">教室後方</div></div>`;
+}
+function previewSeatHistory(id){
+  const x=data.seating.history.find(v=>v.id===id);if(!x)return;
+  showModal("查看座位歷史",`<div class="history-preview-meta"><strong>${escapeHtml(x.label)}</strong><span>${new Date(x.at).toLocaleString("zh-TW")}｜${x.rows} × ${x.cols}</span></div>${seatSnapshotHtml(x)}<div class="modal-actions"><button class="secondary" onclick="openSeatHistory()">返回歷史</button><button class="primary" onclick="restoreSeatHistory('${x.id}')">恢復此版本</button></div>`);
+}
+function restoreSeatHistory(id){
+  const x=data.seating.history.find(v=>v.id===id);if(!x||!confirm("確定恢復這份座位配置嗎？目前座位會先自動備份。"))return;
+  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots]};
+  createSeatHistorySnapshot("恢復前自動備份");
+  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;
+  saveData();closeModal();toast("已恢復座位配置");
+}
+function deleteSeatHistory(id){if(!confirm("確定刪除這份座位歷史嗎？"))return;data.seating.history=data.seating.history.filter(x=>x.id!==id);saveData();openSeatHistory()}
 function normalizeSeating(){
-  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],view:"teacher"};
+  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],view:"teacher",rules:[],history:[]};
   data.seating.rows=Math.max(1,Math.min(10,Number(data.seating.rows)||5));
   data.seating.cols=Math.max(1,Math.min(10,Number(data.seating.cols)||3));
   const count=data.seating.rows*data.seating.cols;
@@ -2004,6 +2108,8 @@ function normalizeSeating(){
     return null;
   });
   data.seating.view=data.seating.view==="student"?"student":"teacher";
+  if(!Array.isArray(data.seating.rules))data.seating.rules=[];
+  if(!Array.isArray(data.seating.history))data.seating.history=[];
 }
 function renderSeats(){
   const grid=document.getElementById("seatGrid");if(!grid)return;
@@ -2041,13 +2147,16 @@ function applySeatGrid(){
   data.seating.rows=rows;data.seating.cols=cols;normalizeSeating();saveData();
 }
 function randomizeSeats(){
-  normalizeSeating();const count=data.seating.rows*data.seating.cols;
-  if(count<data.students.length){toast("座位數不足，請先增加列數或欄數");return}
-  const ids=data.students.map(s=>s.id);
-  for(let i=ids.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[ids[i],ids[k]]=[ids[k],ids[i]]}
-  const slots=Array(count).fill(null),positions=[...Array(count).keys()];
-  for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
-  ids.forEach((id,i)=>slots[positions[i]]=id);data.seating.slots=slots;saveData();
+  normalizeSeating();const count=data.seating.rows*data.seating.cols;if(count<data.students.length){toast("座位數不足，請先增加列數或欄數");return}
+  const old=[...data.seating.slots],ids=data.students.map(s=>s.id);let best=null,bestScore=-Infinity;
+  for(let attempt=0;attempt<5000;attempt++){
+    const people=[...ids];for(let i=people.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[people[i],people[k]]=[people[k],people[i]]}
+    const positions=[...Array(count).keys()];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
+    const slots=Array(count).fill(null);people.forEach((id,i)=>slots[positions[i]]=id);if(violatesSeatRules(slots))continue;const score=seatSoftScore(slots);if(score>bestScore){best=slots;bestScore=score}
+  }
+  if(!best){toast("目前座位格局與啟用規則無法產生符合條件的安排，請調整規則。");return}
+  if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old});data.seating.history=data.seating.history.slice(0,20)}
+  data.seating.slots=best;saveData();toast("已依啟用規則完成座位分配");
 }
 function clearSeats(){
   if(!confirm("確定要清空目前座位安排嗎？"))return;
@@ -2077,6 +2186,7 @@ function renderStudents(){
       <div class="student-card" onclick="openStudent('${s.id}')">
         <div class="num">${String(s.number).padStart(2,"0")}</div>
         <div class="item-title">${escapeHtml(s.name)}</div>
+        ${s.tags?.length?`<div class="student-tags">${s.tags.map(t=>`<span>${escapeHtml(t)}</span>`).join("")}</div>`:""}
         <div class="assignment-summary">
           ${missing ? `<span class="badge missing">缺交 ${missing}</span>`:""}
           ${correction ? `<span class="badge correction">待訂正 ${correction}</span>`:""}
@@ -2192,6 +2302,7 @@ function openStudent(studentId){
   showModal(
     `${String(s.number).padStart(2,"0")} ${s.name}`,
     `
+      <div class="student-tag-manager"><strong>學生標籤</strong><div class="student-tags">${(s.tags||[]).map(t=>`<span>${escapeHtml(t)} <button type="button" onclick="removeStudentTag('${s.id}','${encodeURIComponent(t)}')">×</button></span>`).join("")||"<em>尚無標籤</em>"}</div><div class="tag-add-row"><input id="newStudentTag" placeholder="例如：容易聊天、前排"><button type="button" class="secondary" onclick="addStudentTag('${s.id}')">新增標籤</button></div></div>
       <div class="assignment-summary">
         <span class="badge missing">缺交 ${history.filter(x=>x.r.status==="missing").length}</span>
         <span class="badge correction">待訂正 ${history.filter(x=>x.r.status==="correction").length}</span>
@@ -2476,3 +2587,7 @@ document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSea
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
 document.getElementById("seatPresentationBtn")?.addEventListener("click",toggleSeatPresentation);
+
+document.getElementById("seatRulesBtn")?.addEventListener("click",openSeatRules);
+document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
+document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
