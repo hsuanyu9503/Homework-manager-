@@ -47,7 +47,7 @@ h1{font-size:28px;margin-bottom:0}
   position:sticky;
   top:8px;
   z-index:20;
-  backdrop-filter:none;
+  backdrop-filter:blur(12px);
 }
 .tab{
   border:0;background:transparent;padding:10px 12px;border-radius:10px;color:var(--muted);font-weight:700;
@@ -1707,7 +1707,7 @@ nav.tabs .tab{
 
 /* v1.9 seat backstage + reveal presentation */
 .seat-backstage{display:grid;gap:10px}.seat-setting-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:left;cursor:pointer}.seat-setting-entry span:first-child{display:flex;flex-direction:column;gap:3px}.seat-setting-entry small{color:var(--muted)}.seat-setting-entry span:last-child{font-size:1.6rem;color:var(--muted)}.seat-setting-note{padding:11px 13px;border-radius:12px;background:rgba(0,0,0,.035);font-size:.84rem;color:var(--muted)}
-.seat-presentation-back{position:relative;z-index:1;align-self:flex-start;border:0;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.12);margin-bottom:12px}
+.seat-presentation-back{position:sticky;top:0;z-index:1002;align-self:flex-start;border:0;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.12);margin-bottom:12px}
 .seat-slot{position:relative;overflow:hidden}.seat-reveal-cover{display:none}
 .seat-room.presentation.step-reveal .seat-slot.occupied{cursor:pointer}.seat-room.presentation.step-reveal .seat-slot.occupied .seat-number,.seat-room.presentation.step-reveal .seat-slot.occupied strong{visibility:hidden}.seat-room.presentation.step-reveal .seat-slot.occupied .seat-reveal-cover{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:var(--bg);font-weight:900}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed .seat-number,.seat-room.presentation.step-reveal .seat-slot.occupied.revealed strong{visibility:visible}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed .seat-reveal-cover{display:none}
 body.seat-presentation-active{overflow:hidden}
@@ -1722,76 +1722,3 @@ body.seat-presentation-active{overflow:hidden}
 .seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:var(--bg);font-weight:900}
 .seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover span{font-size:0}
 .seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover span::after{content:"待揭曉";font-size:.82rem;color:var(--muted)}
-
-/* v2.0 */
-.score-more{font-size:.9rem}.score-quick-adjust{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}.assignment-modal-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.assignment-sort-switch{display:flex;gap:6px}.assignment-sort-switch .active{box-shadow:inset 0 0 0 2px currentColor}.assignment-group-heading{grid-column:1/-1;font-weight:900;padding:10px 4px 4px;border-bottom:1px solid var(--line)}.assignment-group-name-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed{animation:seatCardReveal .36s ease-out}@keyframes seatCardReveal{0%{opacity:.55;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}@media(max-width:620px){.score-quick-adjust{grid-template-columns:repeat(3,1fr)}.assignment-group-name-list{grid-template-columns:1fr}.assignment-sort-switch{width:100%}.assignment-sort-switch button{flex:1}}
-
-/* v2.0 final polish: grouped submission layout */
-.submission-student-grid.grouped{display:block}
-.submission-group-section{margin:0 0 14px}
-.submission-group-section:last-child{margin-bottom:0}
-.submission-group-section .assignment-group-heading{margin:0 0 8px;padding:8px 4px 6px}
-.submission-group-cells{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-@media(max-width:1100px){.submission-group-cells{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:700px){.submission-group-cells{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:480px){.submission-group-cells{grid-template-columns:1fr}}
-
-/* v2.0 score adjustment UI polish */
-.score-adjust-mode{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.score-adjust-mode-btn{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 14px;font-weight:900;color:var(--muted);cursor:pointer}
-.score-adjust-mode-btn.active{color:var(--text);box-shadow:inset 0 0 0 2px currentColor}
-.score-quick-adjust{grid-template-columns:repeat(3,1fr)}
-
-/* v2.0 seat blocking */
-.seat-slot.blocked{border-style:dashed;opacity:.62;cursor:pointer;background:repeating-linear-gradient(135deg,rgba(0,0,0,.035),rgba(0,0,0,.035) 8px,rgba(0,0,0,.075) 8px,rgba(0,0,0,.075) 16px)}
-.seat-slot.blocked .seat-blocked-label{font-weight:900;color:var(--muted);font-size:.84rem}
-.seat-room.presentation .seat-slot.blocked{opacity:.32}
-
-/* v2.0 teacher/student perspective: podium follows viewing direction */
-.seat-room{display:flex;flex-direction:column}
-.seat-room .seat-front{order:1}
-.seat-room .seat-grid-wrap{order:2}
-.seat-room .seat-back{order:3}
-.seat-room.student-view .seat-front{order:3}
-.seat-room.student-view .seat-grid-wrap{order:2}
-.seat-room.student-view .seat-back{order:1}
-
-/* v2.0.1 scroll performance */
-.tabs{background:rgba(232,239,255,.98);-webkit-backdrop-filter:none;backdrop-filter:none}
-body::before{position:absolute}
-
-
-@media (hover:none),(pointer:coarse){
-  .progress-card,.class-card,.settings-item-card,.memo-complete-btn{transition:none}
-  .progress-card:hover,.class-card:hover,.settings-item-card:hover,.memo-complete-btn:hover{transform:none}
-}
-
-/* v2.0.2 targeted rendering performance */
-.page:not(.active){display:none!important}
-
-#noiseBallCanvas{contain:strict}
-
-/* v2.0.3 performance consolidation */
-
-
-
-@media (prefers-reduced-motion:reduce){
-  .seat-slot,.noise-ball,.marquee-track{animation-duration:.001ms!important;animation-iteration-count:1!important}
-}
-
-/* v2.0.4 iPad/Safari scroll-start stabilization */
-html{overflow-x:hidden}
-body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
-.page.active{display:block!important}
-.page:not(.active){display:none!important}
-
-/* v2.0.5 seat module on-demand lifecycle */
-#seats:not(.active) #seatGrid{display:none}
-#seats:not(.active) #seatRoom{box-shadow:none;background:none}
-#seats:not(.active) #seatRoom::before,#seats:not(.active) #seatRoom::after{content:none!important}
-
-/* v2.0.6 isolate post-v1.8 seat presentation/reveal styles */
-#seats:not(.active) .seat-reveal-cover,
-#seats:not(.active) .seat-presentation-back{display:none!important}
-#seats.active .seat-room:not(.presentation) .seat-reveal-cover{will-change:auto}
-#seats.active .seat-room.presentation{isolation:isolate}
