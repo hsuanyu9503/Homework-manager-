@@ -1757,10 +1757,10 @@ body.seat-presentation-active{overflow:hidden}
 .seat-room.student-view .seat-back{order:1}
 
 /* v2.0.1 scroll performance */
-.tabs{background:rgba(232,239,255,.98);-webkit-backdrop-filter:none;backdrop-filter:none;contain:paint}
+.tabs{background:rgba(232,239,255,.98);-webkit-backdrop-filter:none;backdrop-filter:none}
 body::before{position:absolute}
-.page:not(.active){content-visibility:hidden}
-.page.active{content-visibility:visible}
+
+
 @media (hover:none),(pointer:coarse){
   .progress-card,.class-card,.settings-item-card,.memo-complete-btn{transition:none}
   .progress-card:hover,.class-card:hover,.settings-item-card:hover,.memo-complete-btn:hover{transform:none}
@@ -1768,13 +1768,19 @@ body::before{position:absolute}
 
 /* v2.0.2 targeted rendering performance */
 .page:not(.active){display:none!important}
-.page.active{contain:layout style}
+
 #noiseBallCanvas{contain:strict}
 
 /* v2.0.3 performance consolidation */
-.page.active{contain:none}
-.assignment-card,.contact-card,.student-card,.score-card,.submission-overview-card{content-visibility:auto;contain-intrinsic-size:auto 96px}
-.seat-slot{contain:layout paint style}
+
+
+
 @media (prefers-reduced-motion:reduce){
   .seat-slot,.noise-ball,.marquee-track{animation-duration:.001ms!important;animation-iteration-count:1!important}
 }
+
+/* v2.0.4 iPad/Safari scroll-start stabilization */
+html{overflow-x:hidden}
+body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
+.page.active{display:block!important}
+.page:not(.active){display:none!important}
