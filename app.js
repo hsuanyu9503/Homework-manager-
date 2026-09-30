@@ -1,4 +1,4 @@
-const APP_VERSION = "2.11";
+const APP_VERSION = "2.12";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2034,12 +2034,12 @@ function resetGroupScores(){
 
 
 function addStudentTag(studentId){
-  const s=data.students.find(x=>x.id===studentId),input=document.getElementById("newStudentTag");if(!s||!input)return;
-  const tag=input.value.trim();if(!tag)return;if(!Array.isArray(s.tags))s.tags=[];if(!s.tags.includes(tag))s.tags.push(tag);saveData();openStudent(studentId);
+  const s=data.students.find(x=>x.id===studentId),input=document.getElementById(`seatStudentTagInput-${studentId}`);if(!s||!input)return;
+  const tag=input.value.trim();if(!tag)return;if(!Array.isArray(s.tags))s.tags=[];if(!s.tags.includes(tag))s.tags.push(tag);saveData();openSeatTagSettings();
 }
 function removeStudentTag(studentId,encoded){
   const s=data.students.find(x=>x.id===studentId);if(!s)return;const tag=decodeURIComponent(encoded);
-  s.tags=(s.tags||[]).filter(t=>t!==tag);saveData();openStudent(studentId);
+  s.tags=(s.tags||[]).filter(t=>t!==tag);saveData();openSeatTagSettings();
 }
 function seatingStudentOptions(selected=[]){
   return [...data.students].sort((a,b)=>a.number-b.number).map(s=>`<label class="rule-student"><input type="checkbox" value="${s.id}" ${selected.includes(s.id)?"checked":""}> ${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</label>`).join("");
@@ -2049,9 +2049,23 @@ function openSeatSettings(){
   normalizeSeating();
   showModal("座位區設定",`<div class="seat-backstage">
     <div><strong>教師後台</strong><p class="muted">以下設定不會出現在座位展示模式中。</p></div>
-    <button type="button" class="seat-setting-entry" onclick="openSeatRules()"><span><b>隱藏分配規則</b><small>管理群組、學生標籤與座位限制</small></span><span>›</span></button>
+    <button type="button" class="seat-setting-entry" onclick="openSeatTagSettings()"><span><b>學生標籤</b><small>建立與管理座位分配使用的學生分類</small></span><span>›</span></button>
+    <button type="button" class="seat-setting-entry" onclick="openSeatRules()"><span><b>隱藏分配規則</b><small>設定學生群組、標籤與座位限制</small></span><span>›</span></button>
     <div class="seat-setting-note">「隨機分配」會自動套用所有已啟用的隱藏規則。</div>
   </div>`);
+}
+function openSeatTagSettings(){
+  const students=[...data.students].sort((a,b)=>a.number-b.number);
+  showModal("學生標籤",`
+    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回座位區設定</button></div>
+    <p class="muted">標籤僅供座位分配規則分類使用，可在建立規則時直接套用。</p>
+    <div class="seat-tag-list">${students.length?students.map(s=>`
+      <div class="seat-tag-card">
+        <div class="seat-tag-student"><strong>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</strong>
+          <div class="student-tags">${(s.tags||[]).map(t=>`<span>${escapeHtml(t)} <button type="button" aria-label="移除 ${escapeHtml(t)}" onclick="removeStudentTag('${s.id}','${encodeURIComponent(t)}')">×</button></span>`).join("")||"<em>尚無標籤</em>"}</div>
+        </div>
+        <div class="tag-add-row"><input id="seatStudentTagInput-${s.id}" placeholder="新增標籤"><button type="button" class="secondary" onclick="addStudentTag('${s.id}')">新增</button></div>
+      </div>`).join(""):`<div class="empty">尚未建立學生。</div>`}</div>`);
 }
 function seatRuleKindLabel(kind){
   return {around8:"周圍八格不相鄰",checkerboard:"梅花座",fixedSeat:"指定特定座位",front2:"指定坐前兩排",noCorner:"不能坐角落",back2:"指定坐後兩排",horizontalAdjacent:"左右相鄰"}[kind]||"規則";
@@ -2646,7 +2660,6 @@ function openStudent(studentId){
   showModal(
     `${String(s.number).padStart(2,"0")} ${s.name}`,
     `
-      <div class="student-tag-manager"><strong>學生標籤</strong><div class="student-tags">${(s.tags||[]).map(t=>`<span>${escapeHtml(t)} <button type="button" onclick="removeStudentTag('${s.id}','${encodeURIComponent(t)}')">×</button></span>`).join("")||"<em>尚無標籤</em>"}</div><div class="tag-add-row"><input id="newStudentTag" placeholder="例如：容易聊天、前排"><button type="button" class="secondary" onclick="addStudentTag('${s.id}')">新增標籤</button></div></div>
       <div class="assignment-summary">
         <span class="badge missing">缺交 ${history.filter(x=>x.r.status==="missing").length}</span>
         <span class="badge correction">待訂正 ${history.filter(x=>x.r.status==="correction").length}</span>

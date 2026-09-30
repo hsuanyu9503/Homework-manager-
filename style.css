@@ -1850,3 +1850,13 @@ body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
     justify-self:start;
   }
 }
+
+/* v2.12 seat settings student tags */
+.seat-tag-list{display:grid;gap:10px;margin-top:12px}
+.seat-tag-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.8fr);gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.seat-tag-student{min-width:0}
+.seat-tag-card .student-tags{margin-top:7px}
+.seat-tag-card .tag-add-row{margin-top:0}
+@media(max-width:700px){
+  .seat-tag-card{grid-template-columns:1fr}
+}
