@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.4";
+const APP_VERSION = "2.0.5";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -460,6 +460,8 @@ function enterClass(classId){
 
 function leaveClass(){
   persistActiveClass();
+  unmountSeatModule();
+  stopNoiseMonitor();
   activeClassId = null;
   document.getElementById("workspace").classList.add("hidden");
   document.getElementById("classHome").classList.remove("hidden");
@@ -505,6 +507,8 @@ function renderPage(page=currentPage){
   }
 }
 function setPage(page){
+  const previousPage=currentPage;
+  if(previousPage==="seats" && page!=="seats") unmountSeatModule();
   currentPage = page;
   document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active", el.id===page));
   document.querySelectorAll(".tab").forEach(el=>el.classList.toggle("active", el.dataset.page===page));
@@ -2156,6 +2160,18 @@ function normalizeSeating(){
   if(!Array.isArray(data.seating.rules))data.seating.rules=[];
   if(!Array.isArray(data.seating.history))data.seating.history=[];
 }
+
+function unmountSeatModule(){
+  const grid=document.getElementById("seatGrid");
+  if(grid){grid.replaceChildren();grid.style.gridTemplateColumns="";}
+  const room=document.getElementById("seatRoom");
+  if(room){
+    room.classList.remove("presentation","step-reveal","front-step-reveal","student-view");
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-grid-wrap"),back=room.querySelector(".seat-back");
+    if(front&&wrap&&back)room.append(front,wrap,back);
+  }
+}
+
 function renderSeats(){
   const grid=document.getElementById("seatGrid");if(!grid)return;
   normalizeSeating();
