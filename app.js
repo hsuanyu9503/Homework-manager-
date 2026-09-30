@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.9.1";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2174,7 +2174,8 @@ function clearSeats(){
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
 function toggleSeatPresentation(forceOff=false){
   const room=document.getElementById("seatRoom");if(!room)return;
-  const entering=forceOff?false:!room.classList.contains("presentation");
+  const shouldForceOff=forceOff===true;
+  const entering=shouldForceOff?false:!room.classList.contains("presentation");
   room.classList.toggle("presentation",entering);document.body.classList.toggle("seat-presentation-active",entering);
   document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
   let back=document.getElementById("seatPresentationBackBtn");
@@ -2602,7 +2603,7 @@ document.getElementById("applySeatGridBtn")?.addEventListener("click",applySeatG
 document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSeats);
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
-document.getElementById("seatPresentationBtn")?.addEventListener("click",toggleSeatPresentation);
+document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));
 
 document.getElementById("seatSettingsBtn")?.addEventListener("click",openSeatSettings);
 document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
