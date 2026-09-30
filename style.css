@@ -1746,3 +1746,12 @@ body.seat-presentation-active{overflow:hidden}
 .seat-slot.blocked{border-style:dashed;opacity:.62;cursor:pointer;background:repeating-linear-gradient(135deg,rgba(0,0,0,.035),rgba(0,0,0,.035) 8px,rgba(0,0,0,.075) 8px,rgba(0,0,0,.075) 16px)}
 .seat-slot.blocked .seat-blocked-label{font-weight:900;color:var(--muted);font-size:.84rem}
 .seat-room.presentation .seat-slot.blocked{opacity:.32}
+
+/* v2.0 teacher/student perspective: podium follows viewing direction */
+.seat-room{display:flex;flex-direction:column}
+.seat-room .seat-front{order:1}
+.seat-room .seat-grid-wrap{order:2}
+.seat-room .seat-back{order:3}
+.seat-room.student-view .seat-front{order:3}
+.seat-room.student-view .seat-grid-wrap{order:2}
+.seat-room.student-view .seat-back{order:1}

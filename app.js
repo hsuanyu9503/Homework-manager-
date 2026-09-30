@@ -2154,6 +2154,7 @@ function renderSeats(){
   }).join("");
   const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
+  const room=document.getElementById("seatRoom");if(room)room.classList.toggle("student-view",s.view==="student");
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
     el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")){if(room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed");return}toggleSeatBlocked(Number(el.dataset.seatIndex))});
