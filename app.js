@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9.3";
+const APP_VERSION = "2.0";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -32,6 +32,7 @@ function defaultData(){
     scores:{},
     groups:[],
     groupScores:{},
+    assignmentGroups:[],
     settings:{overdueDays:2}
   };
 }
@@ -93,6 +94,7 @@ function normalizeData(input){
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
     groups:Array.isArray(input?.groups) ? input.groups : [],
     groupScores:(input?.groupScores && typeof input.groupScores==="object") ? input.groupScores : {},
+    assignmentGroups:Array.isArray(input?.assignmentGroups) ? input.assignmentGroups : [],
     seating:{
       rows:Math.max(1,Math.min(10,Number(input?.seating?.rows)||5)),
       cols:Math.max(1,Math.min(10,Number(input?.seating?.cols)||3)),
@@ -888,7 +890,7 @@ function renderDashboard(){
 
 function submissionOverviewHtml(a){
   const {counts:c,total,percent}=assignmentProgress(a.id);
-  const students=[...data.students].sort((x,y)=>x.number-y.number);
+  const students=assignmentSortedStudents();
   return `
     <article class="submission-overview-card">
       <div class="submission-overview-title">
@@ -898,18 +900,10 @@ function submissionOverviewHtml(a){
         </div>
         <div class="rate-pill ${percent===100 ? "done" : ""}">${percent}%</div>
       </div>
-      <div class="submission-student-grid">
-        ${students.map(s=>{
-          const r=ensureRecord(a.id,s.id);
-          return `
-            <label class="submission-student-cell">
-              <span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span>
-              <select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態"
-                onchange="setStatus('${a.id}','${s.id}',this)">
-                ${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status ? "selected" : ""}>${STATUS_LABEL[status]}</option>`).join("")}
-              </select>
-            </label>`;
-        }).join("")}
+      <div class="submission-student-grid ${assignmentStudentSortMode==="group"?"grouped":""}">
+        ${assignmentStudentSortMode==="group"
+          ? (()=>{const buckets=[];students.forEach(s=>{const g=assignmentGroupForStudent(s.id),key=g?.id||"ungrouped";let b=buckets.find(x=>x.key===key);if(!b){b={key,label:g?.name||"未分組",students:[]};buckets.push(b)}b.students.push(s)});return buckets.map(b=>`<section class="submission-group-section"><div class="assignment-group-heading">${escapeHtml(b.label)}</div><div class="submission-group-cells">${b.students.map(s=>{const r=ensureRecord(a.id,s.id);return `<label class="submission-student-cell"><span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span><select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status?"selected":""}>${STATUS_LABEL[status]}</option>`).join("")}</select></label>`}).join("")}</div></section>`).join("")})()
+          : students.map(s=>{const r=ensureRecord(a.id,s.id);return `<label class="submission-student-cell"><span class="submission-student-name">${escapeHtml(String(s.number).padStart(2,"0"))} ${escapeHtml(s.name)}</span><select class="status-select ${r.status}" aria-label="${escapeAttr(s.name)}的作業狀態" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(status=>`<option value="${status}" ${r.status===status?"selected":""}>${STATUS_LABEL[status]}</option>`).join("")}</select></label>`}).join("")}
       </div>
     </article>`;
 }
@@ -1646,6 +1640,11 @@ function changeStudentScore(studentId, delta){
   saveData();
 }
 
+function openScoreAdjust(kind,id){
+  const isGroup=kind==="group",label=isGroup?(data.groups.find(g=>g.id===id)?.name||"小組"):(data.students.find(s=>s.id===id)?.name||"學生");
+  showModal(`調整${isGroup?"小組":"個人"}積分`,`<form id="scoreAdjustForm" class="modal-form"><div class="notice-box">${escapeHtml(label)}｜正數加分、負數扣分。</div><label><span>分數變動</span><input id="scoreAdjustValue" type="number" step="1" value="2" required></label><div class="score-quick-adjust">${[-5,-3,-2,2,3,5].map(v=>`<button type="button" class="secondary" onclick="document.getElementById('scoreAdjustValue').value=${v}">${v>0?"+":""}${v}</button>`).join("")}</div><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary">套用</button></div></form>`);
+  document.getElementById("scoreAdjustForm").addEventListener("submit",e=>{e.preventDefault();const d=Number(document.getElementById("scoreAdjustValue").value);if(!Number.isFinite(d)||d===0){toast("請輸入非 0 的分數");return}isGroup?changeGroupScore(id,d):changeStudentScore(id,d);closeModal()});
+}
 function renderScores(){
   const list = document.getElementById("scoreList");
   if(!list) return;
@@ -1665,7 +1664,7 @@ function renderScores(){
         <div class="score-controls">
           <button class="score-btn minus" onclick="changeStudentScore('${s.id}',-1)">−</button>
           <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
-          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)">＋</button>
+          <button class="score-btn plus" onclick="changeStudentScore('${s.id}',1)">＋</button><button class="score-btn score-more" onclick="openScoreAdjust('student','${s.id}')">±</button>
         </div>
       </div>
     `;
@@ -1802,7 +1801,7 @@ function renderGroupScores(){
         <div class="score-controls group-score-controls">
           <button class="score-btn minus" onclick="changeGroupScore('${g.id}',-1)">−</button>
           <div class="score-value ${score<0 ? "negative" : score>0 ? "positive" : ""}">${score}</div>
-          <button class="score-btn plus" onclick="changeGroupScore('${g.id}',1)">＋</button>
+          <button class="score-btn plus" onclick="changeGroupScore('${g.id}',1)">＋</button><button class="score-btn score-more" onclick="openScoreAdjust('group','${g.id}')">±</button>
         </div>
       </div>
     `;
@@ -2241,38 +2240,38 @@ function renderSettingsRoster(){
   if(ta && document.activeElement !== ta) ta.value = text;
 }
 
+
+let assignmentStudentSortMode=localStorage.getItem("cmAssignmentStudentSort")==="group"?"group":"number";
+function normalizeAssignmentGroups(){if(!Array.isArray(data.assignmentGroups))data.assignmentGroups=[];const valid=new Set(data.students.map(s=>s.id)),seen=new Set();data.assignmentGroups=data.assignmentGroups.map((g,i)=>({id:g.id||uid("ag"),name:g.name||`第 ${i+1} 組`,studentIds:(Array.isArray(g.studentIds)?g.studentIds:[]).filter(id=>valid.has(id)&&!seen.has(id)&&seen.add(id))}))}
+function assignmentGroupForStudent(id){normalizeAssignmentGroups();return data.assignmentGroups.find(g=>g.studentIds.includes(id))}
+function assignmentSortedStudents(){normalizeAssignmentGroups();if(assignmentStudentSortMode!=="group")return [...data.students].sort((a,b)=>a.number-b.number);const order=new Map();data.assignmentGroups.forEach((g,i)=>g.studentIds.forEach(id=>order.set(id,i)));return [...data.students].sort((a,b)=>(order.get(a.id)??999)-(order.get(b.id)??999)||a.number-b.number)}
+function assignmentGroupHeadingHtml(s,i,list){if(assignmentStudentSortMode!=="group")return "";const g=assignmentGroupForStudent(s.id),p=i?assignmentGroupForStudent(list[i-1].id):null;if(i&&g?.id===p?.id)return "";if(i&&!g&&!p)return "";return `<div class="assignment-group-heading">${escapeHtml(g?.name||"未分組")}</div>`}
+function setAssignmentStudentSort(mode,id){assignmentStudentSortMode=mode==="group"?"group":"number";localStorage.setItem("cmAssignmentStudentSort",assignmentStudentSortMode);openAssignment(id)}
+function openAssignmentGroups(){normalizeAssignmentGroups();if(!data.assignmentGroups.length)data.assignmentGroups=[{id:uid("ag"),name:"第 1 組",studentIds:[]}];const opts=data.assignmentGroups.map((g,i)=>`<option value="${g.id}">${escapeHtml(g.name||`第 ${i+1} 組`)}</option>`).join("");const rows=[...data.students].sort((a,b)=>a.number-b.number).map(s=>{const cur=assignmentGroupForStudent(s.id)?.id||"";return `<div class="manual-group-row"><div class="manual-student">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</div><select data-assignment-group-student="${s.id}"><option value="">未分組</option>${opts.replace(`value="${cur}"`,`value="${cur}" selected`)}</select></div>`}).join("");showModal("作業小組設定",`<div class="modal-form"><div class="manual-group-top"><label><span>小組數量</span><input id="assignmentGroupCount" type="number" min="1" max="20" value="${data.assignmentGroups.length}"></label><button type="button" class="secondary" onclick="rebuildAssignmentGroups()">套用組數</button></div><div class="notice-box">作業小組獨立於課堂工具的小組積分。</div><div class="assignment-group-name-list">${data.assignmentGroups.map((g,i)=>`<label><span>第 ${i+1} 組名稱</span><input data-assignment-group-name="${g.id}" value="${escapeAttr(g.name)}"></label>`).join("")}</div><div class="manual-group-list">${rows}</div><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button type="button" class="primary" onclick="saveAssignmentGroups()">儲存作業小組</button></div></div>`)}
+function rebuildAssignmentGroups(){
+  const n=Math.max(1,Math.min(20,Number(document.getElementById("assignmentGroupCount")?.value)||1));
+  normalizeAssignmentGroups();
+  document.querySelectorAll("[data-assignment-group-name]").forEach(x=>{
+    const g=data.assignmentGroups.find(g=>g.id===x.dataset.assignmentGroupName);
+    if(g)g.name=x.value.trim()||g.name;
+  });
+  const currentMembership=new Map();
+  document.querySelectorAll("[data-assignment-group-student]").forEach(x=>currentMembership.set(x.dataset.assignmentGroupStudent,x.value));
+  const old=[...data.assignmentGroups];
+  data.assignmentGroups=Array.from({length:n},(_,i)=>old[i]||{id:uid("ag"),name:`第 ${i+1} 組`,studentIds:[]});
+  const validGroups=new Set(data.assignmentGroups.map(g=>g.id));
+  data.assignmentGroups.forEach(g=>g.studentIds=[]);
+  currentMembership.forEach((groupId,studentId)=>{
+    const g=data.assignmentGroups.find(g=>g.id===groupId);
+    if(g&&validGroups.has(groupId))g.studentIds.push(studentId);
+  });
+  openAssignmentGroups();
+}
+function saveAssignmentGroups(){normalizeAssignmentGroups();data.assignmentGroups.forEach(g=>g.studentIds=[]);document.querySelectorAll("[data-assignment-group-name]").forEach(x=>{const g=data.assignmentGroups.find(g=>g.id===x.dataset.assignmentGroupName);if(g)g.name=x.value.trim()||g.name});document.querySelectorAll("[data-assignment-group-student]").forEach(x=>{const g=data.assignmentGroups.find(g=>g.id===x.value);if(g)g.studentIds.push(x.dataset.assignmentGroupStudent)});persistActiveClass();closeModal();renderDashboard();toast("作業小組已儲存")}
+
 function openAssignment(id){
-  const a = data.assignments.find(x=>x.id===id);
-  if(!a) return;
-  showModal(
-    `${a.title}`,
-    `
-      <div class="item-sub">${formatDate(a.date)}</div>
-      <div class="tracker-grid">
-        ${[...data.students].sort((x,y)=>x.number-y.number).map(s=>{
-          const r = ensureRecord(a.id,s.id);
-          return `
-            <div class="tracker-tile">
-              <div class="tracker-tile-head">
-                <span class="student-no">${String(s.number).padStart(2,"0")}</span>
-                <span class="student-name">${escapeHtml(s.name)}</span>
-              </div>
-              <select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">
-                ${STATUS_ORDER.map(status => `<option value="${status}" ${r.status===status ? "selected" : ""}>${STATUS_LABEL[status]}</option>`).join("")}
-              </select>
-              <input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}"
-                onchange="updateNote('${a.id}','${s.id}',this.value)" />
-            </div>
-          `;
-        }).join("")}
-      </div>
-      <div class="modal-actions">
-        <button class="secondary" onclick="deleteAssignment('${a.id}')">刪除作業</button>
-        <button class="primary" onclick="closeModal()">完成</button>
-      </div>
-    `
-  );
-  persistActiveClass();
+  const a=data.assignments.find(x=>x.id===id);if(!a)return;const students=assignmentSortedStudents();
+  showModal(`${a.title}`,`<div class="assignment-modal-top"><div class="item-sub">${formatDate(a.date)}</div><div class="assignment-sort-switch"><button class="secondary ${assignmentStudentSortMode==="number"?"active":""}" onclick="setAssignmentStudentSort('number','${a.id}')">座號排序</button><button class="secondary ${assignmentStudentSortMode==="group"?"active":""}" onclick="setAssignmentStudentSort('group','${a.id}')">作業小組排序</button></div></div><div class="tracker-grid assignment-tracker-grid">${students.map((s,i)=>{const r=ensureRecord(a.id,s.id);return `${assignmentGroupHeadingHtml(s,i,students)}<div class="tracker-tile"><div class="tracker-tile-head"><span class="student-no">${String(s.number).padStart(2,"0")}</span><span class="student-name">${escapeHtml(s.name)}</span></div><select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(st=>`<option value="${st}" ${r.status===st?"selected":""}>${STATUS_LABEL[st]}</option>`).join("")}</select><input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}" onchange="updateNote('${a.id}','${s.id}',this.value)" /></div>`}).join("")}</div><div class="modal-actions"><button class="secondary" onclick="deleteAssignment('${a.id}')">刪除作業</button><button class="primary" onclick="closeModal()">完成</button></div>`);persistActiveClass()
 }
 
 function setStatus(assignmentId, studentId, select){
@@ -2560,6 +2559,7 @@ if(noticeMemoBtn){
   noticeMemoBtn.addEventListener("click", openNoticeMemo);
 }
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
+document.getElementById("assignmentGroupsBtn")?.addEventListener("click",openAssignmentGroups);
 document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
   showAllAssignmentsMode=false;
   renderAssignments();
