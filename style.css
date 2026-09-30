@@ -47,7 +47,7 @@ h1{font-size:28px;margin-bottom:0}
   position:sticky;
   top:8px;
   z-index:20;
-  backdrop-filter:blur(12px);
+  backdrop-filter:none;
 }
 .tab{
   border:0;background:transparent;padding:10px 12px;border-radius:10px;color:var(--muted);font-weight:700;
@@ -1755,3 +1755,13 @@ body.seat-presentation-active{overflow:hidden}
 .seat-room.student-view .seat-front{order:3}
 .seat-room.student-view .seat-grid-wrap{order:2}
 .seat-room.student-view .seat-back{order:1}
+
+/* v2.0.1 scroll performance */
+.tabs{background:rgba(232,239,255,.98);-webkit-backdrop-filter:none;backdrop-filter:none;contain:paint}
+body::before{position:absolute}
+.page:not(.active){content-visibility:hidden}
+.page.active{content-visibility:visible}
+@media (hover:none),(pointer:coarse){
+  .progress-card,.class-card,.settings-item-card,.memo-complete-btn{transition:none}
+  .progress-card:hover,.class-card:hover,.settings-item-card:hover,.memo-complete-btn:hover{transform:none}
+}

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.0.1";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -119,7 +119,7 @@ function saveData(){
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   renderAll();
-  renderClassHome();
+  if(!activeClassId) renderClassHome();
 }
 
 function uid(prefix="id"){
@@ -2154,8 +2154,16 @@ function renderSeats(){
   }).join("");
   const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
-  const room=document.getElementById("seatRoom");if(room)room.classList.toggle("student-view",s.view==="student");
-  const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
+  const room=document.getElementById("seatRoom");
+  if(room){
+    room.classList.toggle("student-view",s.view==="student");
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-grid-wrap"),back=room.querySelector(".seat-back");
+    if(front&&wrap&&back){
+      if(s.view==="student"){room.append(back,wrap,front)}
+      else{room.append(front,wrap,back)}
+    }
+  }
+  const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
     el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")){if(room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed");return}toggleSeatBlocked(Number(el.dataset.seatIndex))});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
