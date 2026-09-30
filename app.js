@@ -1642,8 +1642,28 @@ function changeStudentScore(studentId, delta){
 
 function openScoreAdjust(kind,id){
   const isGroup=kind==="group",label=isGroup?(data.groups.find(g=>g.id===id)?.name||"小組"):(data.students.find(s=>s.id===id)?.name||"學生");
-  showModal(`調整${isGroup?"小組":"個人"}積分`,`<form id="scoreAdjustForm" class="modal-form"><div class="notice-box">${escapeHtml(label)}｜正數加分、負數扣分。</div><label><span>分數變動</span><input id="scoreAdjustValue" type="number" step="1" value="2" required></label><div class="score-quick-adjust">${[-5,-3,-2,2,3,5].map(v=>`<button type="button" class="secondary" onclick="document.getElementById('scoreAdjustValue').value=${v}">${v>0?"+":""}${v}</button>`).join("")}</div><div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary">套用</button></div></form>`);
-  document.getElementById("scoreAdjustForm").addEventListener("submit",e=>{e.preventDefault();const d=Number(document.getElementById("scoreAdjustValue").value);if(!Number.isFinite(d)||d===0){toast("請輸入非 0 的分數");return}isGroup?changeGroupScore(id,d):changeStudentScore(id,d);closeModal()});
+  let scoreAdjustMode="plus";
+  showModal(`調整${isGroup?"小組":"個人"}積分`,`<form id="scoreAdjustForm" class="modal-form">
+    <div class="notice-box">${escapeHtml(label)}｜先選擇加分或減分，再輸入分數。</div>
+    <div class="score-adjust-mode" role="group" aria-label="積分調整方式">
+      <button type="button" class="score-adjust-mode-btn active" data-score-adjust-mode="plus">＋ 加分</button>
+      <button type="button" class="score-adjust-mode-btn" data-score-adjust-mode="minus">－ 減分</button>
+    </div>
+    <label><span>分數</span><input id="scoreAdjustValue" type="number" min="1" step="1" value="2" inputmode="numeric" required></label>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary">套用</button></div>
+  </form>`);
+  document.querySelectorAll("[data-score-adjust-mode]").forEach(btn=>btn.addEventListener("click",()=>{
+    scoreAdjustMode=btn.dataset.scoreAdjustMode==="minus"?"minus":"plus";
+    document.querySelectorAll("[data-score-adjust-mode]").forEach(x=>x.classList.toggle("active",x===btn));
+  }));
+  document.getElementById("scoreAdjustForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const value=Number(document.getElementById("scoreAdjustValue").value);
+    if(!Number.isFinite(value)||value<=0){toast("請輸入大於 0 的分數");return}
+    const delta=scoreAdjustMode==="minus"?-value:value;
+    isGroup?changeGroupScore(id,delta):changeStudentScore(id,delta);
+    closeModal();
+  });
 }
 function renderScores(){
   const list = document.getElementById("scoreList");
@@ -2074,7 +2094,7 @@ function seatSoftScore(slots){
 }
 function createSeatHistorySnapshot(label="手動儲存"){
   normalizeSeating();if(!data.seating.slots.some(Boolean))return false;
-  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots]});
+  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots],blocked:[...data.seating.blocked]});
   data.seating.history=data.seating.history.slice(0,20);return true;
 }
 function saveSeatHistory(label="手動儲存"){
@@ -2088,7 +2108,7 @@ function openSeatHistory(){
 function seatSnapshotHtml(x){
   const order=[...Array(x.rows*x.cols).keys()];
   if(data.seating.view==="student")order.reverse();
-  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]);return `<div class="seat-slot ${s?"occupied":"empty"}">${s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div><div class="seat-back">教室後方</div></div>`;
+  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i]===true;return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div><div class="seat-back">教室後方</div></div>`;
 }
 function previewSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x)return;
@@ -2096,14 +2116,14 @@ function previewSeatHistory(id){
 }
 function restoreSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x||!confirm("確定恢復這份座位配置嗎？目前座位會先自動備份。"))return;
-  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots]};
+  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots],blocked:Array.isArray(x.blocked)?[...x.blocked]:Array(x.rows*x.cols).fill(false)};
   createSeatHistorySnapshot("恢復前自動備份");
-  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;
+  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;data.seating.blocked=snapshot.blocked;
   saveData();closeModal();toast("已恢復座位配置");
 }
 function deleteSeatHistory(id){if(!confirm("確定刪除這份座位歷史嗎？"))return;data.seating.history=data.seating.history.filter(x=>x.id!==id);saveData();openSeatHistory()}
 function normalizeSeating(){
-  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],view:"teacher",rules:[],history:[]};
+  if(!data.seating||typeof data.seating!=="object")data.seating={rows:5,cols:3,slots:[],blocked:[],view:"teacher",rules:[],history:[]};
   data.seating.rows=Math.max(1,Math.min(10,Number(data.seating.rows)||5));
   data.seating.cols=Math.max(1,Math.min(10,Number(data.seating.cols)||3));
   const count=data.seating.rows*data.seating.cols;
@@ -2114,6 +2134,8 @@ function normalizeSeating(){
     if(id&&valid.has(id)&&!used.has(id)){used.add(id);return id}
     return null;
   });
+  const oldBlocked=Array.isArray(data.seating.blocked)?data.seating.blocked:[];
+  data.seating.blocked=Array.from({length:count},(_,i)=>oldBlocked[i]===true);
   data.seating.view=data.seating.view==="student"?"student":"teacher";
   if(!Array.isArray(data.seating.rules))data.seating.rules=[];
   if(!Array.isArray(data.seating.history))data.seating.history=[];
@@ -2125,25 +2147,36 @@ function renderSeats(){
   if(s.view==="student")order.reverse();
   grid.style.gridTemplateColumns=`repeat(${s.cols},minmax(0,1fr))`;
   grid.innerHTML=order.map(index=>{
-    const student=data.students.find(x=>x.id===s.slots[index]);
-    return `<div class="seat-slot ${student?"occupied":"empty"}" data-seat-index="${index}" draggable="${student?"true":"false"}">
-      ${student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong><div class="seat-reveal-cover"><span>點擊揭曉</span></div>`:`<span>空位</span>`}
+    const student=data.students.find(x=>x.id===s.slots[index]),blocked=s.blocked[index]===true;
+    return `<div class="seat-slot ${blocked?"blocked":student?"occupied":"empty"}" data-seat-index="${index}" draggable="${!blocked&&student?"true":"false"}">
+      ${blocked?`<span class="seat-blocked-label">已封鎖</span>`:student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong><div class="seat-reveal-cover"><span>點擊揭曉</span></div>`:`<span>空位</span>`}
     </div>`;
   }).join("");
   const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
-    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")&&room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed")});
+    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")){if(room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed");return}toggleSeatBlocked(Number(el.dataset.seatIndex))});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
     el.addEventListener("dragend",()=>el.classList.remove("dragging"));
-    el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drag-over")});
+    el.addEventListener("dragover",e=>{if(el.classList.contains("blocked"))return;e.preventDefault();el.classList.add("drag-over")});
     el.addEventListener("dragleave",()=>el.classList.remove("drag-over"));
-    el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("drag-over");const from=Number(e.dataTransfer.getData("text/plain")),to=Number(el.dataset.seatIndex);moveSeat(from,to)});
+    el.addEventListener("drop",e=>{if(el.classList.contains("blocked"))return;e.preventDefault();el.classList.remove("drag-over");const from=Number(e.dataTransfer.getData("text/plain")),to=Number(el.dataset.seatIndex);moveSeat(from,to)});
   });
 }
+function toggleSeatBlocked(index){
+  normalizeSeating();if(!Number.isInteger(index)||index<0||index>=data.seating.slots.length)return;
+  const blocking=!data.seating.blocked[index];
+  if(blocking&&data.seating.slots[index]){
+    if(!confirm("這個座位目前有學生。封鎖後會將學生移出座位，確定要封鎖嗎？"))return;
+    data.seating.slots[index]=null;
+  }
+  data.seating.blocked[index]=blocking;
+  saveData();
+  toast(blocking?"已封鎖此座位，不會加入隨機分配":"已解除座位封鎖");
+}
 function moveSeat(from,to){
-  normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;
+  normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to||data.seating.blocked[from]||data.seating.blocked[to])return;
   [data.seating.slots[from],data.seating.slots[to]]=[data.seating.slots[to],data.seating.slots[from]];
   saveData();
   const seatRoom=document.getElementById("seatRoom");
@@ -2158,15 +2191,15 @@ function applySeatGrid(){
   data.seating.rows=rows;data.seating.cols=cols;normalizeSeating();saveData();
 }
 function randomizeSeats(){
-  normalizeSeating();const count=data.seating.rows*data.seating.cols;if(count<data.students.length){toast("座位數不足，請先增加列數或欄數");return}
+  normalizeSeating();const count=data.seating.rows*data.seating.cols,available=[...Array(count).keys()].filter(i=>!data.seating.blocked[i]);if(available.length<data.students.length){toast(`可分配座位不足：目前有 ${available.length} 個未封鎖座位，班上有 ${data.students.length} 位學生`);return}
   const old=[...data.seating.slots],ids=data.students.map(s=>s.id);let best=null,bestScore=-Infinity;
   for(let attempt=0;attempt<5000;attempt++){
     const people=[...ids];for(let i=people.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[people[i],people[k]]=[people[k],people[i]]}
-    const positions=[...Array(count).keys()];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
+    const positions=[...available];for(let i=positions.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[positions[i],positions[k]]=[positions[k],positions[i]]}
     const slots=Array(count).fill(null);people.forEach((id,i)=>slots[positions[i]]=id);if(violatesSeatRules(slots))continue;const score=seatSoftScore(slots);if(score>bestScore){best=slots;bestScore=score}
   }
   if(!best){toast("目前座位格局與啟用規則無法產生符合條件的安排，請調整規則。");return}
-  if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old});data.seating.history=data.seating.history.slice(0,20)}
+  if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old,blocked:[...data.seating.blocked]});data.seating.history=data.seating.history.slice(0,20)}
   data.seating.slots=best;saveData();toast("已依啟用規則完成座位分配");
 }
 function clearSeats(){
