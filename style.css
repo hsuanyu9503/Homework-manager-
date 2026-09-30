@@ -1707,7 +1707,7 @@ nav.tabs .tab{
 
 /* v1.9 seat backstage + reveal presentation */
 .seat-backstage{display:grid;gap:10px}.seat-setting-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:left;cursor:pointer}.seat-setting-entry span:first-child{display:flex;flex-direction:column;gap:3px}.seat-setting-entry small{color:var(--muted)}.seat-setting-entry span:last-child{font-size:1.6rem;color:var(--muted)}.seat-setting-note{padding:11px 13px;border-radius:12px;background:rgba(0,0,0,.035);font-size:.84rem;color:var(--muted)}
-.seat-presentation-back{position:sticky;top:0;z-index:1002;align-self:flex-start;border:0;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.12);margin-bottom:12px}
+.seat-presentation-back{position:relative;z-index:1;align-self:flex-start;border:0;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.12);margin-bottom:12px}
 .seat-slot{position:relative;overflow:hidden}.seat-reveal-cover{display:none}
 .seat-room.presentation.step-reveal .seat-slot.occupied{cursor:pointer}.seat-room.presentation.step-reveal .seat-slot.occupied .seat-number,.seat-room.presentation.step-reveal .seat-slot.occupied strong{visibility:hidden}.seat-room.presentation.step-reveal .seat-slot.occupied .seat-reveal-cover{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:var(--bg);font-weight:900}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed .seat-number,.seat-room.presentation.step-reveal .seat-slot.occupied.revealed strong{visibility:visible}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed .seat-reveal-cover{display:none}
 body.seat-presentation-active{overflow:hidden}
@@ -1724,7 +1724,7 @@ body.seat-presentation-active{overflow:hidden}
 .seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover span::after{content:"待揭曉";font-size:.82rem;color:var(--muted)}
 
 /* v2.0 */
-.score-more{font-size:.9rem}.score-quick-adjust{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}.assignment-modal-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.assignment-sort-switch{display:flex;gap:6px}.assignment-sort-switch .active{box-shadow:inset 0 0 0 2px currentColor}.assignment-group-heading{grid-column:1/-1;font-weight:900;padding:10px 4px 4px;border-bottom:1px solid var(--line)}.assignment-group-name-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed{animation:seatCardFlip .62s cubic-bezier(.2,.72,.2,1)}@keyframes seatCardFlip{0%{transform:rotateY(0)}49%{transform:rotateY(90deg)}50%{transform:rotateY(-90deg)}100%{transform:rotateY(0)}}@media(max-width:620px){.score-quick-adjust{grid-template-columns:repeat(3,1fr)}.assignment-group-name-list{grid-template-columns:1fr}.assignment-sort-switch{width:100%}.assignment-sort-switch button{flex:1}}
+.score-more{font-size:.9rem}.score-quick-adjust{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}.assignment-modal-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.assignment-sort-switch{display:flex;gap:6px}.assignment-sort-switch .active{box-shadow:inset 0 0 0 2px currentColor}.assignment-group-heading{grid-column:1/-1;font-weight:900;padding:10px 4px 4px;border-bottom:1px solid var(--line)}.assignment-group-name-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed{animation:seatCardReveal .36s ease-out}@keyframes seatCardReveal{0%{opacity:.55;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}@media(max-width:620px){.score-quick-adjust{grid-template-columns:repeat(3,1fr)}.assignment-group-name-list{grid-template-columns:1fr}.assignment-sort-switch{width:100%}.assignment-sort-switch button{flex:1}}
 
 /* v2.0 final polish: grouped submission layout */
 .submission-student-grid.grouped{display:block}
@@ -1789,3 +1789,9 @@ body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
 #seats:not(.active) #seatGrid{display:none}
 #seats:not(.active) #seatRoom{box-shadow:none;background:none}
 #seats:not(.active) #seatRoom::before,#seats:not(.active) #seatRoom::after{content:none!important}
+
+/* v2.0.6 isolate post-v1.8 seat presentation/reveal styles */
+#seats:not(.active) .seat-reveal-cover,
+#seats:not(.active) .seat-presentation-back{display:none!important}
+#seats.active .seat-room:not(.presentation) .seat-reveal-cover{will-change:auto}
+#seats.active .seat-room.presentation{isolation:isolate}

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.5";
+const APP_VERSION = "2.0.6";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2162,6 +2162,9 @@ function normalizeSeating(){
 }
 
 function unmountSeatModule(){
+  document.body.classList.remove("seat-presentation-active");
+  const presentationBack=document.getElementById("seatPresentationBackBtn");
+  if(presentationBack)presentationBack.remove();
   const grid=document.getElementById("seatGrid");
   if(grid){grid.replaceChildren();grid.style.gridTemplateColumns="";}
   const room=document.getElementById("seatRoom");
@@ -2196,6 +2199,7 @@ function renderSeats(){
     }
   }
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
+  if(room)room.classList.toggle("front-step-reveal",seatRevealMode==="step");
   grid.querySelectorAll(".seat-slot").forEach(el=>{
     el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")){if(room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed");return}toggleSeatBlocked(Number(el.dataset.seatIndex))});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
