@@ -1789,3 +1789,11 @@ body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
 #seats:not(.active) #seatGrid{display:none}
 #seats:not(.active) #seatRoom{box-shadow:none;background:none}
 #seats:not(.active) #seatRoom::before,#seats:not(.active) #seatRoom::after{content:none!important}
+
+/* v2.0.6 seat podium spacing */
+.seat-room .seat-front{margin-top:0;margin-bottom:28px}
+.seat-room.student-view .seat-front{margin-top:28px;margin-bottom:0}
+@media(max-width:620px){
+  .seat-room .seat-front{margin-bottom:20px}
+  .seat-room.student-view .seat-front{margin-top:20px;margin-bottom:0}
+}
