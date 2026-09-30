@@ -1898,3 +1898,38 @@ body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
 @media(max-width:620px){
   .seat-room.presentation.card-reveal .seat-card-list{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* v2.15 card reveal: fully conceal assigned student until card is selected */
+.seat-room.presentation.card-reveal .seat-slot.occupied:not(.revealed) > :not(.seat-reveal-cover){
+  visibility:hidden !important;
+}
+.seat-room.presentation.card-reveal .seat-slot.occupied:not(.revealed){
+  color:transparent !important;
+}
+.seat-room.presentation.card-reveal .seat-slot.occupied:not(.revealed)::before,
+.seat-room.presentation.card-reveal .seat-slot.occupied:not(.revealed)::after{
+  visibility:hidden !important;
+}
+.seat-room.presentation.card-reveal .seat-slot.occupied .seat-reveal-cover{
+  position:absolute !important;
+  inset:0 !important;
+  z-index:20 !important;
+  display:flex !important;
+  align-items:center;
+  justify-content:center;
+  opacity:1;
+  pointer-events:auto;
+  background:var(--soft);
+  border-radius:inherit;
+}
+.seat-room.presentation.card-reveal .seat-slot.occupied.revealed > :not(.seat-reveal-cover){
+  visibility:visible !important;
+}
+.seat-room.presentation.card-reveal .seat-slot.occupied.revealed{
+  color:inherit !important;
+}
+.seat-room.presentation.card-reveal .seat-slot.occupied.revealed .seat-reveal-cover{
+  opacity:0 !important;
+  pointer-events:none !important;
+  visibility:hidden;
+}

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.14";
+const APP_VERSION = "2.16";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -535,6 +535,8 @@ function startDateRolloverGuards(){
   document.addEventListener("visibilitychange", ()=>{
     if(document.visibilityState === "visible"){
       refreshForDateRollover();
+    }else if(noiseActive){
+      stopNoiseMonitor();
     }
   });
   window.addEventListener("focus", refreshForDateRollover);
@@ -1268,6 +1270,7 @@ function deleteContactItem(contactId){
 let currentScoreMode = "individual";
 
 function setScoreMode(mode){
+  if(currentScoreMode==="noise"&&mode!=="noise")stopNoiseMonitor();
   currentScoreMode = mode;
   document.querySelectorAll(".score-mode-tab").forEach(btn=>{
     btn.classList.toggle("active", btn.dataset.scoreMode===mode);
@@ -1595,8 +1598,22 @@ async function startNoiseMonitor(){
   }catch(err){console.warn("Microphone unavailable",err);toast("無法使用麥克風，請確認瀏覽器權限");if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="麥克風未授權"}
 }
 function stopNoiseMonitor(){
-  if(noiseFrame)cancelAnimationFrame(noiseFrame);noiseFrame=0;noiseLastVisualFrame=0;noiseActive=false;noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});noiseAudioContext=null;noiseAnalyser=null;
-  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");if(start)start.disabled=false;if(stop)stop.disabled=true;if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";noiseLevel=0;noiseIndicator=0;noiseSmoothedRms=0;noiseCalibrating=false;if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent="0";if(noiseEl("noiseStateBadge")){noiseEl("noiseStateBadge").textContent="等待偵測";noiseEl("noiseStateBadge").className="noise-state-badge"}noiseBallEnergy=0;drawNoiseBallPool(performance.now(),0,false)
+  const hadRuntime=!!(noiseActive||noiseFrame||noiseStream||noiseAudioContext);
+  if(noiseFrame)cancelAnimationFrame(noiseFrame);
+  noiseFrame=0;noiseLastVisualFrame=0;noiseActive=false;
+  noiseStream?.getTracks().forEach(t=>t.stop());noiseStream=null;
+  if(noiseAudioContext&&noiseAudioContext.state!=="closed")noiseAudioContext.close().catch(()=>{});
+  noiseAudioContext=null;noiseAnalyser=null;
+  noiseLevel=0;noiseIndicator=0;noiseSmoothedRms=0;noiseCalibrating=false;noiseBallEnergy=0;
+  const start=noiseEl("noiseStartBtn"),stop=noiseEl("noiseStopBtn");
+  if(start)start.disabled=false;if(stop)stop.disabled=true;
+  if(noiseEl("noiseStatus"))noiseEl("noiseStatus").textContent="已停止";
+  if(noiseEl("noiseMessage"))noiseEl("noiseMessage").textContent="偵測已停止";
+  if(noiseEl("noiseMeterFill"))noiseEl("noiseMeterFill").style.width="0%";
+  if(noiseEl("noiseLevelText"))noiseEl("noiseLevelText").textContent="0";
+  if(noiseEl("noiseStateBadge")){noiseEl("noiseStateBadge").textContent="等待偵測";noiseEl("noiseStateBadge").className="noise-state-badge"}
+  // 只有音量工具仍在畫面上時才補畫靜止球池；離頁時不再做額外 canvas 工作。
+  if(hadRuntime&&currentPage==="scores"&&currentScoreMode==="noise"&&noiseEl("noiseCanvas"))drawNoiseBallPool(performance.now(),0,false);
 }
 let noiseLastVisualFrame=0;
 function noiseLoop(now=performance.now()){
@@ -2501,12 +2518,12 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
-let seatRevealMode=["step","cards"].includes(localStorage.getItem("cmSeatRevealMode"))?localStorage.getItem("cmSeatRevealMode"):"direct";
+let seatRevealMode=localStorage.getItem("cmSeatRevealMode")==="direct"?"direct":"cards";
 let seatCardRevealed=new Set();
 function renderSeatCardPanel(){
   const panel=document.getElementById("seatCardPanel");if(!panel)return;
   const assigned=[...data.students].filter(s=>data.seating.slots.includes(s.id)).sort((a,b)=>a.number-b.number);
-  panel.innerHTML=`<div class="seat-card-panel-head"><strong>學生字卡</strong><span>${seatCardRevealed.size} / ${assigned.length} 已揭曉</span></div>
+  panel.innerHTML=`<div class="seat-card-panel-head"><strong>學生字卡</strong><span id="seatCardProgress">${seatCardRevealed.size} / ${assigned.length} 已揭曉</span></div>
     <div class="seat-card-list">${assigned.map(s=>`<button type="button" class="seat-student-card ${seatCardRevealed.has(s.id)?"flipped":""}" data-seat-card-student="${s.id}" ${seatCardRevealed.has(s.id)?"disabled":""}>
       <span class="seat-student-card-inner"><span class="seat-student-card-front"><b>${String(s.number).padStart(2,"0")}</b>${escapeHtml(s.name)}</span><span class="seat-student-card-back">已揭曉</span></span>
     </button>`).join("")||`<div class="empty">目前尚未分配座位。</div>`}</div>`;
@@ -2515,18 +2532,24 @@ function renderSeatCardPanel(){
 function revealSeatByStudent(studentId){
   if(seatRevealMode!=="cards"||seatCardRevealed.has(studentId))return;
   const seat=document.querySelector(`.seat-slot[data-student-id="${studentId}"]`);
-  if(!seat)return;
+  const card=document.querySelector(`[data-seat-card-student="${studentId}"]`);
+  if(!seat||!card)return;
   seatCardRevealed.add(studentId);
+  card.classList.add("flipped");card.disabled=true;
   seat.classList.add("revealed","card-revealed");
-  renderSeatCardPanel();
+  const progress=document.getElementById("seatCardProgress");
+  if(progress){
+    const total=document.querySelectorAll("[data-seat-card-student]").length;
+    progress.textContent=`${seatCardRevealed.size} / ${total} 已揭曉`;
+  }
 }
 function setSeatRevealMode(mode){
-  seatRevealMode=["step","cards"].includes(mode)?mode:"direct";
+  seatRevealMode=mode==="direct"?"direct":"cards";
   localStorage.setItem("cmSeatRevealMode",seatRevealMode);
   document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.classList.toggle("active",btn.dataset.seatRevealMode===seatRevealMode));
   const room=document.getElementById("seatRoom");
   if(room){
-    room.classList.toggle("front-step-reveal",seatRevealMode==="step");
+    room.classList.remove("front-step-reveal");
     room.classList.toggle("front-card-reveal",seatRevealMode==="cards");
     if(seatRevealMode==="direct")room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed","card-revealed"));
   }
@@ -2535,7 +2558,7 @@ function toggleSeatPresentation(forceOff=false){
   const room=document.getElementById("seatRoom");if(!room)return;
   const entering=forceOff===true?false:!room.classList.contains("presentation");
   room.classList.toggle("presentation",entering);
-  room.classList.toggle("step-reveal",entering&&seatRevealMode==="step");
+  room.classList.remove("step-reveal");
   room.classList.toggle("card-reveal",entering&&seatRevealMode==="cards");
   document.body.classList.toggle("seat-presentation-active",entering);
   document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
