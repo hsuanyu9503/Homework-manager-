@@ -1,4 +1,4 @@
-const APP_VERSION = "2.12";
+const APP_VERSION = "2.14";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2047,31 +2047,31 @@ function seatingStudentOptions(selected=[]){
 function allStudentTags(){return [...new Set(data.students.flatMap(s=>s.tags||[]))].sort((a,b)=>a.localeCompare(b,"zh-Hant"))}
 function openSeatSettings(){
   normalizeSeating();
-  showModal("座位區設定",`<div class="seat-backstage">
+  showModal("設定",`<div class="seat-backstage">
     <div><strong>教師後台</strong><p class="muted">以下設定不會出現在座位展示模式中。</p></div>
-    <button type="button" class="seat-setting-entry" onclick="openSeatTagSettings()"><span><b>學生標籤</b><small>建立與管理座位分配使用的學生分類</small></span><span>›</span></button>
-    <button type="button" class="seat-setting-entry" onclick="openSeatRules()"><span><b>隱藏分配規則</b><small>設定學生群組、標籤與座位限制</small></span><span>›</span></button>
+    <button type="button" class="seat-setting-entry" onclick="openSeatTagSettings()"><span><b>學生註記</b><small>建立與管理座位分配使用的學生分類</small></span><span>›</span></button>
+    <button type="button" class="seat-setting-entry" onclick="openSeatRules()"><span><b>隱藏分配規則</b><small>設定學生群組、註記與座位限制</small></span><span>›</span></button>
     <div class="seat-setting-note">「隨機分配」會自動套用所有已啟用的隱藏規則。</div>
   </div>`);
 }
 function openSeatTagSettings(){
   const students=[...data.students].sort((a,b)=>a.number-b.number);
-  showModal("學生標籤",`
-    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回座位區設定</button></div>
-    <p class="muted">標籤僅供座位分配規則分類使用，可在建立規則時直接套用。</p>
+  showModal("學生註記",`
+    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回設定</button></div>
+    <p class="muted">註記僅供座位分配規則分類使用，可在建立規則時直接套用。</p>
     <div class="seat-tag-list">${students.length?students.map(s=>`
       <div class="seat-tag-card">
         <div class="seat-tag-student"><strong>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</strong>
           <div class="student-tags">${(s.tags||[]).map(t=>`<span>${escapeHtml(t)} <button type="button" aria-label="移除 ${escapeHtml(t)}" onclick="removeStudentTag('${s.id}','${encodeURIComponent(t)}')">×</button></span>`).join("")||"<em>尚無標籤</em>"}</div>
         </div>
-        <div class="tag-add-row"><input id="seatStudentTagInput-${s.id}" placeholder="新增標籤"><button type="button" class="secondary" onclick="addStudentTag('${s.id}')">新增</button></div>
+        <div class="tag-add-row"><input id="seatStudentTagInput-${s.id}" placeholder="新增註記"><button type="button" class="secondary" onclick="addStudentTag('${s.id}')">新增</button></div>
       </div>`).join(""):`<div class="empty">尚未建立學生。</div>`}</div>`);
 }
 function seatRuleKindLabel(kind){
   return {around8:"周圍八格不相鄰",checkerboard:"梅花座",fixedSeat:"指定特定座位",front2:"指定坐前兩排",noCorner:"不能坐角落",back2:"指定坐後兩排",horizontalAdjacent:"左右相鄰"}[kind]||"規則";
 }
 function seatRuleTargetLabel(r){
-  if(r.type==="tag")return `標籤：${escapeHtml(r.tag||"")}`;
+  if(r.type==="tag")return `註記：${escapeHtml(r.tag||"")}`;
   const names=(r.studentIds||[]).map(id=>data.students.find(s=>s.id===id)?.name).filter(Boolean);
   return names.length?escapeHtml(names.join("、")):`${(r.studentIds||[]).length} 位學生`;
 }
@@ -2090,7 +2090,7 @@ function updateSeatRuleFormUI(){
   group.style.display=type.value==="group"?"block":"none";
   tag.style.display=type.value==="tag"?"block":"none";
   fixed.style.display=kind.value==="fixedSeat"?"block":"none";
-  if(hint)hint.textContent=kind.value==="fixedSeat"?"指定特定座位需選擇 1 位學生。":kind.value==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生；多人時會安排在同一排連續座位。":kind.value==="checkerboard"?"梅花座中的學生彼此前後左右不可相鄰，但斜角可以相鄰。":"可選擇 1 位以上學生，或改用學生標籤。";
+  if(hint)hint.textContent=kind.value==="fixedSeat"?"指定特定座位需選擇 1 位學生。":kind.value==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生；多人時會安排在同一排連續座位。":kind.value==="checkerboard"?"梅花座中的學生彼此前後左右不可相鄰，但斜角可以相鄰。":"可選擇 1 位以上學生，或改用學生註記。";
   if(kind.value==="fixedSeat"&&type.value==="tag"){type.value="group";group.style.display="block";tag.style.display="none"}
 }
 function seatRuleKindOptions(selected=""){
@@ -2111,7 +2111,7 @@ function openSeatRules(){
   const rules=data.seating.rules;
   showModal("隱藏分配規則",`
     <p class="muted">規則只供教師分配座位使用，不會出現在展示模式或學生視角。</p>
-    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回座位區設定</button><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
+    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回設定</button><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
     <div class="seat-rule-list">${rules.length?rules.map(r=>`<div class="seat-rule-card"><div><strong>${escapeHtml(r.name||"未命名規則")}</strong><div class="item-sub">${seatRuleTargetLabel(r)}｜${seatRuleKindLabel(r.kind)}${r.kind==="fixedSeat"&&Number.isInteger(Number(r.seatIndex))?`（${Math.floor(Number(r.seatIndex)/data.seating.cols)+1}排${Number(r.seatIndex)%data.seating.cols+1}位）`:""}</div></div><label class="rule-toggle"><input type="checkbox" ${r.enabled!==false?"checked":""} onchange="toggleSeatRule('${r.id}',this.checked)">啟用</label><button class="secondary" onclick="editSeatRule('${r.id}')">編輯</button><button class="secondary" onclick="deleteSeatRule('${r.id}')">刪除</button></div>`).join(""):`<div class="empty">尚未建立分配規則。</div>`}</div>`);
 }
 function seatRuleFormMarkup(r=null){
@@ -2119,9 +2119,9 @@ function seatRuleFormMarkup(r=null){
   return `<form id="${r?"seatRuleEditForm":"seatRuleForm"}" class="modal-form">
     <label><span>規則名稱</span><input id="seatRuleName" value="${escapeHtml(r?.name||"")}" placeholder="例如：小明坐前兩排" required></label>
     <label><span>規則</span><select id="seatRuleKind">${seatRuleKindOptions(r?.kind||"around8")}</select></label>
-    <label><span>套用方式</span><select id="seatRuleType"><option value="group" ${type==="group"?"selected":""}>指定學生</option><option value="tag" ${type==="tag"?"selected":""}>依學生標籤</option></select></label>
+    <label><span>套用方式</span><select id="seatRuleType"><option value="group" ${type==="group"?"selected":""}>指定學生</option><option value="tag" ${type==="tag"?"selected":""}>依學生註記</option></select></label>
     <div id="seatRuleGroupBox" style="${type==="tag"?"display:none":""}"><span class="setting-title">選擇學生</span><div id="seatRuleTargetHint" class="item-sub"></div><div class="rule-student-grid">${seatingStudentOptions(r?.studentIds||[])}</div></div>
-    <label id="seatRuleTagBox" style="${type==="tag"?"":"display:none"}"><span>學生標籤</span><select id="seatRuleTag">${tags.map(t=>`<option ${t===r?.tag?"selected":""}>${escapeHtml(t)}</option>`).join("")}</select></label>
+    <label id="seatRuleTagBox" style="${type==="tag"?"":"display:none"}"><span>學生註記</span><select id="seatRuleTag">${tags.map(t=>`<option ${t===r?.tag?"selected":""}>${escapeHtml(t)}</option>`).join("")}</select></label>
     <label id="seatRuleFixedBox" style="${r?.kind==="fixedSeat"?"":"display:none"}"><span>指定座位</span><select id="seatRuleFixedSeat">${seatRuleSeatOptions(r?.seatIndex??"")}</select></label>
     <div class="modal-actions"><button type="button" class="secondary" onclick="openSeatRules()">取消</button><button class="primary">${r?"儲存修改":"建立規則"}</button></div>
   </form>`;
@@ -2136,7 +2136,7 @@ function readSeatRuleForm(){
     if(ids.length<min){toast(kind==="horizontalAdjacent"?"左右相鄰至少選擇 2 位學生":"請至少選擇 1 位學生");return null}
     if(ids.length>max){toast("指定特定座位一次只能選擇 1 位學生");return null}
   }
-  if(type==="tag"&&!tag){toast("請先替學生建立標籤");return null}
+  if(type==="tag"&&!tag){toast("請先替學生建立註記");return null}
   if(kind==="fixedSeat"&&type!=="group"){toast("指定特定座位請直接選擇 1 位學生");return null}
   if(kind==="fixedSeat"&&data.seating.blocked[seatIndex]){toast("指定的座位目前已封鎖");return null}
   return {name:document.getElementById("seatRuleName").value.trim(),type,studentIds:ids,tag,kind,seatIndex};
@@ -2243,9 +2243,11 @@ function unmountSeatModule(){
   const grid=document.getElementById("seatGrid");
   if(grid){grid.replaceChildren();grid.style.gridTemplateColumns="";}
   const room=document.getElementById("seatRoom");
+  const cardPanel=document.getElementById("seatCardPanel");if(cardPanel)cardPanel.replaceChildren();
+  seatCardRevealed=new Set();
   if(room){
-    room.classList.remove("presentation","step-reveal","front-step-reveal","student-view");
-    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-grid-wrap"),back=room.querySelector(".seat-back");
+    room.classList.remove("presentation","step-reveal","card-reveal","front-step-reveal","front-card-reveal","student-view");
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage"),back=room.querySelector(".seat-back");
     if(front&&wrap&&back)room.append(front,wrap,back);
   }
 }
@@ -2258,7 +2260,7 @@ function renderSeats(){
   grid.style.gridTemplateColumns=`repeat(${s.cols},minmax(0,1fr))`;
   grid.innerHTML=order.map(index=>{
     const student=data.students.find(x=>x.id===s.slots[index]),blocked=s.blocked[index]===true;
-    return `<div class="seat-slot ${blocked?"blocked":student?"occupied":"empty"}" data-seat-index="${index}" draggable="${!blocked&&student?"true":"false"}">
+    return `<div class="seat-slot ${blocked?"blocked":student?"occupied":"empty"}" data-seat-index="${index}" ${student?`data-student-id="${student.id}"`:""} draggable="${!blocked&&student?"true":"false"}">
       ${blocked?`<span class="seat-blocked-label">已封鎖</span>`:student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong><div class="seat-reveal-cover"><span>點擊揭曉</span></div>`:`<span>空位</span>`}
     </div>`;
   }).join("");
@@ -2267,7 +2269,7 @@ function renderSeats(){
   const room=document.getElementById("seatRoom");
   if(room){
     room.classList.toggle("student-view",s.view==="student");
-    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-grid-wrap"),back=room.querySelector(".seat-back");
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage"),back=room.querySelector(".seat-back");
     if(front&&wrap&&back){
       if(s.view==="student"){room.append(back,wrap,front)}
       else{room.append(front,wrap,back)}
@@ -2499,32 +2501,56 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
-let seatRevealMode=localStorage.getItem("cmSeatRevealMode")==="step"?"step":"direct";
+let seatRevealMode=["step","cards"].includes(localStorage.getItem("cmSeatRevealMode"))?localStorage.getItem("cmSeatRevealMode"):"direct";
+let seatCardRevealed=new Set();
+function renderSeatCardPanel(){
+  const panel=document.getElementById("seatCardPanel");if(!panel)return;
+  const assigned=[...data.students].filter(s=>data.seating.slots.includes(s.id)).sort((a,b)=>a.number-b.number);
+  panel.innerHTML=`<div class="seat-card-panel-head"><strong>學生字卡</strong><span>${seatCardRevealed.size} / ${assigned.length} 已揭曉</span></div>
+    <div class="seat-card-list">${assigned.map(s=>`<button type="button" class="seat-student-card ${seatCardRevealed.has(s.id)?"flipped":""}" data-seat-card-student="${s.id}" ${seatCardRevealed.has(s.id)?"disabled":""}>
+      <span class="seat-student-card-inner"><span class="seat-student-card-front"><b>${String(s.number).padStart(2,"0")}</b>${escapeHtml(s.name)}</span><span class="seat-student-card-back">已揭曉</span></span>
+    </button>`).join("")||`<div class="empty">目前尚未分配座位。</div>`}</div>`;
+  panel.querySelectorAll("[data-seat-card-student]").forEach(btn=>btn.addEventListener("click",()=>revealSeatByStudent(btn.dataset.seatCardStudent)));
+}
+function revealSeatByStudent(studentId){
+  if(seatRevealMode!=="cards"||seatCardRevealed.has(studentId))return;
+  const seat=document.querySelector(`.seat-slot[data-student-id="${studentId}"]`);
+  if(!seat)return;
+  seatCardRevealed.add(studentId);
+  seat.classList.add("revealed","card-revealed");
+  renderSeatCardPanel();
+}
 function setSeatRevealMode(mode){
-  seatRevealMode=mode==="step"?"step":"direct";
+  seatRevealMode=["step","cards"].includes(mode)?mode:"direct";
   localStorage.setItem("cmSeatRevealMode",seatRevealMode);
   document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.classList.toggle("active",btn.dataset.seatRevealMode===seatRevealMode));
   const room=document.getElementById("seatRoom");
   if(room){
     room.classList.toggle("front-step-reveal",seatRevealMode==="step");
-    if(seatRevealMode==="direct"){
-      room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
-    }
+    room.classList.toggle("front-card-reveal",seatRevealMode==="cards");
+    if(seatRevealMode==="direct")room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed","card-revealed"));
   }
 }
 function toggleSeatPresentation(forceOff=false){
   const room=document.getElementById("seatRoom");if(!room)return;
-  const shouldForceOff=forceOff===true;
-  const entering=shouldForceOff?false:!room.classList.contains("presentation");
+  const entering=forceOff===true?false:!room.classList.contains("presentation");
   room.classList.toggle("presentation",entering);
   room.classList.toggle("step-reveal",entering&&seatRevealMode==="step");
+  room.classList.toggle("card-reveal",entering&&seatRevealMode==="cards");
   document.body.classList.toggle("seat-presentation-active",entering);
   document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
   let back=document.getElementById("seatPresentationBackBtn");
   if(entering){
-    room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
+    seatCardRevealed=new Set();
+    room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed","card-revealed"));
+    if(seatRevealMode==="cards")renderSeatCardPanel();
     if(!back){back=document.createElement("button");back.id="seatPresentationBackBtn";back.className="seat-presentation-back";back.textContent="← 返回座位管理";back.addEventListener("click",()=>toggleSeatPresentation(true));room.prepend(back)}
-  }else if(back)back.remove();
+  }else{
+    seatCardRevealed=new Set();
+    const panel=document.getElementById("seatCardPanel");if(panel)panel.replaceChildren();
+    room.classList.remove("card-reveal");
+    if(back)back.remove();
+  }
 }
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
