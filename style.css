@@ -1704,21 +1704,3 @@ nav.tabs .tab{
  .seat-slot{min-height:76px}.seat-action-grid{grid-template-columns:1fr}
  .seat-view-actions .seat-action-grid.compact{grid-template-columns:1fr 1fr}
 }
-
-/* v1.9 seat backstage + reveal presentation */
-.seat-backstage{display:grid;gap:10px}.seat-setting-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:left;cursor:pointer}.seat-setting-entry span:first-child{display:flex;flex-direction:column;gap:3px}.seat-setting-entry small{color:var(--muted)}.seat-setting-entry span:last-child{font-size:1.6rem;color:var(--muted)}.seat-setting-note{padding:11px 13px;border-radius:12px;background:rgba(0,0,0,.035);font-size:.84rem;color:var(--muted)}
-.seat-presentation-back{position:sticky;top:0;z-index:1002;align-self:flex-start;border:0;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.12);margin-bottom:12px}
-.seat-slot{position:relative;overflow:hidden}.seat-reveal-cover{display:none}
-.seat-room.presentation.step-reveal .seat-slot.occupied{cursor:pointer}.seat-room.presentation.step-reveal .seat-slot.occupied .seat-number,.seat-room.presentation.step-reveal .seat-slot.occupied strong{visibility:hidden}.seat-room.presentation.step-reveal .seat-slot.occupied .seat-reveal-cover{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:var(--bg);font-weight:900}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed .seat-number,.seat-room.presentation.step-reveal .seat-slot.occupied.revealed strong{visibility:visible}.seat-room.presentation.step-reveal .seat-slot.occupied.revealed .seat-reveal-cover{display:none}
-body.seat-presentation-active{overflow:hidden}
-
-/* v1.9.2 front-stage reveal mode */
-.seat-presentation-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}.seat-reveal-mode{display:inline-grid;grid-template-columns:1fr 1fr;padding:3px;border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.035)}.seat-mode-btn{border:0;background:transparent;border-radius:9px;padding:8px 11px;font-weight:800;color:var(--muted);cursor:pointer;white-space:nowrap}.seat-mode-btn.active{background:#fff;color:var(--text);box-shadow:0 1px 5px rgba(0,0,0,.08)}
-@media(max-width:620px){.seat-page-head{align-items:flex-start}.seat-presentation-controls{width:100%;justify-content:stretch}.seat-reveal-mode{flex:1}.seat-presentation-controls>#seatPresentationBtn{flex:1}.seat-mode-btn{padding:8px 7px}}
-
-/* v1.9.3 reveal-mode switch also controls the normal seat-board preview */
-.seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-number,
-.seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied strong{visibility:hidden}
-.seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:var(--bg);font-weight:900}
-.seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover span{font-size:0}
-.seat-room.front-step-reveal:not(.presentation) .seat-slot.occupied .seat-reveal-cover span::after{content:"待揭曉";font-size:.82rem;color:var(--muted)}

@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9.3";
+const APP_VERSION = "1.8";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2006,19 +2006,11 @@ function seatingStudentOptions(selected=[]){
   return [...data.students].sort((a,b)=>a.number-b.number).map(s=>`<label class="rule-student"><input type="checkbox" value="${s.id}" ${selected.includes(s.id)?"checked":""}> ${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</label>`).join("");
 }
 function allStudentTags(){return [...new Set(data.students.flatMap(s=>s.tags||[]))].sort((a,b)=>a.localeCompare(b,"zh-Hant"))}
-function openSeatSettings(){
-  normalizeSeating();
-  showModal("座位區設定",`<div class="seat-backstage">
-    <div><strong>教師後台</strong><p class="muted">以下設定不會出現在座位展示模式中。</p></div>
-    <button type="button" class="seat-setting-entry" onclick="openSeatRules()"><span><b>隱藏分配規則</b><small>管理群組、學生標籤與座位限制</small></span><span>›</span></button>
-    <div class="seat-setting-note">「隨機分配」會自動套用所有已啟用的隱藏規則。</div>
-  </div>`);
-}
 function openSeatRules(){
   normalizeSeating();const rules=data.seating.rules;
   showModal("隱藏分配規則",`
     <p class="muted">規則只供教師分配座位使用，不會出現在展示模式或學生視角。</p>
-    <div class="seat-rule-actions"><button class="secondary" onclick="openSeatSettings()">← 返回座位區設定</button><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
+    <div class="seat-rule-actions"><button class="secondary" onclick="openNewSeatRule()">＋新增規則</button></div>
     <div class="seat-rule-list">${rules.length?rules.map(r=>`<div class="seat-rule-card"><div><strong>${escapeHtml(r.name||"未命名規則")}</strong><div class="item-sub">${r.type==="tag"?`標籤：${escapeHtml(r.tag||"")}`:`${(r.studentIds||[]).length} 位學生`}｜${r.kind==="around8"?"周圍八格不相鄰":r.kind==="orthogonal"?"前後左右不相鄰":r.kind==="horizontal"?"左右不相鄰":r.kind==="front"?"優先前排":"規則"}</div></div><label class="rule-toggle"><input type="checkbox" ${r.enabled!==false?"checked":""} onchange="toggleSeatRule('${r.id}',this.checked)">啟用</label><button class="secondary" onclick="editSeatRule('${r.id}')">編輯</button><button class="secondary" onclick="deleteSeatRule('${r.id}')">刪除</button></div>`).join(""):`<div class="empty">尚未建立分配規則。</div>`}</div>`);
 }
 function openNewSeatRule(){
@@ -2128,14 +2120,13 @@ function renderSeats(){
   grid.innerHTML=order.map(index=>{
     const student=data.students.find(x=>x.id===s.slots[index]);
     return `<div class="seat-slot ${student?"occupied":"empty"}" data-seat-index="${index}" draggable="${student?"true":"false"}">
-      ${student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong><div class="seat-reveal-cover"><span>點擊揭曉</span></div>`:`<span>空位</span>`}
+      ${student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong>`:`<span>空位</span>`}
     </div>`;
   }).join("");
   const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
-    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")&&room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed")});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
     el.addEventListener("dragend",()=>el.classList.remove("dragging"));
     el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drag-over")});
@@ -2147,9 +2138,6 @@ function moveSeat(from,to){
   normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;
   [data.seating.slots[from],data.seating.slots[to]]=[data.seating.slots[to],data.seating.slots[from]];
   saveData();
-  const seatRoom=document.getElementById("seatRoom");
-  if(seatRoom)seatRoom.classList.toggle("front-step-reveal",seatRevealMode==="step");
-
 }
 function applySeatGrid(){
   normalizeSeating();
@@ -2175,32 +2163,9 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
-let seatRevealMode=localStorage.getItem("cmSeatRevealMode")==="step"?"step":"direct";
-function setSeatRevealMode(mode){
-  seatRevealMode=mode==="step"?"step":"direct";
-  localStorage.setItem("cmSeatRevealMode",seatRevealMode);
-  document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.classList.toggle("active",btn.dataset.seatRevealMode===seatRevealMode));
-  const room=document.getElementById("seatRoom");
-  if(room){
-    room.classList.toggle("front-step-reveal",seatRevealMode==="step");
-    if(seatRevealMode==="direct"){
-      room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
-    }
-  }
-}
-function toggleSeatPresentation(forceOff=false){
+function toggleSeatPresentation(){
   const room=document.getElementById("seatRoom");if(!room)return;
-  const shouldForceOff=forceOff===true;
-  const entering=shouldForceOff?false:!room.classList.contains("presentation");
-  room.classList.toggle("presentation",entering);
-  room.classList.toggle("step-reveal",entering&&seatRevealMode==="step");
-  document.body.classList.toggle("seat-presentation-active",entering);
-  document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
-  let back=document.getElementById("seatPresentationBackBtn");
-  if(entering){
-    room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
-    if(!back){back=document.createElement("button");back.id="seatPresentationBackBtn";back.className="seat-presentation-back";back.textContent="← 返回座位管理";back.addEventListener("click",()=>toggleSeatPresentation(true));room.prepend(back)}
-  }else if(back)back.remove();
+  room.classList.toggle("presentation");document.getElementById("seatPresentationBtn").textContent=room.classList.contains("presentation")?"結束展示":"展示模式";
 }
 function renderStudents(){
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
@@ -2621,10 +2586,8 @@ document.getElementById("applySeatGridBtn")?.addEventListener("click",applySeatG
 document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSeats);
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
-document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));
-document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.addEventListener("click",()=>setSeatRevealMode(btn.dataset.seatRevealMode)));
-setSeatRevealMode(seatRevealMode);
+document.getElementById("seatPresentationBtn")?.addEventListener("click",toggleSeatPresentation);
 
-document.getElementById("seatSettingsBtn")?.addEventListener("click",openSeatSettings);
+document.getElementById("seatRulesBtn")?.addEventListener("click",openSeatRules);
 document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));

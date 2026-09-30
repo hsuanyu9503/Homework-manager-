@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=1.9.3" />
+  <link rel="stylesheet" href="style.css?v=1.8" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.9.3</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v1.8</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.9.3</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v1.8</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -150,13 +150,7 @@
     <section id="seats" class="page">
       <div class="section-head seat-page-head">
         <div><h2>座位管理</h2><p>安排班級座位、依隱藏規則分配，並保留歷史配置。</p></div>
-        <div class="seat-presentation-controls">
-          <div class="seat-reveal-mode" role="group" aria-label="座位公布模式">
-            <button type="button" class="seat-mode-btn active" data-seat-reveal-mode="direct">直接公開</button>
-            <button type="button" class="seat-mode-btn" data-seat-reveal-mode="step">依序揭曉</button>
-          </div>
-          <button class="secondary" id="seatPresentationBtn">展示模式</button>
-        </div>
+        <button class="secondary" id="seatPresentationBtn">展示模式</button>
       </div>
 
       <div class="seat-control-panel card">
@@ -172,8 +166,8 @@
         <div class="seat-control-section seat-main-actions">
           <div class="seat-control-title"><strong>座位分配</strong><span>規則與座位紀錄</span></div>
           <div class="seat-action-grid">
-            <button class="primary" id="randomSeatsBtn">隨機分配</button>
-            <button class="secondary" id="seatSettingsBtn">座位區設定</button>
+            <button class="primary" id="randomSeatsBtn">依規則分配</button>
+            <button class="secondary" id="seatRulesBtn">分配規則</button>
             <button class="secondary" id="seatHistoryBtn">歷史記錄</button>
             <button class="secondary" id="saveSeatSnapshotBtn">儲存目前座位</button>
           </div>
@@ -415,6 +409,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=1.9.3"></script>
+  <script src="app.js?v=1.8"></script>
 </body>
 </html>
