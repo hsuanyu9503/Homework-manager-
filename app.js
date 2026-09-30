@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.9.3";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2135,7 +2135,7 @@ function renderSeats(){
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"教師視角":"學生視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
-    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")&&el.classList.contains("occupied"))el.classList.add("revealed")});
+    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")&&room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed")});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
     el.addEventListener("dragend",()=>el.classList.remove("dragging"));
     el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drag-over")});
@@ -2147,6 +2147,9 @@ function moveSeat(from,to){
   normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;
   [data.seating.slots[from],data.seating.slots[to]]=[data.seating.slots[to],data.seating.slots[from]];
   saveData();
+  const seatRoom=document.getElementById("seatRoom");
+  if(seatRoom)seatRoom.classList.toggle("front-step-reveal",seatRevealMode==="step");
+
 }
 function applySeatGrid(){
   normalizeSeating();
@@ -2172,11 +2175,26 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
+let seatRevealMode=localStorage.getItem("cmSeatRevealMode")==="step"?"step":"direct";
+function setSeatRevealMode(mode){
+  seatRevealMode=mode==="step"?"step":"direct";
+  localStorage.setItem("cmSeatRevealMode",seatRevealMode);
+  document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.classList.toggle("active",btn.dataset.seatRevealMode===seatRevealMode));
+  const room=document.getElementById("seatRoom");
+  if(room){
+    room.classList.toggle("front-step-reveal",seatRevealMode==="step");
+    if(seatRevealMode==="direct"){
+      room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed"));
+    }
+  }
+}
 function toggleSeatPresentation(forceOff=false){
   const room=document.getElementById("seatRoom");if(!room)return;
   const shouldForceOff=forceOff===true;
   const entering=shouldForceOff?false:!room.classList.contains("presentation");
-  room.classList.toggle("presentation",entering);document.body.classList.toggle("seat-presentation-active",entering);
+  room.classList.toggle("presentation",entering);
+  room.classList.toggle("step-reveal",entering&&seatRevealMode==="step");
+  document.body.classList.toggle("seat-presentation-active",entering);
   document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
   let back=document.getElementById("seatPresentationBackBtn");
   if(entering){
@@ -2604,6 +2622,8 @@ document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSea
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
 document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));
+document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.addEventListener("click",()=>setSeatRevealMode(btn.dataset.seatRevealMode)));
+setSeatRevealMode(seatRevealMode);
 
 document.getElementById("seatSettingsBtn")?.addEventListener("click",openSeatSettings);
 document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
