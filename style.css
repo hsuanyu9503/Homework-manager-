@@ -2014,19 +2014,14 @@ nav.tabs .tab{
 
 
 
-/* v2.27 authoritative grade summary layout */
+
+/* v2.28 authoritative grade summary layout */
 .gradebook-summary{
   display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-columns:minmax(180px,280px);
   gap:12px;
   margin-bottom:14px;
 }
-.gradebook-summary.register-only{
-  grid-template-columns:minmax(180px,280px);
-}
 @media(max-width:760px){
-  .gradebook-summary,
-  .gradebook-summary.register-only{
-    grid-template-columns:1fr;
-  }
+  .gradebook-summary{grid-template-columns:1fr}
 }

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.27";
+const APP_VERSION = "2.28";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2753,15 +2753,10 @@ function renderGradebook(){
   if(!["all","",...data.subjects.map(s=>s.id)].includes(gradeSubjectFilter))gradeSubjectFilter="all";
   filter.value=gradeSubjectFilter;
   document.querySelectorAll("[data-grade-view]").forEach(b=>b.classList.toggle("active",b.dataset.gradeView===gradebookView));
-  const items=gradeFilteredItems(),entered=items.reduce((n,item)=>n+gradeStats(item).count,0);
-  const studentAvgs=data.students.map(s=>gradeStudentAverage(s.id,items)).filter(v=>v!==null);
-  const classAvg=studentAvgs.length?studentAvgs.reduce((a,b)=>a+b,0)/studentAvgs.length:null;
+  const items=gradeFilteredItems();
   const isOverview=gradebookView==="overview";
-  summary.classList.toggle("register-only",!isOverview);
-  summary.innerHTML=isOverview?`<article class="grade-summary-card"><span>成績項目</span><strong>${items.length}</strong><small>${gradeSubjectFilter==="all"?"全部科目":escapeHtml(gradeSubjectName(gradeSubjectFilter))}</small></article>
-    <article class="grade-summary-card"><span>成績紀錄</span><strong>${entered}</strong><small>已登記筆數</small></article>
-    <article class="grade-summary-card"><span>學生平均</span><strong>${formatGradeNumber(classAvg)}</strong><small>各評量先換算百分制後平均</small></article>`
-    :`<article class="grade-summary-card"><span>成績項目</span><strong>${items.length}</strong><small>${gradeSubjectFilter==="all"?"全部科目":escapeHtml(gradeSubjectName(gradeSubjectFilter))}</small></article>`;
+  summary.classList.add("register-only");
+  summary.innerHTML=`<article class="grade-summary-card"><span>成績項目</span><strong>${items.length}</strong><small>${gradeSubjectFilter==="all"?"全部科目":escapeHtml(gradeSubjectName(gradeSubjectFilter))}</small></article>`;
   overview.hidden=!isOverview;list.hidden=isOverview;
   if(isOverview){
     list.innerHTML="";
