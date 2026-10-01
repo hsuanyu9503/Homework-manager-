@@ -1,4 +1,4 @@
-const APP_VERSION = "2.16";
+const APP_VERSION = "2.18";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2223,7 +2223,7 @@ function openSeatHistory(){
 function seatSnapshotHtml(x){
   const order=[...Array(x.rows*x.cols).keys()];
   if(data.seating.view==="student")order.reverse();
-  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i]===true;return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div><div class="seat-back">教室後方</div></div>`;
+  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i]===true;return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div></div>`;
 }
 function previewSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x)return;
@@ -2264,8 +2264,8 @@ function unmountSeatModule(){
   seatCardRevealed=new Set();
   if(room){
     room.classList.remove("presentation","step-reveal","card-reveal","front-step-reveal","front-card-reveal","student-view");
-    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage"),back=room.querySelector(".seat-back");
-    if(front&&wrap&&back)room.append(front,wrap,back);
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage");
+    if(front&&wrap)room.append(front,wrap);
   }
 }
 
@@ -2286,10 +2286,10 @@ function renderSeats(){
   const room=document.getElementById("seatRoom");
   if(room){
     room.classList.toggle("student-view",s.view==="student");
-    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage"),back=room.querySelector(".seat-back");
-    if(front&&wrap&&back){
-      if(s.view==="student"){room.append(back,wrap,front)}
-      else{room.append(front,wrap,back)}
+    const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage");
+    if(front&&wrap){
+      if(s.view==="student"){room.append(wrap,front)}
+      else{room.append(front,wrap)}
     }
   }
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
