@@ -1,4 +1,4 @@
-const APP_VERSION = "2.19";
+const APP_VERSION = "2.20";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2209,7 +2209,7 @@ function seatSoftScore(){return 0}
 
 function createSeatHistorySnapshot(label="手動儲存"){
   normalizeSeating();if(!data.seating.slots.some(Boolean))return false;
-  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots],blocked:[...data.seating.blocked]});
+  data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label,rows:data.seating.rows,cols:data.seating.cols,slots:[...data.seating.slots],blocked:[...data.seating.blocked],view:data.seating.view});
   data.seating.history=data.seating.history.slice(0,20);return true;
 }
 function saveSeatHistory(label="手動儲存"){
@@ -2217,23 +2217,26 @@ function saveSeatHistory(label="手動儲存"){
   saveData();toast("已儲存座位快照");
 }
 function openSeatHistory(){
-  normalizeSeating();showModal("座位歷史",`<p class="muted">每班保留最近 20 份座位紀錄。</p><div class="seat-history-list">${data.seating.history.length?data.seating.history.map(x=>`<div class="seat-history-card"><div><strong>${escapeHtml(x.label)}</strong><div class="item-sub">${new Date(x.at).toLocaleString("zh-TW")}｜${x.rows} × ${x.cols}</div></div><button class="secondary" onclick="previewSeatHistory('${x.id}')">查看</button><button class="secondary" onclick="restoreSeatHistory('${x.id}')">恢復</button><button class="secondary" onclick="deleteSeatHistory('${x.id}')">刪除</button></div>`).join(""):`<div class="empty">目前沒有座位歷史。</div>`}</div>`);
+  normalizeSeating();showModal("座位歷史",`<p class="muted">每班保留最近 20 份座位紀錄。</p><div class="seat-history-list">${data.seating.history.length?data.seating.history.map(x=>`<div class="seat-history-card"><div><strong>${escapeHtml(x.label)}</strong><div class="item-sub">${new Date(x.at).toLocaleString("zh-TW")}｜${x.rows} × ${x.cols}｜${x.view==="student"?"學生視角":x.view==="teacher"?"教師視角":"舊版紀錄"}</div></div><button class="secondary" onclick="previewSeatHistory('${x.id}')">查看</button><button class="secondary" onclick="restoreSeatHistory('${x.id}')">恢復</button><button class="secondary" onclick="deleteSeatHistory('${x.id}')">刪除</button></div>`).join(""):`<div class="empty">目前沒有座位歷史。</div>`}</div>`);
 }
 
 function seatSnapshotHtml(x){
+  const snapshotView=x.view==="student"?"student":x.view==="teacher"?"teacher":data.seating.view;
   const order=[...Array(x.rows*x.cols).keys()];
-  if(data.seating.view==="student")order.reverse();
-  return `<div class="seat-history-preview"><div class="seat-front">黑板／講臺</div><div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i]===true;return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div></div>`;
+  if(snapshotView==="student")order.reverse();
+  const grid=`<div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i];return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div>`;
+  const front=`<div class="seat-front">黑板／講臺</div>`;
+  return `<div class="seat-history-preview ${snapshotView==="student"?"student-view":""}">${snapshotView==="student"?grid+front:front+grid}</div>`;
 }
 function previewSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x)return;
-  showModal("查看座位歷史",`<div class="history-preview-meta"><strong>${escapeHtml(x.label)}</strong><span>${new Date(x.at).toLocaleString("zh-TW")}｜${x.rows} × ${x.cols}</span></div>${seatSnapshotHtml(x)}<div class="modal-actions"><button class="secondary" onclick="openSeatHistory()">返回歷史</button><button class="primary" onclick="restoreSeatHistory('${x.id}')">恢復此版本</button></div>`);
+  showModal("查看座位歷史",`<div class="history-preview-meta"><strong>${escapeHtml(x.label)}</strong><span>${new Date(x.at).toLocaleString("zh-TW")}｜${x.rows} × ${x.cols}｜${x.view==="student"?"學生視角":x.view==="teacher"?"教師視角":"舊版紀錄"}</span></div>${seatSnapshotHtml(x)}<div class="modal-actions"><button class="secondary" onclick="openSeatHistory()">返回歷史</button><button class="primary" onclick="restoreSeatHistory('${x.id}')">恢復此版本</button></div>`);
 }
 function restoreSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x||!confirm("確定恢復這份座位配置嗎？目前座位會先自動備份。"))return;
-  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots],blocked:Array.isArray(x.blocked)?[...x.blocked]:Array(x.rows*x.cols).fill(false)};
+  const snapshot={rows:x.rows,cols:x.cols,slots:[...x.slots],blocked:Array.isArray(x.blocked)?[...x.blocked]:Array(x.rows*x.cols).fill(false),view:x.view==="student"?"student":x.view==="teacher"?"teacher":data.seating.view};
   createSeatHistorySnapshot("恢復前自動備份");
-  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;data.seating.blocked=snapshot.blocked;
+  data.seating.rows=snapshot.rows;data.seating.cols=snapshot.cols;data.seating.slots=snapshot.slots;data.seating.blocked=snapshot.blocked;data.seating.view=snapshot.view;
   saveData();closeModal();toast("已恢復座位配置");
 }
 function deleteSeatHistory(id){if(!confirm("確定刪除這份座位歷史嗎？"))return;data.seating.history=data.seating.history.filter(x=>x.id!==id);saveData();openSeatHistory()}
