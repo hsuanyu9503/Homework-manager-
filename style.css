@@ -2025,3 +2025,25 @@ nav.tabs .tab{
 @media(max-width:760px){
   .gradebook-summary{grid-template-columns:1fr}
 }
+
+/* v2.29 seat history podium spacing */
+.seat-history-preview{
+  display:flex;
+  flex-direction:column;
+}
+.seat-history-preview .preview-grid{
+  width:100%;
+}
+.seat-history-preview .seat-front{
+  flex:0 0 auto;
+}
+/* 學生視角：講臺在座位上方 */
+.seat-history-preview:not(.student-view) .seat-front{
+  margin-top:0;
+  margin-bottom:24px;
+}
+/* 教師視角：講臺在座位下方，保留與最後一排的距離 */
+.seat-history-preview.student-view .seat-front{
+  margin-top:24px;
+  margin-bottom:0;
+}
