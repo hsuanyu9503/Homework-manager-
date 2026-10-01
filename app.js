@@ -1,4 +1,4 @@
-const APP_VERSION = "2.24";
+const APP_VERSION = "2.25";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2761,7 +2761,13 @@ function renderGradebook(){
     <article class="grade-summary-card"><span>學生平均</span><strong>${formatGradeNumber(classAvg)}</strong><small>各評量先換算百分制後平均</small></article>`;
   const isOverview=gradebookView==="overview";
   overview.hidden=!isOverview;list.hidden=isOverview;
-  if(isOverview)renderGradeOverview(items);else renderGradeRegister(items);
+  if(isOverview){
+    list.innerHTML="";
+    renderGradeOverview(items);
+  }else{
+    overview.innerHTML="";
+    renderGradeRegister(items);
+  }
 }
 function renderGradeRegister(items){
   const list=document.getElementById("gradebookList");
@@ -2773,6 +2779,11 @@ function renderGradeRegister(items){
 }
 function renderGradeOverview(items){
   const box=document.getElementById("gradebookOverview"),students=[...data.students].sort((a,b)=>a.number-b.number);
+  // 總覽依建立時間由左到右：較早建立的項目在左，較晚建立的項目在右。
+  items=[...items].sort((a,b)=>{
+    const at=Date.parse(a.createdAt||a.date||"")||0,bt=Date.parse(b.createdAt||b.date||"")||0;
+    return at-bt||(a.date||"").localeCompare(b.date||"")||String(a.id||"").localeCompare(String(b.id||""));
+  });
   if(!items.length){box.innerHTML=`<div class="empty">這個科目目前沒有可顯示的成績。</div>`;return}
   box.innerHTML=`<div class="grade-overview-scroll"><table class="grade-overview-table"><thead><tr><th class="grade-sticky-name">座號／姓名</th>${items.map(i=>`<th><span>${escapeHtml(i.title)}</span><small>${escapeHtml(gradeSubjectName(i.subjectId||""))}<br>${formatGradeNumber(i.maxScore)} 分</small></th>`).join("")}<th>平均<small>百分制</small></th></tr></thead>
     <tbody>${students.map(s=>`<tr><th class="grade-sticky-name">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</th>${items.map(i=>{const v=i.scores?.[s.id];return `<td>${v===null||v===undefined||v===""?"—":formatGradeNumber(v)}</td>`}).join("")}<td class="grade-average-cell">${formatGradeNumber(gradeStudentAverage(s.id,items))}</td></tr>`).join("")}</tbody></table></div>`;
