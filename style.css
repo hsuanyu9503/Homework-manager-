@@ -1991,3 +1991,23 @@ nav.tabs .tab{
     padding:9px 4px !important;
   }
 }
+
+/* v2.24 subject gradebook + overview */
+.gradebook-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.gradebook-view-tabs{display:flex;gap:6px;padding:4px;background:var(--soft);border-radius:12px}
+.grade-view-btn{border:0;background:transparent;padding:8px 14px;border-radius:9px;font-weight:700;cursor:pointer}
+.grade-view-btn.active{background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.09)}
+.grade-subject-tools{display:flex;gap:8px;align-items:center}
+.grade-subject-tools select{min-width:140px}
+.gradebook-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grade-subject-badge{display:inline-flex;margin-right:8px;padding:3px 7px;border-radius:999px;background:var(--soft);font-size:.76rem;color:var(--muted);vertical-align:middle}
+.grade-overview-scroll{overflow:auto;max-width:100%;border:1px solid var(--line);border-radius:14px;background:#fff}
+.grade-overview-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:.9rem}
+.grade-overview-table th,.grade-overview-table td{padding:10px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);text-align:center;min-width:90px}
+.grade-overview-table thead th{position:sticky;top:0;background:#f8f8f6;z-index:2}
+.grade-overview-table th small{display:block;margin-top:3px;color:var(--muted);font-weight:500;white-space:nowrap}
+.grade-overview-table .grade-sticky-name{position:sticky;left:0;min-width:145px;text-align:left;background:#fff;z-index:3}
+.grade-overview-table thead .grade-sticky-name{z-index:4;background:#f8f8f6}
+.grade-average-cell{font-weight:800;background:#fafaf8}
+.subject-manager{display:grid;gap:14px}.subject-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:8px}.subject-add-row{display:grid;grid-template-columns:1fr auto;gap:8px;padding-top:8px;border-top:1px solid var(--line)}
+@media(max-width:760px){.gradebook-summary{grid-template-columns:1fr}.grade-subject-tools{width:100%}.grade-subject-tools select{flex:1}.gradebook-toolbar{align-items:stretch}}

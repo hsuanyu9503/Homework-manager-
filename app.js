@@ -1,4 +1,4 @@
-const APP_VERSION = "2.23";
+const APP_VERSION = "2.24";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -30,6 +30,10 @@ function defaultData(){
     notices:[],
     memos:[],
     scores:{},
+    subjects:[
+      {id:"sub-chinese",name:"國語"},{id:"sub-math",name:"數學"},{id:"sub-english",name:"英語"},
+      {id:"sub-science",name:"自然"},{id:"sub-social",name:"社會"}
+    ],
     gradeItems:[],
     groups:[],
     groupScores:{},
@@ -93,8 +97,13 @@ function normalizeData(input){
     notices:Array.isArray(input?.notices) ? input.notices : [],
     memos:Array.isArray(input?.memos) ? input.memos : [],
     scores:(input?.scores && typeof input.scores==="object") ? input.scores : {},
+    subjects:Array.isArray(input?.subjects)&&input.subjects.length ? input.subjects.map(s=>({id:s.id||uid("sub"),name:String(s.name||"").trim()||"未命名科目"})) : [
+      {id:"sub-chinese",name:"國語"},{id:"sub-math",name:"數學"},{id:"sub-english",name:"英語"},
+      {id:"sub-science",name:"自然"},{id:"sub-social",name:"社會"}
+    ],
     gradeItems:Array.isArray(input?.gradeItems) ? input.gradeItems.map(g=>({
       ...g,
+      subjectId:g?.subjectId||"",
       scores:(g?.scores&&typeof g.scores==="object")?g.scores:{}
     })) : [],
     groups:Array.isArray(input?.groups) ? input.groups : [],
@@ -2725,40 +2734,72 @@ function formatGradeNumber(n){
   if(n===null||n===undefined||!Number.isFinite(Number(n)))return "—";
   return Number.isInteger(Number(n))?String(Number(n)):Number(n).toFixed(1).replace(/\.0$/,"");
 }
-function renderGradebook(){
-  const list=document.getElementById("gradebookList"),summary=document.getElementById("gradebookSummary");if(!list||!summary)return;
-  if(!Array.isArray(data.gradeItems))data.gradeItems=[];
-  const items=[...data.gradeItems].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||"").localeCompare(a.createdAt||""));
-  const entered=items.reduce((n,item)=>n+gradeStats(item).count,0);
-  summary.innerHTML=`<article class="grade-summary-card"><span>成績項目</span><strong>${items.length}</strong><small>共 ${entered} 筆成績紀錄</small></article>`;
-  list.innerHTML=items.length?items.map(item=>{
-    const st=gradeStats(item),total=data.students.length;
-    return `<div class="item-card grade-item-card clickable" onclick="openGradeItem('${item.id}')">
-      <div class="item-main"><div class="item-title">${escapeHtml(item.title)}</div>
-        <div class="item-sub">${formatDate(item.date)}｜滿分 ${formatGradeNumber(item.maxScore)}｜已登記 ${st.count} / ${total}</div>
-      </div>
-      <div class="grade-item-stats">
-        <span>平均 <b>${formatGradeNumber(st.avg)}</b></span>
-        <span>最高 <b>${formatGradeNumber(st.max)}</b></span>
-        <span>最低 <b>${formatGradeNumber(st.min)}</b></span>
-      </div>
-    </div>`;
-  }).join(""):`<div class="empty">尚未建立成績項目。</div>`;
+let gradebookView="overview";
+let gradeSubjectFilter="all";
+function gradeSubjectName(id){return data.subjects?.find(s=>s.id===id)?.name||"未分類"}
+function gradeFilteredItems(){
+  const all=[...(data.gradeItems||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||"").localeCompare(a.createdAt||""));
+  return gradeSubjectFilter==="all"?all:all.filter(g=>(g.subjectId||"")===gradeSubjectFilter);
 }
+function gradeStudentAverage(studentId,items){
+  const vals=items.map(i=>{const v=i.scores?.[studentId];if(v===null||v===undefined||v==="")return null;const n=Number(v),max=Number(i.maxScore);return Number.isFinite(n)&&max>0?n/max*100:null}).filter(v=>v!==null);
+  return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+}
+function renderGradebook(){
+  const list=document.getElementById("gradebookList"),summary=document.getElementById("gradebookSummary"),overview=document.getElementById("gradebookOverview"),filter=document.getElementById("gradeSubjectFilter");
+  if(!list||!summary||!overview||!filter)return;
+  if(!Array.isArray(data.gradeItems))data.gradeItems=[];if(!Array.isArray(data.subjects))data.subjects=[];
+  filter.innerHTML=`<option value="all">全部科目</option>${data.subjects.map(s=>`<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}</option>`).join("")}<option value="">未分類</option>`;
+  if(!["all","",...data.subjects.map(s=>s.id)].includes(gradeSubjectFilter))gradeSubjectFilter="all";
+  filter.value=gradeSubjectFilter;
+  document.querySelectorAll("[data-grade-view]").forEach(b=>b.classList.toggle("active",b.dataset.gradeView===gradebookView));
+  const items=gradeFilteredItems(),entered=items.reduce((n,item)=>n+gradeStats(item).count,0);
+  const studentAvgs=data.students.map(s=>gradeStudentAverage(s.id,items)).filter(v=>v!==null);
+  const classAvg=studentAvgs.length?studentAvgs.reduce((a,b)=>a+b,0)/studentAvgs.length:null;
+  summary.innerHTML=`<article class="grade-summary-card"><span>成績項目</span><strong>${items.length}</strong><small>${gradeSubjectFilter==="all"?"全部科目":escapeHtml(gradeSubjectName(gradeSubjectFilter))}</small></article>
+    <article class="grade-summary-card"><span>成績紀錄</span><strong>${entered}</strong><small>已登記筆數</small></article>
+    <article class="grade-summary-card"><span>學生平均</span><strong>${formatGradeNumber(classAvg)}</strong><small>各評量先換算百分制後平均</small></article>`;
+  const isOverview=gradebookView==="overview";
+  overview.hidden=!isOverview;list.hidden=isOverview;
+  if(isOverview)renderGradeOverview(items);else renderGradeRegister(items);
+}
+function renderGradeRegister(items){
+  const list=document.getElementById("gradebookList");
+  list.innerHTML=items.length?items.map(item=>{const st=gradeStats(item),total=data.students.length;return `<div class="item-card grade-item-card clickable" onclick="openGradeItem('${item.id}')">
+    <div class="item-main"><div class="item-title"><span class="grade-subject-badge">${escapeHtml(gradeSubjectName(item.subjectId||""))}</span>${escapeHtml(item.title)}</div>
+      <div class="item-sub">${formatDate(item.date)}｜滿分 ${formatGradeNumber(item.maxScore)}｜已登記 ${st.count} / ${total}</div></div>
+    <div class="grade-item-stats"><span>平均 <b>${formatGradeNumber(st.avg)}</b></span><span>最高 <b>${formatGradeNumber(st.max)}</b></span><span>最低 <b>${formatGradeNumber(st.min)}</b></span></div>
+  </div>`}).join(""):`<div class="empty">這個科目目前沒有成績項目。</div>`;
+}
+function renderGradeOverview(items){
+  const box=document.getElementById("gradebookOverview"),students=[...data.students].sort((a,b)=>a.number-b.number);
+  if(!items.length){box.innerHTML=`<div class="empty">這個科目目前沒有可顯示的成績。</div>`;return}
+  box.innerHTML=`<div class="grade-overview-scroll"><table class="grade-overview-table"><thead><tr><th class="grade-sticky-name">座號／姓名</th>${items.map(i=>`<th><span>${escapeHtml(i.title)}</span><small>${escapeHtml(gradeSubjectName(i.subjectId||""))}<br>${formatGradeNumber(i.maxScore)} 分</small></th>`).join("")}<th>平均<small>百分制</small></th></tr></thead>
+    <tbody>${students.map(s=>`<tr><th class="grade-sticky-name">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</th>${items.map(i=>{const v=i.scores?.[s.id];return `<td>${v===null||v===undefined||v===""?"—":formatGradeNumber(v)}</td>`}).join("")}<td class="grade-average-cell">${formatGradeNumber(gradeStudentAverage(s.id,items))}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function openSubjectManager(){
+  showModal("科目管理",`<div class="subject-manager"><div id="subjectManagerList">${data.subjects.map((s,i)=>`<div class="subject-row"><input value="${escapeAttr(s.name)}" data-subject-name="${s.id}"><button type="button" class="danger-btn compact" onclick="deleteSubject('${s.id}')">刪除</button></div>`).join("")||'<div class="empty">尚無科目</div>'}</div>
+    <div class="subject-add-row"><input id="newSubjectName" placeholder="新增科目名稱"><button type="button" class="secondary" onclick="addSubject()">＋新增</button></div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button type="button" class="primary" onclick="saveSubjectNames()">儲存</button></div></div>`);
+}
+function addSubject(){const input=document.getElementById("newSubjectName"),name=input?.value.trim();if(!name){toast("請輸入科目名稱");return}if(data.subjects.some(s=>s.name===name)){toast("已有相同科目");return}data.subjects.push({id:uid("sub"),name});saveData();openSubjectManager()}
+function saveSubjectNames(){document.querySelectorAll("[data-subject-name]").forEach(i=>{const s=data.subjects.find(x=>x.id===i.dataset.subjectName),name=i.value.trim();if(s&&name)s.name=name});saveData();closeModal();renderGradebook();toast("科目已更新")}
+function deleteSubject(id){const s=data.subjects.find(x=>x.id===id);if(!s)return;const used=data.gradeItems.some(g=>g.subjectId===id);if(!confirm(used?`「${s.name}」已有成績項目。刪除科目後，這些項目會改為未分類。確定刪除嗎？`:`確定刪除「${s.name}」嗎？`))return;data.gradeItems.forEach(g=>{if(g.subjectId===id)g.subjectId=""});data.subjects=data.subjects.filter(x=>x.id!==id);if(gradeSubjectFilter===id)gradeSubjectFilter="all";saveData();openSubjectManager()}
 function openNewGradeItem(){
   if(!data.students.length){toast("請先建立學生名單");return}
   showModal("新增成績項目",`
     <form id="newGradeItemForm" class="modal-form">
-      <label><span>項目名稱</span><input id="gradeItemTitle" placeholder="例如：數學第一次小考" required></label>
+      <label><span>科目</span><select id="gradeItemSubject" required><option value="">請選擇科目</option>${data.subjects.map(s=>`<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}</option>`).join("")}</select></label>
+      <label><span>項目名稱</span><input id="gradeItemTitle" placeholder="例如：第一次小考" required></label>
       <label><span>日期</span><input type="date" id="gradeItemDate" value="${localDateString()}" required></label>
       <label><span>滿分</span><input type="number" id="gradeItemMax" min="0.1" step="0.1" value="100" required></label>
       <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary" type="submit">建立</button></div>
     </form>`);
   document.getElementById("newGradeItemForm").addEventListener("submit",e=>{
     e.preventDefault();
-    const title=document.getElementById("gradeItemTitle").value.trim(),date=document.getElementById("gradeItemDate").value,maxScore=Number(document.getElementById("gradeItemMax").value);
-    if(!title||!date||!Number.isFinite(maxScore)||maxScore<=0){toast("請完整填寫成績項目");return}
-    data.gradeItems.push({id:uid("g"),title,date,maxScore,scores:{},createdAt:new Date().toISOString()});
+    const subjectId=document.getElementById("gradeItemSubject").value,title=document.getElementById("gradeItemTitle").value.trim(),date=document.getElementById("gradeItemDate").value,maxScore=Number(document.getElementById("gradeItemMax").value);
+    if(!subjectId||!title||!date||!Number.isFinite(maxScore)||maxScore<=0){toast("請完整填寫成績項目");return}
+    data.gradeItems.push({id:uid("g"),subjectId,title,date,maxScore,scores:{},createdAt:new Date().toISOString()});
     saveData();closeModal();setPage("gradebook");toast("已建立成績項目");
   });
 }
@@ -2767,7 +2808,7 @@ function openGradeItem(id){
   const students=[...data.students].sort((a,b)=>a.number-b.number),st=gradeStats(item);
   showModal(escapeHtml(item.title),`
     <div class="grade-editor-head">
-      <div><strong>${formatDate(item.date)}</strong><span>滿分 ${formatGradeNumber(item.maxScore)}</span></div>
+      <div><strong>${escapeHtml(gradeSubjectName(item.subjectId||""))}｜${formatDate(item.date)}</strong><span>滿分 ${formatGradeNumber(item.maxScore)}</span></div>
       <div class="grade-editor-stats"><span>已登記 <b id="gradeEnteredCount">${st.count}</b> / ${students.length}</span><span>平均 <b id="gradeAvg">${formatGradeNumber(st.avg)}</b></span><span>最高 <b id="gradeMax">${formatGradeNumber(st.max)}</b></span><span>最低 <b id="gradeMin">${formatGradeNumber(st.min)}</b></span></div>
     </div>
     <div class="grade-entry-list">${students.map(s=>{
@@ -2793,17 +2834,18 @@ function saveGradeEntries(id){
 function editGradeItem(id){
   const item=data.gradeItems.find(g=>g.id===id);if(!item)return;
   showModal("編輯成績項目",`<form id="editGradeItemForm" class="modal-form">
+    <label><span>科目</span><select id="editGradeSubject" required>${data.subjects.map(s=>`<option value="${escapeAttr(s.id)}" ${s.id===item.subjectId?"selected":""}>${escapeHtml(s.name)}</option>`).join("")}<option value="" ${!item.subjectId?"selected":""}>未分類</option></select></label>
     <label><span>項目名稱</span><input id="editGradeTitle" value="${escapeAttr(item.title)}" required></label>
     <label><span>日期</span><input type="date" id="editGradeDate" value="${escapeAttr(item.date)}" required></label>
     <label><span>滿分</span><input type="number" id="editGradeMaxScore" min="0.1" step="0.1" value="${item.maxScore}" required></label>
     <div class="modal-actions"><button type="button" class="secondary" onclick="openGradeItem('${id}')">取消</button><button class="primary" type="submit">儲存</button></div></form>`);
   document.getElementById("editGradeItemForm").addEventListener("submit",e=>{
     e.preventDefault();
-    const title=document.getElementById("editGradeTitle").value.trim(),date=document.getElementById("editGradeDate").value,maxScore=Number(document.getElementById("editGradeMaxScore").value);
+    const subjectId=document.getElementById("editGradeSubject").value,title=document.getElementById("editGradeTitle").value.trim(),date=document.getElementById("editGradeDate").value,maxScore=Number(document.getElementById("editGradeMaxScore").value);
     if(!title||!date||!Number.isFinite(maxScore)||maxScore<=0){toast("請完整填寫項目資料");return}
     const over=Object.values(item.scores||{}).some(v=>v!==""&&Number(v)>maxScore);
     if(over&&!confirm("目前已有成績高於新的滿分。仍要修改嗎？超過滿分的既有成績會保留，但下次儲存前需先修正。"))return;
-    item.title=title;item.date=date;item.maxScore=maxScore;saveData();openGradeItem(id);toast("項目已更新");
+    item.subjectId=subjectId;item.title=title;item.date=date;item.maxScore=maxScore;saveData();openGradeItem(id);toast("項目已更新");
   });
 }
 function deleteGradeItem(id){
@@ -3035,6 +3077,9 @@ if(timerResetBtn) timerResetBtn.addEventListener("click",resetPomodoro);
 
 document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>setPage(btn.dataset.page)));
 document.getElementById("addGradeItemBtn")?.addEventListener("click",openNewGradeItem);
+document.querySelectorAll("[data-grade-view]").forEach(btn=>btn.addEventListener("click",()=>{gradebookView=btn.dataset.gradeView;renderGradebook()}));
+document.getElementById("gradeSubjectFilter")?.addEventListener("change",e=>{gradeSubjectFilter=e.target.value;renderGradebook()});
+document.getElementById("manageSubjectsBtn")?.addEventListener("click",openSubjectManager);
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
