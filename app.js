@@ -1,4 +1,4 @@
-const APP_VERSION = "2.18";
+const APP_VERSION = "2.19";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2294,7 +2294,7 @@ function renderSeats(){
   }
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
   grid.querySelectorAll(".seat-slot").forEach(el=>{
-    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation")){if(room.classList.contains("step-reveal")&&el.classList.contains("occupied"))el.classList.add("revealed");return}toggleSeatBlocked(Number(el.dataset.seatIndex))});
+    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation"))return;toggleSeatBlocked(Number(el.dataset.seatIndex))});
     el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
     el.addEventListener("dragend",()=>el.classList.remove("dragging"));
     el.addEventListener("dragover",e=>{if(el.classList.contains("blocked"))return;e.preventDefault();el.classList.add("drag-over")});
