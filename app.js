@@ -1,4 +1,4 @@
-const APP_VERSION = "2.20";
+const APP_VERSION = "2.21";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2223,10 +2223,10 @@ function openSeatHistory(){
 function seatSnapshotHtml(x){
   const snapshotView=x.view==="student"?"student":x.view==="teacher"?"teacher":data.seating.view;
   const order=[...Array(x.rows*x.cols).keys()];
-  if(snapshotView==="student")order.reverse();
+  if(snapshotView==="teacher")order.reverse();
   const grid=`<div class="seat-grid preview-grid" style="grid-template-columns:repeat(${x.cols},minmax(0,1fr))">${order.map(i=>{const s=data.students.find(v=>v.id===x.slots[i]),blocked=Array.isArray(x.blocked)&&x.blocked[i];return `<div class="seat-slot ${blocked?"blocked":s?"occupied":"empty"}">${blocked?`<span class="seat-blocked-label">已封鎖</span>`:s?`<div class="seat-number">${String(s.number).padStart(2,"0")}</div><strong>${escapeHtml(s.name)}</strong>`:"<span>空位</span>"}</div>`}).join("")}</div>`;
   const front=`<div class="seat-front">黑板／講臺</div>`;
-  return `<div class="seat-history-preview ${snapshotView==="student"?"student-view":""}">${snapshotView==="student"?grid+front:front+grid}</div>`;
+  return `<div class="seat-history-preview ${snapshotView==="teacher"?"student-view":""}">${snapshotView==="teacher"?grid+front:front+grid}</div>`;
 }
 function previewSeatHistory(id){
   const x=data.seating.history.find(v=>v.id===id);if(!x)return;
@@ -2276,7 +2276,7 @@ function renderSeats(){
   const grid=document.getElementById("seatGrid");if(!grid)return;
   normalizeSeating();
   const s=data.seating, order=[...Array(s.slots.length).keys()];
-  if(s.view==="student")order.reverse();
+  if(s.view==="teacher")order.reverse();
   grid.style.gridTemplateColumns=`repeat(${s.cols},minmax(0,1fr))`;
   grid.innerHTML=order.map(index=>{
     const student=data.students.find(x=>x.id===s.slots[index]),blocked=s.blocked[index]===true;
@@ -2288,10 +2288,10 @@ function renderSeats(){
   if(rows)rows.value=s.rows;if(cols)cols.value=s.cols;
   const room=document.getElementById("seatRoom");
   if(room){
-    room.classList.toggle("student-view",s.view==="student");
+    room.classList.toggle("student-view",s.view==="teacher");
     const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage");
     if(front&&wrap){
-      if(s.view==="student"){room.append(wrap,front)}
+      if(s.view==="teacher"){room.append(wrap,front)}
       else{room.append(front,wrap)}
     }
   }
