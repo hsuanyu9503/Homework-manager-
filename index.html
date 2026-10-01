@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=2.21" />
+  <link rel="stylesheet" href="style.css?v=2.23" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.21</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.23</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.21</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.23</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -39,6 +39,7 @@
       <button class="tab" data-page="assignments">作業</button>
       <button class="tab" data-page="contactbook">聯絡簿</button>
       <button class="tab" data-page="students">學生</button>
+      <button class="tab" data-page="gradebook">成績</button>
       <button class="tab" data-page="seats">座位</button>
       <button class="tab" data-page="scores">課堂工具</button>
     </nav>
@@ -147,6 +148,15 @@
       <div id="studentList" class="student-grid"></div>
     </section>
 
+
+    <section id="gradebook" class="page">
+      <div class="section-head">
+        <div><h2>成績</h2><p>建立評量項目並快速登記全班成績</p></div>
+        <button class="primary" id="addGradeItemBtn">＋新增成績項目</button>
+      </div>
+      <div id="gradebookSummary" class="gradebook-summary"></div>
+      <div id="gradebookList" class="stack"></div>
+    </section>
 
     <section id="seats" class="page">
       <div class="section-head seat-page-head">
@@ -418,6 +428,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=2.21"></script>
+  <script src="app.js?v=2.23"></script>
 </body>
 </html>
