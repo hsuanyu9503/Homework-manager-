@@ -1,4 +1,4 @@
-const APP_VERSION = "2.29";
+const APP_VERSION = "2.30";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2612,7 +2612,6 @@ function renderStudents(){
       <div class="student-card" onclick="openStudent('${s.id}')">
         <div class="num">${String(s.number).padStart(2,"0")}</div>
         <div class="item-title">${escapeHtml(s.name)}</div>
-        ${s.tags?.length?`<div class="student-tags">${s.tags.map(t=>`<span>${escapeHtml(t)}</span>`).join("")}</div>`:""}
         <div class="assignment-summary">
           ${missing ? `<span class="badge missing">缺交 ${missing}</span>`:""}
           ${correction ? `<span class="badge correction">待訂正 ${correction}</span>`:""}
