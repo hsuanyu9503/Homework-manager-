@@ -1,4 +1,4 @@
-const APP_VERSION = "2.30";
+const APP_VERSION = "2.31";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -977,9 +977,23 @@ function assignmentCardHtml(a){
     </div>`;
 }
 
+let assignmentFilterSyncedDay="";
+let contactFilterSyncedDay="";
+
+function syncPageDateFilter(input,kind){
+  if(!input)return;
+  const today=localDateString();
+  const last=kind==="assignment"?assignmentFilterSyncedDay:contactFilterSyncedDay;
+  if(!input.value||last!==today){
+    input.value=today;
+    if(kind==="assignment")assignmentFilterSyncedDay=today;
+    else contactFilterSyncedDay=today;
+  }
+}
+
 function renderAssignments(){
   const input = document.getElementById("assignmentDateFilter");
-  if(!input.value) input.value = localDateString();
+  syncPageDateFilter(input,"assignment");
 
   let items = [...data.assignments].sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
   if(!showAllAssignmentsMode){
@@ -997,7 +1011,7 @@ function renderAssignments(){
 function renderContactBook(){
   const input = document.getElementById("contactDateFilter");
   if(!input) return;
-  if(!input.value) input.value = localDateString();
+  syncPageDateFilter(input,"contact");
 
   let items = [...data.contactItems].sort((a,b)=> b.date.localeCompare(a.date) || (a.order??0)-(b.order??0) || a.createdAt.localeCompare(b.createdAt));
   if(!showAllContactItemsMode){
@@ -1191,7 +1205,10 @@ function openNewContactItem(){
     });
 
     const contactFilter = document.getElementById("contactDateFilter");
-    if(contactFilter) contactFilter.value = date;
+    if(contactFilter){
+      contactFilter.value = date;
+      contactFilterSyncedDay = localDateString();
+    }
     showAllContactItemsMode = false;
     const allContactBtn = document.getElementById("showAllContactItems");
     if(allContactBtn) allContactBtn.textContent = "顯示全部";
@@ -2924,7 +2941,10 @@ function openNewAssignment(){
     });
 
     const assignmentFilter = document.getElementById("assignmentDateFilter");
-    if(assignmentFilter) assignmentFilter.value = assignment.date;
+    if(assignmentFilter){
+      assignmentFilter.value = assignment.date;
+      assignmentFilterSyncedDay = localDateString();
+    }
     showAllAssignmentsMode = false;
     const allAssignmentsBtn = document.getElementById("showAllAssignments");
     if(allAssignmentsBtn) allAssignmentsBtn.textContent = "顯示全部";
@@ -3097,6 +3117,7 @@ if(noticeMemoBtn){
 document.getElementById("addAssignmentBtn").addEventListener("click",openNewAssignment);
 document.getElementById("assignmentGroupsBtn")?.addEventListener("click",openAssignmentGroups);
 document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
+  assignmentFilterSyncedDay=localDateString();
   showAllAssignmentsMode=false;
   renderAssignments();
 });
@@ -3106,6 +3127,7 @@ document.getElementById("showAllAssignments").addEventListener("click",()=>{
   renderAssignments();
 });
 document.getElementById("contactDateFilter").addEventListener("change",()=>{
+  contactFilterSyncedDay=localDateString();
   showAllContactItemsMode=false;
   renderContactBook();
 });
