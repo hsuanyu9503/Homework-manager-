@@ -1,4 +1,4 @@
-const APP_VERSION = "2.33";
+const APP_VERSION = "2.34";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2840,7 +2840,7 @@ function syncGradeCorrectionRecords(item,assignment){
     const raw=item.scores?.[s.id];
     const n=raw===null||raw===undefined||raw===""?null:Number(raw);
     // 只有已登記且等於滿分時自動標示「已交」；非滿分不覆蓋教師已手動調整的狀態。
-    if(n!==null&&Number.isFinite(n)&&n===Number(item.maxScore))r.status="submitted";
+    if(n!==null&&Number.isFinite(n)&&n===Number(item.maxScore))r.status="completed";
   });
 }
 function removeGradeCorrectionAssignment(item){
@@ -2857,7 +2857,7 @@ function openNewGradeItem(){
       <label><span>項目名稱</span><input id="gradeItemTitle" placeholder="例如：第一次小考" required></label>
       <label><span>日期</span><input type="date" id="gradeItemDate" value="${localDateString()}" required></label>
       <label><span>滿分</span><input type="number" id="gradeItemMax" min="0.1" step="0.1" value="100" required></label>
-      <label class="grade-assignment-option"><input type="checkbox" id="gradeTrackCorrection"><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為已交</small></span></label>
+      <label class="grade-assignment-option"><input type="checkbox" id="gradeTrackCorrection"><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為完成</small></span></label>
       <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary" type="submit">建立</button></div>
     </form>`);
   document.getElementById("newGradeItemForm").addEventListener("submit",e=>{
@@ -2907,7 +2907,7 @@ function editGradeItem(id){
     <label><span>項目名稱</span><input id="editGradeTitle" value="${escapeAttr(item.title)}" required></label>
     <label><span>日期</span><input type="date" id="editGradeDate" value="${escapeAttr(item.date)}" required></label>
     <label><span>滿分</span><input type="number" id="editGradeMaxScore" min="0.1" step="0.1" value="${item.maxScore}" required></label>
-    <label class="grade-assignment-option"><input type="checkbox" id="editGradeTrackCorrection" ${item.trackCorrection?"checked":""}><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為已交</small></span></label>
+    <label class="grade-assignment-option"><input type="checkbox" id="editGradeTrackCorrection" ${item.trackCorrection?"checked":""}><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為完成</small></span></label>
     <div class="modal-actions"><button type="button" class="secondary" onclick="openGradeItem('${id}')">取消</button><button class="primary" type="submit">儲存</button></div></form>`);
   document.getElementById("editGradeItemForm").addEventListener("submit",e=>{
     e.preventDefault();
@@ -2916,7 +2916,7 @@ function editGradeItem(id){
     const over=Object.values(item.scores||{}).some(v=>v!==""&&Number(v)>maxScore);
     if(over&&!confirm("目前已有成績高於新的滿分。仍要修改嗎？超過滿分的既有成績會保留，但下次儲存前需先修正。"))return;
     if(item.trackCorrection&&!trackCorrection&&item.correctionAssignmentId){
-      const hasProgress=data.records.some(r=>r.assignmentId===item.correctionAssignmentId&&r.status!=="pending"&&r.status!=="submitted");
+      const hasProgress=data.records.some(r=>r.assignmentId===item.correctionAssignmentId&&r.status!=="pending"&&r.status!=="completed");
       const msg=hasProgress?"訂正作業已有手動追蹤紀錄。取消「新增到作業」會刪除該作業與所有學生狀態，確定繼續嗎？":"取消「新增到作業」會移除對應的訂正作業，確定繼續嗎？";
       if(!confirm(msg))return;
       removeGradeCorrectionAssignment(item);
