@@ -2064,3 +2064,11 @@ nav.tabs .tab{
 .page-lock-message{padding:12px 14px;border-radius:12px;background:var(--soft);line-height:1.55}
 .page-lock-error{min-height:20px;color:var(--danger,#b42318);font-size:.9rem}
 @media(max-width:620px){.page-lock-row{grid-template-columns:1fr}.page-lock-password{width:100%}}
+
+/* v2.37 subject manager close/delete separation */
+.subject-manager{padding-top:10px}
+.subject-manager #subjectManagerList{display:grid;gap:8px}
+.subject-manager .subject-row{margin-bottom:0}
+@media(min-width:621px){
+  .subject-manager #subjectManagerList{padding-right:6px}
+}
