@@ -2047,3 +2047,8 @@ nav.tabs .tab{
   margin-top:24px;
   margin-bottom:0;
 }
+
+/* v2.32 grade correction assignment option */
+.grade-assignment-option{display:flex!important;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+.grade-assignment-option input{width:18px;height:18px;margin-top:2px;flex:0 0 auto}
+.grade-assignment-option span{display:grid;gap:3px}.grade-assignment-option small{color:var(--muted);line-height:1.4}

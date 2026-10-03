@@ -1,4 +1,4 @@
-const APP_VERSION = "2.31";
+const APP_VERSION = "2.33";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -104,6 +104,8 @@ function normalizeData(input){
     gradeItems:Array.isArray(input?.gradeItems) ? input.gradeItems.map(g=>({
       ...g,
       subjectId:g?.subjectId||"",
+      trackCorrection:Boolean(g?.trackCorrection),
+      correctionAssignmentId:g?.correctionAssignmentId||null,
       scores:(g?.scores&&typeof g.scores==="object")?g.scores:{}
     })) : [],
     groups:Array.isArray(input?.groups) ? input.groups : [],
@@ -2809,6 +2811,44 @@ function openSubjectManager(){
 function addSubject(){const input=document.getElementById("newSubjectName"),name=input?.value.trim();if(!name){toast("請輸入科目名稱");return}if(data.subjects.some(s=>s.name===name)){toast("已有相同科目");return}data.subjects.push({id:uid("sub"),name});saveData();openSubjectManager()}
 function saveSubjectNames(){document.querySelectorAll("[data-subject-name]").forEach(i=>{const s=data.subjects.find(x=>x.id===i.dataset.subjectName),name=i.value.trim();if(s&&name)s.name=name});saveData();closeModal();renderGradebook();toast("科目已更新")}
 function deleteSubject(id){const s=data.subjects.find(x=>x.id===id);if(!s)return;const used=data.gradeItems.some(g=>g.subjectId===id);if(!confirm(used?`「${s.name}」已有成績項目。刪除科目後，這些項目會改為未分類。確定刪除嗎？`:`確定刪除「${s.name}」嗎？`))return;data.gradeItems.forEach(g=>{if(g.subjectId===id)g.subjectId=""});data.subjects=data.subjects.filter(x=>x.id!==id);if(gradeSubjectFilter===id)gradeSubjectFilter="all";saveData();openSubjectManager()}
+function ensureGradeCorrectionAssignment(item){
+  if(!item?.trackCorrection)return null;
+  let assignment=data.assignments.find(a=>a.id===item.correctionAssignmentId);
+  if(!assignment){
+    assignment={
+      id:uid("a"),date:item.date,subject:"",title:`${item.title}訂正`,
+      createdAt:new Date().toISOString(),dashboardArchived:false,sourceGradeItemId:item.id
+    };
+    data.assignments.push(assignment);
+    item.correctionAssignmentId=assignment.id;
+  }else{
+    assignment.title=`${item.title}訂正`;
+    assignment.date=item.date;
+    assignment.sourceGradeItemId=item.id;
+  }
+  syncGradeCorrectionRecords(item,assignment);
+  return assignment;
+}
+function syncGradeCorrectionRecords(item,assignment){
+  if(!item||!assignment)return;
+  data.students.forEach(s=>{
+    let r=getRecord(assignment.id,s.id);
+    if(!r){
+      r={assignmentId:assignment.id,studentId:s.id,status:"pending",note:""};
+      data.records.push(r);
+    }
+    const raw=item.scores?.[s.id];
+    const n=raw===null||raw===undefined||raw===""?null:Number(raw);
+    // 只有已登記且等於滿分時自動標示「已交」；非滿分不覆蓋教師已手動調整的狀態。
+    if(n!==null&&Number.isFinite(n)&&n===Number(item.maxScore))r.status="submitted";
+  });
+}
+function removeGradeCorrectionAssignment(item){
+  if(!item?.correctionAssignmentId)return;
+  data.assignments=data.assignments.filter(a=>a.id!==item.correctionAssignmentId);
+  data.records=data.records.filter(r=>r.assignmentId!==item.correctionAssignmentId);
+  item.correctionAssignmentId=null;
+}
 function openNewGradeItem(){
   if(!data.students.length){toast("請先建立學生名單");return}
   showModal("新增成績項目",`
@@ -2817,14 +2857,17 @@ function openNewGradeItem(){
       <label><span>項目名稱</span><input id="gradeItemTitle" placeholder="例如：第一次小考" required></label>
       <label><span>日期</span><input type="date" id="gradeItemDate" value="${localDateString()}" required></label>
       <label><span>滿分</span><input type="number" id="gradeItemMax" min="0.1" step="0.1" value="100" required></label>
+      <label class="grade-assignment-option"><input type="checkbox" id="gradeTrackCorrection"><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為已交</small></span></label>
       <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary" type="submit">建立</button></div>
     </form>`);
   document.getElementById("newGradeItemForm").addEventListener("submit",e=>{
     e.preventDefault();
-    const subjectId=document.getElementById("gradeItemSubject").value,title=document.getElementById("gradeItemTitle").value.trim(),date=document.getElementById("gradeItemDate").value,maxScore=Number(document.getElementById("gradeItemMax").value);
+    const subjectId=document.getElementById("gradeItemSubject").value,title=document.getElementById("gradeItemTitle").value.trim(),date=document.getElementById("gradeItemDate").value,maxScore=Number(document.getElementById("gradeItemMax").value),trackCorrection=document.getElementById("gradeTrackCorrection").checked;
     if(!subjectId||!title||!date||!Number.isFinite(maxScore)||maxScore<=0){toast("請完整填寫成績項目");return}
-    data.gradeItems.push({id:uid("g"),subjectId,title,date,maxScore,scores:{},createdAt:new Date().toISOString()});
-    saveData();closeModal();setPage("gradebook");toast("已建立成績項目");
+    const gradeItem={id:uid("g"),subjectId,title,date,maxScore,scores:{},createdAt:new Date().toISOString(),trackCorrection,correctionAssignmentId:null};
+    data.gradeItems.push(gradeItem);
+    if(trackCorrection)ensureGradeCorrectionAssignment(gradeItem);
+    saveData();closeModal();setPage("gradebook");toast(trackCorrection?"已建立成績項目與訂正作業":"已建立成績項目");
   });
 }
 function openGradeItem(id){
@@ -2853,7 +2896,9 @@ function saveGradeEntries(id){
     input.classList.remove("invalid");next[sid]=n;
   });
   if(invalid){toast(`成績需介於 0 到 ${formatGradeNumber(item.maxScore)} 之間`);return}
-  item.scores=next;saveData();openGradeItem(id);toast("成績已儲存");
+  item.scores=next;
+  if(item.trackCorrection)ensureGradeCorrectionAssignment(item);
+  saveData();openGradeItem(id);toast("成績已儲存");
 }
 function editGradeItem(id){
   const item=data.gradeItems.find(g=>g.id===id);if(!item)return;
@@ -2862,18 +2907,28 @@ function editGradeItem(id){
     <label><span>項目名稱</span><input id="editGradeTitle" value="${escapeAttr(item.title)}" required></label>
     <label><span>日期</span><input type="date" id="editGradeDate" value="${escapeAttr(item.date)}" required></label>
     <label><span>滿分</span><input type="number" id="editGradeMaxScore" min="0.1" step="0.1" value="${item.maxScore}" required></label>
+    <label class="grade-assignment-option"><input type="checkbox" id="editGradeTrackCorrection" ${item.trackCorrection?"checked":""}><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為已交</small></span></label>
     <div class="modal-actions"><button type="button" class="secondary" onclick="openGradeItem('${id}')">取消</button><button class="primary" type="submit">儲存</button></div></form>`);
   document.getElementById("editGradeItemForm").addEventListener("submit",e=>{
     e.preventDefault();
-    const subjectId=document.getElementById("editGradeSubject").value,title=document.getElementById("editGradeTitle").value.trim(),date=document.getElementById("editGradeDate").value,maxScore=Number(document.getElementById("editGradeMaxScore").value);
+    const subjectId=document.getElementById("editGradeSubject").value,title=document.getElementById("editGradeTitle").value.trim(),date=document.getElementById("editGradeDate").value,maxScore=Number(document.getElementById("editGradeMaxScore").value),trackCorrection=document.getElementById("editGradeTrackCorrection").checked;
     if(!title||!date||!Number.isFinite(maxScore)||maxScore<=0){toast("請完整填寫項目資料");return}
     const over=Object.values(item.scores||{}).some(v=>v!==""&&Number(v)>maxScore);
     if(over&&!confirm("目前已有成績高於新的滿分。仍要修改嗎？超過滿分的既有成績會保留，但下次儲存前需先修正。"))return;
-    item.subjectId=subjectId;item.title=title;item.date=date;item.maxScore=maxScore;saveData();openGradeItem(id);toast("項目已更新");
+    if(item.trackCorrection&&!trackCorrection&&item.correctionAssignmentId){
+      const hasProgress=data.records.some(r=>r.assignmentId===item.correctionAssignmentId&&r.status!=="pending"&&r.status!=="submitted");
+      const msg=hasProgress?"訂正作業已有手動追蹤紀錄。取消「新增到作業」會刪除該作業與所有學生狀態，確定繼續嗎？":"取消「新增到作業」會移除對應的訂正作業，確定繼續嗎？";
+      if(!confirm(msg))return;
+      removeGradeCorrectionAssignment(item);
+    }
+    item.subjectId=subjectId;item.title=title;item.date=date;item.maxScore=maxScore;item.trackCorrection=trackCorrection;
+    if(trackCorrection)ensureGradeCorrectionAssignment(item);
+    saveData();openGradeItem(id);toast("項目已更新");
   });
 }
 function deleteGradeItem(id){
   const item=data.gradeItems.find(g=>g.id===id);if(!item||!confirm(`確定刪除「${item.title}」及其全部成績嗎？`))return;
+  removeGradeCorrectionAssignment(item);
   data.gradeItems=data.gradeItems.filter(g=>g.id!==id);saveData();closeModal();setPage("gradebook");toast("已刪除成績項目");
 }
 
@@ -2958,11 +3013,16 @@ function openNewAssignment(){
 
 function deleteAssignment(id){
   if(!confirm("確定要刪除這項作業及其所有紀錄嗎？")) return;
+  const linkedGrade=data.gradeItems.find(g=>g.correctionAssignmentId===id);
   data.assignments = data.assignments.filter(a=>a.id!==id);
   data.records = data.records.filter(r=>r.assignmentId!==id);
+  if(linkedGrade){
+    linkedGrade.correctionAssignmentId=null;
+    linkedGrade.trackCorrection=false;
+  }
   saveData();
   closeModal();
-  toast("作業已刪除");
+  toast(linkedGrade?"作業已刪除，並已取消該成績項目的作業連動":"作業已刪除");
 }
 
 function parseRoster(text){
