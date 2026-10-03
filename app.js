@@ -1,4 +1,4 @@
-const APP_VERSION = "2.34";
+const APP_VERSION = "2.36";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -120,7 +120,11 @@ function normalizeData(input){
       history:Array.isArray(input?.seating?.history)?input.seating.history.slice(0,20):[]
     },
     settings:{
-      overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2
+      overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2,
+      pageLocks:Object.fromEntries(["assignments","contactbook","students","gradebook","scores","seats"].map(page=>{
+        const lock=input?.settings?.pageLocks?.[page];
+        return [page,{enabled:Boolean(lock?.enabled),password:String(lock?.password||"").slice(0,12)}];
+      }))
     }
   };
 }
@@ -320,6 +324,25 @@ function openClassSettings(classId){
 
       <div class="settings-divider"></div>
 
+      <div class="settings-block page-lock-settings">
+        <div>
+          <div class="item-title">分頁密碼設定</div>
+          <div class="item-sub">總覽固定開放；其餘分頁可個別啟用 4～12 碼密碼。重新進入班級或重新載入網頁後需再次解鎖。</div>
+        </div>
+        <div class="page-lock-list">
+          ${Object.entries(PAGE_LOCK_LABELS).map(([page,label])=>{
+            const lock=d.settings.pageLocks?.[page] || {enabled:false,password:""};
+            return `<div class="page-lock-row">
+              <label class="page-lock-toggle"><input type="checkbox" data-lock-enabled="${page}" ${lock.enabled?"checked":""}><span>${label}</span></label>
+              <input type="password" class="page-lock-password" data-lock-password="${page}" value="${escapeAttr(lock.password||"")}" minlength="4" maxlength="12" placeholder="4～12 碼" autocomplete="new-password" ${lock.enabled?"":"disabled"}>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="item-sub">此功能為本機介面存取保護，不等同伺服器端帳號權限或資料加密。</div>
+      </div>
+
+      <div class="settings-divider"></div>
+
       <div class="settings-block">
         <div>
           <div class="item-title">資料備份</div>
@@ -351,13 +374,32 @@ function openClassSettings(classId){
     </form>
   `);
 
+  document.querySelectorAll("[data-lock-enabled]").forEach(toggle=>{
+    const page=toggle.dataset.lockEnabled;
+    const password=document.querySelector(`[data-lock-password="${page}"]`);
+    const sync=()=>{password.disabled=!toggle.checked;if(toggle.checked)password.focus();};
+    toggle.addEventListener("change",sync);
+  });
+
   document.getElementById("classSettingsForm").addEventListener("submit", e=>{
     e.preventDefault();
     const newName = document.getElementById("homeClassNameInput").value.trim();
     const roster = parseRoster(document.getElementById("homeStudentRosterInput").value);
     const oldByNumber = new Map(d.students.map(s=>[s.number,s]));
+    const nextPageLocks={};
+    for(const page of Object.keys(PAGE_LOCK_LABELS)){
+      const enabled=document.querySelector(`[data-lock-enabled="${page}"]`).checked;
+      const password=document.querySelector(`[data-lock-password="${page}"]`).value;
+      if(enabled && (password.length<4 || password.length>12)){
+        toast(`${PAGE_LOCK_LABELS[page]}密碼需為 4～12 碼`);
+        document.querySelector(`[data-lock-password="${page}"]`).focus();
+        return;
+      }
+      nextPageLocks[page]={enabled,password:enabled?password:""};
+    }
 
     d.class.name = newName;
+    d.settings.pageLocks=nextPageLocks;
     d.students = roster.map(s=>{
       const old = oldByNumber.get(s.number);
       return {id: old?.id || uid("s"), number:s.number, name:s.name};
@@ -467,6 +509,7 @@ function enterClass(classId){
   const cls = store.classes.find(c=>c.id===classId);
   if(!cls) return;
   activeClassId = classId;
+  unlockedPages = new Set();
   data = normalizeData(cls.data);
   data.class.name = cls.name || data.class.name;
   document.getElementById("classHome").classList.add("hidden");
@@ -479,6 +522,7 @@ function leaveClass(){
   unmountSeatModule();
   stopNoiseMonitor();
   activeClassId = null;
+  unlockedPages = new Set();
   document.getElementById("workspace").classList.add("hidden");
   document.getElementById("classHome").classList.remove("hidden");
   closeModal();
@@ -523,7 +567,58 @@ function renderPage(page=currentPage){
     case "settings":renderSettingsRoster();break;
   }
 }
+const PAGE_LOCK_LABELS={
+  assignments:"作業",
+  contactbook:"聯絡簿",
+  students:"學生",
+  gradebook:"成績",
+  scores:"教室工具",
+  seats:"座位"
+};
+let unlockedPages=new Set();
+
+function pageLock(page){
+  return data?.settings?.pageLocks?.[page] || {enabled:false,password:""};
+}
+function isPageLocked(page){
+  const lock=pageLock(page);
+  return page!=="dashboard" && Boolean(lock.enabled) && Boolean(lock.password) && !unlockedPages.has(page);
+}
+function requestPageUnlock(page){
+  const lock=pageLock(page);
+  const label=PAGE_LOCK_LABELS[page] || "此分頁";
+  showModal(`${label}｜需要密碼`,`
+    <form id="pageUnlockForm" class="modal-form page-unlock-form">
+      <div class="page-lock-message">此分頁已啟用密碼保護。請輸入密碼後查看內容。</div>
+      <label><span>密碼</span><input id="pageUnlockPassword" type="password" minlength="4" maxlength="12" autocomplete="off" inputmode="text" required></label>
+      <div id="pageUnlockError" class="page-lock-error" aria-live="polite"></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">取消</button>
+        <button class="primary" type="submit">解鎖</button>
+      </div>
+    </form>`);
+  const input=document.getElementById("pageUnlockPassword");
+  input?.focus();
+  document.getElementById("pageUnlockForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const entered=input.value;
+    if(entered!==lock.password){
+      document.getElementById("pageUnlockError").textContent="密碼不正確，請重新輸入。";
+      input.value="";
+      input.focus();
+      return;
+    }
+    unlockedPages.add(page);
+    closeModal();
+    setPage(page);
+  });
+}
+
 function setPage(page){
+  if(isPageLocked(page)){
+    requestPageUnlock(page);
+    return;
+  }
   const previousPage=currentPage;
   if(previousPage==="seats" && page!=="seats") unmountSeatModule();
   currentPage = page;

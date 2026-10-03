@@ -2052,3 +2052,15 @@ nav.tabs .tab{
 .grade-assignment-option{display:flex!important;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
 .grade-assignment-option input{width:18px;height:18px;margin-top:2px;flex:0 0 auto}
 .grade-assignment-option span{display:grid;gap:3px}.grade-assignment-option small{color:var(--muted);line-height:1.4}
+
+/* v2.35 per-page password protection */
+.page-lock-settings{gap:12px}
+.page-lock-list{display:grid;gap:8px}
+.page-lock-row{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(150px,1.3fr);align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+.page-lock-toggle{display:flex!important;align-items:center;gap:9px;margin:0!important}
+.page-lock-toggle input{width:18px;height:18px;flex:0 0 auto}
+.page-lock-password{min-width:0;width:100%}
+.page-lock-password:disabled{opacity:.48;cursor:not-allowed}
+.page-lock-message{padding:12px 14px;border-radius:12px;background:var(--soft);line-height:1.55}
+.page-lock-error{min-height:20px;color:var(--danger,#b42318);font-size:.9rem}
+@media(max-width:620px){.page-lock-row{grid-template-columns:1fr}.page-lock-password{width:100%}}
