@@ -2078,5 +2078,5 @@ nav.tabs .tab{
 .progress-track-segmented .progress-segment{height:100%;flex:0 0 auto;border-radius:0;transition:width .28s ease}
 .progress-track-segmented .progress-segment:first-child{border-radius:999px 0 0 999px}
 .progress-track-segmented .progress-segment:last-child{border-radius:0 999px 999px 0}
-.progress-track-segmented .progress-correction{background:var(--warning)}
-.progress-track-segmented .progress-missing{background:var(--danger)}
+.progress-track-segmented .progress-correction{background:#f6c96b}
+.progress-track-segmented .progress-missing{background:#f3a2b5}
