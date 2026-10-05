@@ -1,4 +1,4 @@
-const APP_VERSION = "2.37";
+const APP_VERSION = "2.38";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1048,7 +1048,11 @@ function dashboardAssignmentHtml(a){
         </div>
         <div class="rate-pill ${percent===100 ? "done" : ""}">${percent}%</div>
       </div>
-      <div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div>
+      <div class="progress-track progress-track-segmented" aria-label="完成 ${c.completed}、待訂正 ${c.correction}、缺交 ${c.missing}，共 ${total} 人">
+        <div class="progress-segment progress-fill" style="width:${total ? (c.completed / total) * 100 : 0}%"></div>
+        <div class="progress-segment progress-correction" style="width:${total ? (c.correction / total) * 100 : 0}%"></div>
+        <div class="progress-segment progress-missing" style="width:${total ? (c.missing / total) * 100 : 0}%"></div>
+      </div>
       <div class="progress-meta">
         <span>完成 ${c.completed} / ${total}</span>
         <span>${c.missing ? `缺交 ${c.missing}` : "無缺交"} · ${c.correction ? `待訂正 ${c.correction}` : "無待訂正"}</span>

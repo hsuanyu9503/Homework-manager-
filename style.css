@@ -2072,3 +2072,11 @@ nav.tabs .tab{
 @media(min-width:621px){
   .subject-manager #subjectManagerList{padding-right:6px}
 }
+
+/* v2.38 dashboard assignment progress status segments */
+.progress-track-segmented{display:flex}
+.progress-track-segmented .progress-segment{height:100%;flex:0 0 auto;border-radius:0;transition:width .28s ease}
+.progress-track-segmented .progress-segment:first-child{border-radius:999px 0 0 999px}
+.progress-track-segmented .progress-segment:last-child{border-radius:0 999px 999px 0}
+.progress-track-segmented .progress-correction{background:var(--warning)}
+.progress-track-segmented .progress-missing{background:var(--danger)}
