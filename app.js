@@ -1,4 +1,4 @@
-const APP_VERSION = "2.39";
+const APP_VERSION = "2.41";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2780,7 +2780,18 @@ function saveAssignmentGroups(){normalizeAssignmentGroups();data.assignmentGroup
 
 function openAssignment(id){
   const a=data.assignments.find(x=>x.id===id);if(!a)return;const students=assignmentSortedStudents();
-  showModal(`${a.title}`,`<div class="assignment-modal-top"><div class="item-sub">${formatDate(a.date)}</div><div class="assignment-sort-switch"><button class="secondary ${assignmentStudentSortMode==="number"?"active":""}" onclick="setAssignmentStudentSort('number','${a.id}')">座號排序</button><button class="secondary ${assignmentStudentSortMode==="group"?"active":""}" onclick="setAssignmentStudentSort('group','${a.id}')">作業小組排序</button></div></div><div class="tracker-grid assignment-tracker-grid">${students.map((s,i)=>{const r=ensureRecord(a.id,s.id);return `${assignmentGroupHeadingHtml(s,i,students)}<div class="tracker-tile"><div class="tracker-tile-head"><span class="student-no">${String(s.number).padStart(2,"0")}</span><span class="student-name">${escapeHtml(s.name)}</span></div><select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(st=>`<option value="${st}" ${r.status===st?"selected":""}>${STATUS_LABEL[st]}</option>`).join("")}</select><input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}" onchange="updateNote('${a.id}','${s.id}',this.value)" /></div>`}).join("")}</div><div class="modal-actions"><button class="secondary" onclick="deleteAssignment('${a.id}')">刪除作業</button><button class="primary" onclick="closeModal()">完成</button></div>`);persistActiveClass()
+  showModal(`${a.title}`,`<div class="assignment-modal-top"><div class="item-sub">${formatDate(a.date)}</div><div class="assignment-sort-switch"><button class="secondary ${assignmentStudentSortMode==="number"?"active":""}" onclick="setAssignmentStudentSort('number','${a.id}')">座號排序</button><button class="secondary ${assignmentStudentSortMode==="group"?"active":""}" onclick="setAssignmentStudentSort('group','${a.id}')">作業小組排序</button></div></div><div class="tracker-grid assignment-tracker-grid">${students.map((s,i)=>{const r=ensureRecord(a.id,s.id);return `${assignmentGroupHeadingHtml(s,i,students)}<div class="tracker-tile"><div class="tracker-tile-head"><span class="student-no">${String(s.number).padStart(2,"0")}</span><span class="student-name">${escapeHtml(s.name)}</span></div><select class="status-select ${r.status}" onchange="setStatus('${a.id}','${s.id}',this)">${STATUS_ORDER.map(st=>`<option value="${st}" ${r.status===st?"selected":""}>${STATUS_LABEL[st]}</option>`).join("")}</select><input class="note-input" placeholder="備註" value="${escapeAttr(r.note||"")}" onchange="updateNote('${a.id}','${s.id}',this.value)" /></div>`}).join("")}</div><div class="modal-actions"><button class="secondary" onclick="deleteAssignment('${a.id}')">刪除作業</button><button class="primary" onclick="closeAssignmentModal()">完成</button></div>`);persistActiveClass()
+}
+
+function closeAssignmentModal(){
+  const studentId=assignmentReturnStudentId;
+  assignmentReturnStudentId=null;
+  assignmentModalOpenFromStudent=false;
+  if(studentId && currentPage==="students" && data.students.some(s=>s.id===studentId)){
+    openStudent(studentId);
+    return;
+  }
+  closeModal();
 }
 
 function setStatus(assignmentId, studentId, select){
@@ -2788,8 +2799,10 @@ function setStatus(assignmentId, studentId, select){
   r.status = select.value;
   persistActiveClass();
   select.className = `status-select ${r.status}`;
-  // 保留目前下拉選單即時更新；其餘統計只更新使用者正在看的頁面。
-  renderPage(currentPage);
+  // 從學生區進入作業時，不重繪學生頁／關閉目前作業視窗；回到學生後再更新統計。
+  if(!(currentPage==="students" && assignmentModalOpenFromStudent && assignmentReturnStudentId)){
+    renderPage(currentPage);
+  }
   if(r.status === "completed"){
     maybeArchiveCompletedAssignment(assignmentId);
   }
@@ -2804,7 +2817,7 @@ function maybeArchiveCompletedAssignment(assignmentId){
   if(shouldArchive){
     a.dashboardArchived = true;
     persistActiveClass();
-    renderPage(currentPage);
+    if(!(currentPage==="students" && assignmentModalOpenFromStudent && assignmentReturnStudentId))renderPage(currentPage);
     toast("作業已完成，已從總覽移除 🎉");
   }
 }
@@ -2815,7 +2828,7 @@ function updateNote(assignmentId, studentId, note){
   persistActiveClass();
 }
 
-function studentIssueDetailsHtml(history){
+function studentIssueDetailsHtml(history,studentId){
   const groups=[
     {status:"correction",label:"待訂正",items:history.filter(x=>x.r.status==="correction")},
     {status:"missing",label:"缺交",items:history.filter(x=>x.r.status==="missing")}
@@ -2826,7 +2839,7 @@ function studentIssueDetailsHtml(history){
       <div class="student-issue-heading"><span>${g.label}</span><b>${g.items.length} 項</b></div>
       <div class="student-issue-list">
         ${g.items.map(x=>`
-          <button type="button" class="student-issue-item" onclick="closeModal();openAssignment('${x.a.id}')">
+          <button type="button" class="student-issue-item" onclick="assignmentReturnStudentId='${studentId}';assignmentModalOpenFromStudent=true;openAssignment('${x.a.id}')">
             <span class="student-issue-title">${escapeHtml(x.a.title)}</span>
             <span class="student-issue-date">${formatDate(x.a.date)}</span>
           </button>`).join("")}
@@ -3031,6 +3044,9 @@ function deleteGradeItem(id){
   data.gradeItems=data.gradeItems.filter(g=>g.id!==id);saveData();closeModal();setPage("gradebook");toast("已刪除成績項目");
 }
 
+let assignmentReturnStudentId=null;
+let assignmentModalOpenFromStudent=false;
+
 function openStudent(studentId){
   const s = data.students.find(x=>x.id===studentId);
   if(!s) return;
@@ -3045,10 +3061,10 @@ function openStudent(studentId){
         <span class="badge missing">缺交 ${history.filter(x=>x.r.status==="missing").length}</span>
         <span class="badge correction">待訂正 ${history.filter(x=>x.r.status==="correction").length}</span>
       </div>
-      ${studentIssueDetailsHtml(history)}
+      ${studentIssueDetailsHtml(history,s.id)}
       <div class="tracker-list">
         ${history.length ? history.map(x=>`
-          <div class="item-card clickable" onclick="closeModal();openAssignment('${x.a.id}')">
+          <div class="item-card clickable" onclick="assignmentReturnStudentId='${studentId}';assignmentModalOpenFromStudent=true;openAssignment('${x.a.id}')">
             <div class="item-main">
               <div class="item-title">${escapeHtml(x.a.title)}</div>
               <div class="item-sub">${formatDate(x.a.date)}${x.r.note?`｜${escapeHtml(x.r.note)}`:""}</div>
@@ -3120,7 +3136,11 @@ function deleteAssignment(id){
     linkedGrade.trackCorrection=false;
   }
   saveData();
-  closeModal();
+  const returnStudentId=assignmentReturnStudentId;
+  assignmentReturnStudentId=null;
+  assignmentModalOpenFromStudent=false;
+  if(returnStudentId && currentPage==="students" && data.students.some(s=>s.id===returnStudentId))openStudent(returnStudentId);
+  else closeModal();
   toast(linkedGrade?"作業已刪除，並已取消該成績項目的作業連動":"作業已刪除");
 }
 
@@ -3214,8 +3234,20 @@ function showModal(title, bodyHtml){
   document.getElementById("modalBackdrop").classList.remove("hidden");
 }
 
-function closeModal(){
+function hideModal(){
   document.getElementById("modalBackdrop").classList.add("hidden");
+}
+function closeModal(){
+  if(assignmentModalOpenFromStudent && assignmentReturnStudentId && currentPage==="students"){
+    const studentId=assignmentReturnStudentId;
+    assignmentReturnStudentId=null;
+    assignmentModalOpenFromStudent=false;
+    if(data.students.some(s=>s.id===studentId)){
+      openStudent(studentId);
+      return;
+    }
+  }
+  hideModal();
 }
 
 function toast(msg){
