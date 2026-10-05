@@ -1,4 +1,4 @@
-const APP_VERSION = "2.41";
+const APP_VERSION = "2.42";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2727,7 +2727,7 @@ function renderStudents(){
     const missing = rs.filter(r=>r.status==="missing").length;
     const correction = rs.filter(r=>r.status==="correction").length;
     return `
-      <div class="student-card" onclick="openStudent('${s.id}')">
+      <div class="student-card" data-student-id="${s.id}" onclick="openStudent('${s.id}')">
         <div class="num">${String(s.number).padStart(2,"0")}</div>
         <div class="item-title">${escapeHtml(s.name)}</div>
         <div class="assignment-summary">
@@ -2738,6 +2738,22 @@ function renderStudents(){
       </div>
     `;
   }).join("");
+}
+
+function refreshStudentCardSummary(studentId){
+  if(currentPage!=="students") return;
+  const card=[...document.querySelectorAll(".student-card")].find(el=>el.dataset.studentId===studentId);
+  if(!card) return;
+  const rs=data.records.filter(r=>r.studentId===studentId);
+  const missing=rs.filter(r=>r.status==="missing").length;
+  const correction=rs.filter(r=>r.status==="correction").length;
+  const summary=card.querySelector(".assignment-summary");
+  if(!summary) return;
+  summary.innerHTML=`
+    ${missing ? `<span class="badge missing">缺交 ${missing}</span>`:""}
+    ${correction ? `<span class="badge correction">待訂正 ${correction}</span>`:""}
+    ${(!missing && !correction) ? `<span class="badge clear">目前無待處理</span>`:""}
+  `;
 }
 
 function renderSettingsRoster(){
@@ -2800,7 +2816,9 @@ function setStatus(assignmentId, studentId, select){
   persistActiveClass();
   select.className = `status-select ${r.status}`;
   // 從學生區進入作業時，不重繪學生頁／關閉目前作業視窗；回到學生後再更新統計。
-  if(!(currentPage==="students" && assignmentModalOpenFromStudent && assignmentReturnStudentId)){
+  if(currentPage==="students" && assignmentModalOpenFromStudent && assignmentReturnStudentId){
+    refreshStudentCardSummary(studentId);
+  }else{
     renderPage(currentPage);
   }
   if(r.status === "completed"){
