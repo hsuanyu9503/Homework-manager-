@@ -1,4 +1,4 @@
-const APP_VERSION = "2.42";
+const APP_VERSION = "2.44";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -2638,6 +2638,93 @@ function solveSeatAssignment(){
   }
   return dfs()?[...slots]:null;
 }
+let seatCandidates=[];
+let seatCandidatesClassId=null;
+
+function seatCandidateSnapshot(slots,index){
+  return {
+    id:uid("sc"),
+    label:`候選 ${index+1}`,
+    rows:data.seating.rows,
+    cols:data.seating.cols,
+    slots:[...slots],
+    blocked:[...data.seating.blocked],
+    view:data.seating.view
+  };
+}
+function openSeatCandidates(){
+  normalizeSeating();
+  if(seatCandidatesClassId!==activeClassId){
+    seatCandidates=[];
+    seatCandidatesClassId=activeClassId;
+  }
+  showModal("產生候選座位",`
+    <div class="seat-candidate-create">
+      <div>
+        <strong>一次產生多組座位配置</strong>
+        <p class="muted">每一組都會套用目前啟用的座位規則；候選不會改動正式座位，選擇「套用」後才會生效。</p>
+      </div>
+      <label><span>候選數量</span>
+        <select id="seatCandidateCount">
+          <option value="3">3 組</option>
+          <option value="5" selected>5 組</option>
+          <option value="10">10 組</option>
+        </select>
+      </label>
+      <button class="primary" type="button" onclick="generateSeatCandidates()">開始產生</button>
+    </div>
+    <div id="seatCandidateResults">${seatCandidates.length?seatCandidateListHtml():`<div class="empty">尚未產生候選座位。</div>`}</div>
+  `);
+}
+function candidateSignature(slots){return slots.map(x=>x||"-").join("|")}
+function generateSeatCandidates(){
+  normalizeSeating();normalizeLegacySeatRules();
+  const requested=Math.max(1,Math.min(10,Number(document.getElementById("seatCandidateCount")?.value)||5));
+  const count=data.seating.rows*data.seating.cols;
+  const availableCount=[...Array(count).keys()].filter(i=>!data.seating.blocked[i]).length;
+  if(availableCount<data.students.length){toast(`可分配座位不足：目前有 ${availableCount} 個未封鎖座位，班上有 ${data.students.length} 位學生`);return}
+  const found=[],seen=new Set();
+  const currentSig=candidateSignature(data.seating.slots);
+  let attempts=0,maxAttempts=Math.max(12,requested*6);
+  while(found.length<requested && attempts++<maxAttempts){
+    const slots=solveSeatAssignment();
+    if(!slots)break;
+    const sig=candidateSignature(slots);
+    if(!seen.has(sig)&&sig!==currentSig){seen.add(sig);found.push(seatCandidateSnapshot(slots,found.length))}
+  }
+  seatCandidates=found;
+  seatCandidatesClassId=activeClassId;
+  const area=document.getElementById("seatCandidateResults");
+  if(area)area.innerHTML=found.length?seatCandidateListHtml():`<div class="empty">目前規則無法產生新的候選配置，請調整規則後再試一次。</div>`;
+  if(found.length<requested&&found.length)toast(`已產生 ${found.length} 組不同候選`);
+}
+function seatCandidateListHtml(){
+  return `<div class="seat-candidate-list">${seatCandidates.map((x,i)=>`
+    <article class="seat-candidate-card">
+      <div class="seat-candidate-head"><strong>${escapeHtml(x.label)}</strong><span>${x.rows} × ${x.cols}</span></div>
+      ${seatSnapshotHtml(x)}
+      <div class="seat-candidate-actions">
+        <button class="secondary" type="button" onclick="removeSeatCandidate('${x.id}')">取消候選</button>
+        <button class="primary" type="button" onclick="applySeatCandidate('${x.id}')">套用此配置</button>
+      </div>
+    </article>`).join("")}</div>`;
+}
+function removeSeatCandidate(id){
+  seatCandidates=seatCandidates.filter(x=>x.id!==id);
+  seatCandidates.forEach((x,i)=>x.label=`候選 ${i+1}`);
+  const area=document.getElementById("seatCandidateResults");
+  if(area)area.innerHTML=seatCandidates.length?seatCandidateListHtml():`<div class="empty">目前沒有候選座位。</div>`;
+}
+function applySeatCandidate(id){
+  if(seatCandidatesClassId!==activeClassId){seatCandidates=[];seatCandidatesClassId=activeClassId;toast("候選座位已失效，請重新產生");openSeatCandidates();return}
+  const x=seatCandidates.find(v=>v.id===id);if(!x)return;
+  if(data.seating.slots.some(Boolean))createSeatHistorySnapshot("套用候選前");
+  data.seating.rows=x.rows;data.seating.cols=x.cols;data.seating.slots=[...x.slots];data.seating.blocked=[...x.blocked];data.seating.view=x.view;
+  seatCandidates=[];
+  seatCandidatesClassId=activeClassId;
+  saveData();closeModal();toast("已套用候選座位配置");
+}
+
 function randomizeSeats(){
   normalizeSeating();
   const legacyChanged=normalizeLegacySeatRules();
@@ -2649,6 +2736,53 @@ function randomizeSeats(){
   if(old.some(Boolean)){data.seating.history.unshift({id:uid("sh"),at:new Date().toISOString(),label:"隨機分配前",rows:data.seating.rows,cols:data.seating.cols,slots:old,blocked:[...data.seating.blocked]});data.seating.history=data.seating.history.slice(0,20)}
   data.seating.slots=best;saveData();toast("已依啟用規則完成座位分配");
 }
+function exportSeatPng(){
+  normalizeSeating();
+  if(!data.seating.slots.some(Boolean)){toast("目前沒有座位可以匯出");return}
+  const s=data.seating;
+  const view=s.view;
+  const order=[...Array(s.rows*s.cols).keys()];
+  if(view==="teacher")order.reverse();
+  const cellW=150,cellH=92,gap=14,pad=44,titleH=100,frontH=58;
+  const gridW=s.cols*cellW+(s.cols-1)*gap;
+  const gridH=s.rows*cellH+(s.rows-1)*gap;
+  const width=Math.max(760,gridW+pad*2),height=titleH+frontH+gridH+pad*2+30;
+  const canvas=document.createElement("canvas"),scale=2;
+  canvas.width=width*scale;canvas.height=height*scale;
+  const ctx=canvas.getContext("2d");ctx.scale(scale,scale);
+  ctx.fillStyle="#f7f8fb";ctx.fillRect(0,0,width,height);
+  ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.fillStyle="#1f2937";ctx.font="700 28px sans-serif";
+  ctx.fillText(`${data.class.name||"班級"}｜座位表`,width/2,42);
+  ctx.fillStyle="#6b7280";ctx.font="16px sans-serif";
+  ctx.fillText(view==="teacher"?"教師視角":"學生視角",width/2,74);
+  const gridX=(width-gridW)/2;
+  const frontY=view==="teacher"?titleH+gridH+24:titleH;
+  ctx.fillStyle="#e6ece9";roundRectCanvas(ctx,width*.18,frontY,width*.64,42,8);ctx.fill();
+  ctx.fillStyle="#40554d";ctx.font="700 18px sans-serif";ctx.fillText("黑板／講臺",width/2,frontY+21);
+  const gridY=view==="teacher"?titleH:titleH+frontH;
+  order.forEach((idx,pos)=>{
+    const r=Math.floor(pos/s.cols),col=pos%s.cols,x=gridX+col*(cellW+gap),y=gridY+r*(cellH+gap);
+    const blocked=s.blocked[idx]===true,student=data.students.find(v=>v.id===s.slots[idx]);
+    ctx.fillStyle=blocked?"#eceff3":"#ffffff";ctx.strokeStyle=blocked?"#c9ced6":"#cfd7e3";ctx.lineWidth=2;
+    roundRectCanvas(ctx,x,y,cellW,cellH,12);ctx.fill();ctx.stroke();
+    if(blocked){ctx.fillStyle="#8b93a1";ctx.font="15px sans-serif";ctx.fillText("已封鎖",x+cellW/2,y+cellH/2)}
+    else if(student){
+      ctx.fillStyle="#64748b";ctx.font="700 14px sans-serif";ctx.fillText(String(student.number).padStart(2,"0"),x+cellW/2,y+27);
+      ctx.fillStyle="#1f2937";ctx.font="700 18px sans-serif";ctx.fillText(student.name,x+cellW/2,y+57);
+    }
+  });
+  const link=document.createElement("a");
+  const date=localDateString();
+  link.download=`${(data.class.name||"班級").replace(/[\\\\/:*?"<>|]/g,"-")}-座位表-${date}.png`;
+  link.href=canvas.toDataURL("image/png");link.click();
+  toast("座位表 PNG 已產生");
+}
+function roundRectCanvas(ctx,x,y,w,h,r){
+  const rr=Math.min(r,w/2,h/2);
+  ctx.beginPath();ctx.moveTo(x+rr,y);ctx.arcTo(x+w,y,x+w,y+h,rr);ctx.arcTo(x+w,y+h,x,y+h,rr);ctx.arcTo(x,y+h,x,y,rr);ctx.arcTo(x,y,x+w,y,rr);ctx.closePath();
+}
+
 function clearSeats(){
   if(!confirm("確定要清空目前座位安排嗎？"))return;
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
@@ -3386,6 +3520,8 @@ startDateRolloverGuards();
 
 document.getElementById("applySeatGridBtn")?.addEventListener("click",applySeatGrid);
 document.getElementById("randomSeatsBtn")?.addEventListener("click",randomizeSeats);
+document.getElementById("seatCandidatesBtn")?.addEventListener("click",openSeatCandidates);
+document.getElementById("exportSeatPngBtn")?.addEventListener("click",exportSeatPng);
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
 document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));

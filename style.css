@@ -2080,3 +2080,12 @@ nav.tabs .tab{
 .progress-track-segmented .progress-segment:last-child{border-radius:0 999px 999px 0}
 .progress-track-segmented .progress-correction{background:#f6c96b}
 .progress-track-segmented .progress-missing{background:#f3a2b5}
+
+/* v2.43 seat candidates + PNG export */
+.seat-candidate-create{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:12px;align-items:end;margin-bottom:16px;padding:14px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.65)}
+.seat-candidate-create p{margin:4px 0 0}.seat-candidate-create label{display:grid;gap:5px}.seat-candidate-create select{width:100%}
+.seat-candidate-list{display:grid;gap:16px}.seat-candidate-card{padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.seat-candidate-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.seat-candidate-head span{font-size:.86rem;color:var(--muted)}
+.seat-candidate-card .seat-history-preview{padding:10px}.seat-candidate-card .preview-grid{min-width:360px}.seat-candidate-card .seat-slot{min-height:68px}
+.seat-candidate-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+@media(max-width:720px){.seat-candidate-create{grid-template-columns:1fr}.seat-candidate-create button{width:100%}.seat-candidate-actions button{flex:1}.seat-candidate-card .preview-grid{min-width:320px}}
