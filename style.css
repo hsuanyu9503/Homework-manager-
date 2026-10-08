@@ -2131,3 +2131,9 @@ nav.tabs .tab{
 .assignment-search-dates .assignment-date-display{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:0 8px;border:1px solid #d5dbe5;border-radius:10px;background:#fff;color:#111827;font-size:14px;font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden}
 .assignment-search-dates .assignment-date-field:focus-within .assignment-date-display{border-color:#7b83a0;box-shadow:0 0 0 1px #7b83a0}
 @media(max-width:520px){.assignment-search-dates .assignment-date-field{height:36px}.assignment-search-dates .assignment-date-display{font-size:13px}}
+
+/* v2.54: the centered date display now has matching HTML markup. */
+.assignment-search-dates .assignment-date-field{display:block;position:relative;width:100%;height:38px}
+.assignment-search-dates .assignment-date-field .assignment-date-display{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;line-height:1.3}
+.assignment-search-dates .assignment-date-field input[type="date"]{position:absolute;inset:0;z-index:2;opacity:0;width:100%!important;height:100%;cursor:pointer}
+@media(max-width:520px){.assignment-search-dates .assignment-date-field{height:36px}}
