@@ -2090,52 +2090,22 @@ nav.tabs .tab{
 .seat-candidate-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 @media(max-width:720px){.seat-candidate-create{grid-template-columns:1fr}.seat-candidate-create button{width:100%}.seat-candidate-actions button{flex:1}.seat-candidate-card .preview-grid{min-width:320px}}
 
-/* v2.49: Safari/iPadOS safe date range layout. Labels identify both endpoints. */
+/* v2.51: compact date range with guaranteed separation on iPad Safari */
 .assignment-search-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch;padding:12px 14px;margin-bottom:14px;min-width:0}
 .assignment-search-row>label{font-size:13px;font-weight:700;color:#4b5563}
 .assignment-search-row>input[type="search"]{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%}
-.assignment-search-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0;max-width:100%;width:100%}
-.assignment-search-dates>label{display:flex;flex-direction:column;gap:5px;min-width:0;max-width:100%;width:100%;font-size:13px;font-weight:600;color:#4b5563;overflow:hidden}
-.assignment-search-dates input[type="date"]{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;min-height:0;height:38px;margin:0;padding:6px 10px;line-height:normal;font-size:14px;overflow:hidden;-webkit-appearance:auto;appearance:auto}
+.assignment-search-dates{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:flex-start;column-gap:28px;row-gap:12px;width:100%;min-width:0}
+.assignment-search-dates>label{display:flex;flex:0 1 190px;flex-direction:column;gap:5px;box-sizing:border-box;width:190px;max-width:190px;min-width:0;margin:0;padding:0;font-size:13px;font-weight:600;color:#4b5563}
+.assignment-search-dates>label input[type="date"]{display:block;box-sizing:border-box;flex:none;width:100%!important;max-width:100%!important;min-width:0!important;height:38px;min-height:0;margin:0;padding:6px 8px;font-size:14px;line-height:normal;-webkit-appearance:auto;appearance:auto}
 .assignment-search-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
 .assignment-search-actions button{flex:0 0 auto;width:auto}
 @media(max-width:520px){
  .assignment-search-row{padding:10px;gap:9px}
- .assignment-search-dates{gap:8px}
- .assignment-search-dates input[type="date"]{height:36px;padding:5px 6px;font-size:13px}
+ .assignment-search-dates{column-gap:16px;row-gap:10px}
+ .assignment-search-dates>label{flex-basis:calc((100% - 16px)/2);width:calc((100% - 16px)/2);max-width:190px}
+ .assignment-search-dates>label input[type="date"]{height:36px;padding:5px 6px;font-size:13px}
 }
 @media(max-width:390px){
- .assignment-search-dates{grid-template-columns:minmax(0,1fr);gap:9px}
- .assignment-search-dates input[type="date"]{font-size:14px;padding:5px 9px}
+ .assignment-search-dates>label{flex:0 1 190px;width:190px;max-width:100%}
  .assignment-search-actions button{width:100%}
-}
-
-/* v2.50: compact date search controls on iPad Safari */
-.assignment-search-dates{
-  width:min(100%, 440px);
-  max-width:440px;
-  grid-template-columns:repeat(2,minmax(0,210px));
-  justify-content:start;
-  gap:12px;
-}
-.assignment-search-dates > label{
-  width:100%;
-  min-width:0;
-  overflow:visible;
-}
-.assignment-search-dates input[type="date"]{
-  width:100% !important;
-  min-width:0 !important;
-  max-width:210px !important;
-  height:38px;
-  box-sizing:border-box;
-  padding:6px 8px;
-  font-size:14px;
-}
-@media(max-width:520px){
-  .assignment-search-dates{width:100%;max-width:440px;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  .assignment-search-dates input[type="date"]{max-width:100% !important;height:36px;padding:5px 6px}
-}
-@media(max-width:390px){
-  .assignment-search-dates{grid-template-columns:minmax(0,210px);gap:9px}
 }
