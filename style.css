@@ -2109,3 +2109,18 @@ nav.tabs .tab{
  .assignment-search-dates>label{flex:0 1 190px;width:190px;max-width:100%}
  .assignment-search-actions button{width:100%}
 }
+
+/* v2.52: center displayed date text in Safari's native date control */
+.assignment-search-dates>label input[type="date"]{
+  text-align:center;
+  text-align-last:center;
+}
+.assignment-search-dates>label input[type="date"]::-webkit-date-and-time-value{
+  text-align:center;
+  width:100%;
+}
+.assignment-search-dates>label input[type="date"]::-webkit-datetime-edit{
+  display:block;
+  width:100%;
+  text-align:center;
+}
