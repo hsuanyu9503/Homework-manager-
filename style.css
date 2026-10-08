@@ -2109,3 +2109,33 @@ nav.tabs .tab{
  .assignment-search-dates input[type="date"]{font-size:14px;padding:5px 9px}
  .assignment-search-actions button{width:100%}
 }
+
+/* v2.50: compact date search controls on iPad Safari */
+.assignment-search-dates{
+  width:min(100%, 440px);
+  max-width:440px;
+  grid-template-columns:repeat(2,minmax(0,210px));
+  justify-content:start;
+  gap:12px;
+}
+.assignment-search-dates > label{
+  width:100%;
+  min-width:0;
+  overflow:visible;
+}
+.assignment-search-dates input[type="date"]{
+  width:100% !important;
+  min-width:0 !important;
+  max-width:210px !important;
+  height:38px;
+  box-sizing:border-box;
+  padding:6px 8px;
+  font-size:14px;
+}
+@media(max-width:520px){
+  .assignment-search-dates{width:100%;max-width:440px;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .assignment-search-dates input[type="date"]{max-width:100% !important;height:36px;padding:5px 6px}
+}
+@media(max-width:390px){
+  .assignment-search-dates{grid-template-columns:minmax(0,210px);gap:9px}
+}
