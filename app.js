@@ -1,4 +1,4 @@
-const APP_VERSION = "2.44";
+const APP_VERSION = "2.46";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -1097,12 +1097,23 @@ function renderAssignments(){
   syncPageDateFilter(input,"assignment");
 
   let items = [...data.assignments].sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
-  if(!showAllAssignmentsMode){
-    items = items.filter(a=>a.date===input.value);
+  const keyword=(document.getElementById("assignmentKeyword")?.value||"").trim().toLocaleLowerCase();
+  const start=document.getElementById("assignmentSearchStart")?.value||"";
+  const end=document.getElementById("assignmentSearchEnd")?.value||"";
+  const searching=Boolean(keyword||start||end);
+  const invalidRange=Boolean(start&&end&&start>end);
+  const hint=document.getElementById("assignmentSearchHint");
+  if(hint)hint.textContent=invalidRange?"起始日期不能晚於結束日期。":searching?"正在搜尋符合條件的作業（不受上方單日篩選限制）。":"未設定搜尋條件時，依上方日期顯示作業。";
+  if(invalidRange){
+    items=[];
+  }else if(searching){
+    items=items.filter(a=>(!keyword||String(a.title||"").toLocaleLowerCase().includes(keyword))&&(!start||a.date>=start)&&(!end||a.date<=end));
+  }else if(!showAllAssignmentsMode){
+    items=items.filter(a=>a.date===input.value);
   }
   const list = document.getElementById("assignmentList");
   if(!items.length){
-    list.innerHTML = `<div class="empty">${showAllAssignmentsMode ? "尚未建立任何作業。" : "這一天尚未建立作業。"}</div>`;
+    list.innerHTML = `<div class="empty">${invalidRange?"請調整搜尋日期範圍，起始日期不能晚於結束日期。":searching?"找不到符合搜尋條件的作業。":showAllAssignmentsMode?"尚未建立任何作業。":"這一天尚未建立作業。"}</div>`;
   }else{
     list.innerHTML = items.map(a=>assignmentCardHtml(a)).join("");
   }
@@ -3467,6 +3478,17 @@ document.getElementById("assignmentDateFilter").addEventListener("change",()=>{
 document.getElementById("showAllAssignments").addEventListener("click",()=>{
   showAllAssignmentsMode=!showAllAssignmentsMode;
   document.getElementById("showAllAssignments").textContent = showAllAssignmentsMode ? "依日期篩選" : "顯示全部";
+  renderAssignments();
+});
+document.getElementById("assignmentKeyword")?.addEventListener("input",renderAssignments);
+["assignmentSearchStart","assignmentSearchEnd"].forEach(id=>{
+  document.getElementById(id)?.addEventListener("change",renderAssignments);
+});
+document.getElementById("clearAssignmentKeyword")?.addEventListener("click",()=>{
+  ["assignmentKeyword","assignmentSearchStart","assignmentSearchEnd"].forEach(id=>{
+    const field=document.getElementById(id);
+    if(field)field.value="";
+  });
   renderAssignments();
 });
 document.getElementById("contactDateFilter").addEventListener("change",()=>{

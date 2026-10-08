@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=2.44" />
+  <link rel="stylesheet" href="style.css?v=2.46" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.44</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.46</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.44</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.46</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -108,6 +108,19 @@
         </label>
         <button class="secondary" id="showAllAssignments">顯示全部</button>
         <button class="secondary" id="assignmentGroupsBtn">作業小組設定</button>
+      </div>
+      <div class="assignment-search-row card">
+        <label for="assignmentKeyword">搜尋作業名稱</label>
+        <input id="assignmentKeyword" type="search" placeholder="輸入作業名稱關鍵字（可留空）" autocomplete="off" />
+        <div class="assignment-search-dates">
+          <label for="assignmentSearchStart">起始日期<input id="assignmentSearchStart" type="date" /></label>
+          <span class="assignment-search-separator">至</span>
+          <label for="assignmentSearchEnd">結束日期<input id="assignmentSearchEnd" type="date" /></label>
+        </div>
+        <div class="assignment-search-actions">
+          <span id="assignmentSearchHint" class="muted" aria-live="polite">未設定搜尋條件時，依上方日期顯示作業。</span>
+          <button class="secondary" id="clearAssignmentKeyword" type="button">清除搜尋條件</button>
+        </div>
       </div>
       <div id="assignmentList" class="stack"></div>
     </section>
@@ -441,6 +454,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=2.44"></script>
+  <script src="app.js?v=2.46"></script>
 </body>
 </html>

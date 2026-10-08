@@ -2089,3 +2089,22 @@ nav.tabs .tab{
 .seat-candidate-card .seat-history-preview{padding:10px}.seat-candidate-card .preview-grid{min-width:360px}.seat-candidate-card .seat-slot{min-height:68px}
 .seat-candidate-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 @media(max-width:720px){.seat-candidate-create{grid-template-columns:1fr}.seat-candidate-create button{width:100%}.seat-candidate-actions button{flex:1}.seat-candidate-card .preview-grid{min-width:320px}}
+
+/* v2.45 作業關鍵字搜尋 */
+.assignment-search-row{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:14px;flex-wrap:wrap}
+.assignment-search-row label{font-size:13px;font-weight:700;white-space:nowrap;color:#4b5563}
+.assignment-search-row input{flex:1 1 220px;min-width:0;width:auto;box-sizing:border-box}
+.assignment-search-row button{flex:0 0 auto}
+@media(max-width:520px){.assignment-search-row label{width:100%}.assignment-search-row button{width:100%}}
+
+/* v2.46 作業搜尋日期範圍 */
+.assignment-search-row{display:grid;grid-template-columns:1fr;align-items:stretch;gap:10px}
+.assignment-search-row>label{white-space:normal}
+.assignment-search-row>input{width:100%;flex:none}
+.assignment-search-dates{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:end}
+.assignment-search-dates label{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:13px;font-weight:600}
+.assignment-search-dates input{box-sizing:border-box;width:100%;min-width:0;max-width:100%}
+.assignment-search-separator{padding-bottom:12px;color:var(--muted)}
+.assignment-search-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.assignment-search-actions button{flex:0 0 auto}
+@media(max-width:520px){.assignment-search-dates{grid-template-columns:1fr}.assignment-search-separator{padding:0;text-align:center}.assignment-search-actions button{width:100%}}
