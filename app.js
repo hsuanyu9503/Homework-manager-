@@ -1,4 +1,4 @@
-const APP_VERSION = "2.52";
+const APP_VERSION = "2.53";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3553,3 +3553,21 @@ setSeatRevealMode(seatRevealMode);
 document.getElementById("seatSettingsBtn")?.addEventListener("click",openSeatSettings);
 document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
+
+
+// v2.53: Native Safari date controls align their internal segments inconsistently.
+// Show a centered, non-interactive visual label while preserving the native picker.
+function syncAssignmentDateDisplays(){
+  for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){
+    const input=document.getElementById(id);
+    const display=input?.parentElement?.querySelector(".assignment-date-display");
+    if(!input || !display) continue;
+    const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(input.value);
+    display.textContent=match ? `${Number(match[1])}年${Number(match[2])}月${Number(match[3])}日` : "";
+    input.parentElement.classList.toggle("has-date",!!match);
+  }
+}
+document.addEventListener("input",e=>{if(e.target?.matches?.("#assignmentSearchStart,#assignmentSearchEnd"))syncAssignmentDateDisplays()});
+document.addEventListener("change",e=>{if(e.target?.matches?.("#assignmentSearchStart,#assignmentSearchEnd"))syncAssignmentDateDisplays()});
+document.addEventListener("click",e=>{if(e.target?.closest?.("#clearAssignmentKeyword"))queueMicrotask(syncAssignmentDateDisplays)});
+window.addEventListener("DOMContentLoaded",syncAssignmentDateDisplays);

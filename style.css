@@ -2124,3 +2124,10 @@ nav.tabs .tab{
   width:100%;
   text-align:center;
 }
+
+/* v2.53: deterministic centered date text across iPad Safari versions */
+.assignment-search-dates .assignment-date-field{position:relative;display:block;width:100%;height:38px;min-width:0}
+.assignment-search-dates .assignment-date-field input[type="date"]{position:absolute;inset:0;width:100%!important;height:100%;opacity:0;z-index:2;cursor:pointer}
+.assignment-search-dates .assignment-date-display{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:0 8px;border:1px solid #d5dbe5;border-radius:10px;background:#fff;color:#111827;font-size:14px;font-weight:600;pointer-events:none;white-space:nowrap;overflow:hidden}
+.assignment-search-dates .assignment-date-field:focus-within .assignment-date-display{border-color:#7b83a0;box-shadow:0 0 0 1px #7b83a0}
+@media(max-width:520px){.assignment-search-dates .assignment-date-field{height:36px}.assignment-search-dates .assignment-date-display{font-size:13px}}
