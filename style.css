@@ -2090,26 +2090,22 @@ nav.tabs .tab{
 .seat-candidate-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 @media(max-width:720px){.seat-candidate-create{grid-template-columns:1fr}.seat-candidate-create button{width:100%}.seat-candidate-actions button{flex:1}.seat-candidate-card .preview-grid{min-width:320px}}
 
-/* v2.48: consolidated assignment search layout */
-.assignment-search-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch;padding:12px 14px;margin-bottom:14px}
-.assignment-search-row>label{font-size:13px;font-weight:700;color:#4b5563;white-space:normal}
-.assignment-search-row>input[type="search"]{box-sizing:border-box;display:block;width:100%;min-width:0;max-width:100%;flex:none}
-.assignment-search-dates{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:end;gap:10px;min-width:0}
-.assignment-search-dates label{display:flex;flex-direction:column;gap:4px;min-width:0;width:auto;font-size:13px;font-weight:600;color:#4b5563}
-.assignment-search-dates input[type="date"]{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;height:38px;min-height:38px;flex:0 0 auto;padding:6px 10px;line-height:1.3;font-size:14px}
-.assignment-search-separator{align-self:end;padding:0 0 10px;color:var(--muted);white-space:nowrap}
+/* v2.49: Safari/iPadOS safe date range layout. Labels identify both endpoints. */
+.assignment-search-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch;padding:12px 14px;margin-bottom:14px;min-width:0}
+.assignment-search-row>label{font-size:13px;font-weight:700;color:#4b5563}
+.assignment-search-row>input[type="search"]{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%}
+.assignment-search-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0;max-width:100%;width:100%}
+.assignment-search-dates>label{display:flex;flex-direction:column;gap:5px;min-width:0;max-width:100%;width:100%;font-size:13px;font-weight:600;color:#4b5563;overflow:hidden}
+.assignment-search-dates input[type="date"]{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;min-height:0;height:38px;margin:0;padding:6px 10px;line-height:normal;font-size:14px;overflow:hidden;-webkit-appearance:auto;appearance:auto}
 .assignment-search-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
 .assignment-search-actions button{flex:0 0 auto;width:auto}
 @media(max-width:520px){
-  .assignment-search-row{padding:10px;gap:9px}
-  .assignment-search-dates{gap:6px}
-  .assignment-search-dates input[type="date"]{font-size:13px;padding:5px 5px;height:36px;min-height:36px}
-  .assignment-search-actions{align-items:flex-start}
-  .assignment-search-actions button{width:auto;max-width:100%}
+ .assignment-search-row{padding:10px;gap:9px}
+ .assignment-search-dates{gap:8px}
+ .assignment-search-dates input[type="date"]{height:36px;padding:5px 6px;font-size:13px}
 }
 @media(max-width:390px){
-  .assignment-search-dates{grid-template-columns:minmax(0,1fr);gap:8px}
-  .assignment-search-separator{display:none}
-  .assignment-search-dates input[type="date"]{font-size:14px;padding:5px 9px}
-  .assignment-search-actions button{width:100%}
+ .assignment-search-dates{grid-template-columns:minmax(0,1fr);gap:9px}
+ .assignment-search-dates input[type="date"]{font-size:14px;padding:5px 9px}
+ .assignment-search-actions button{width:100%}
 }
