@@ -1,4 +1,4 @@
-const APP_VERSION = "2.68";
+const APP_VERSION = "2.70";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -200,9 +200,9 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.68：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
-// 例如 10/12 作業 → 10/13 批改 → 10/14 起，未確認者轉缺交。
-// 上課日採用該班行事曆；不會在批改日當天提前轉換。
+// v2.70：作業日期的下一個實際上課日是批改日；當天 12:00 起檢視未確認作業。
+// 例如 10/12 作業 → 10/13 批改 → 10/13 12:00 起，未確認者轉缺交。
+// 依班級行事曆排除假日；請假造成的缺交仍依原規則即時處理。
 function nextClassSchoolDay(classData,dateStr){
   const parts=String(dateStr||"").split("-").map(Number);
   if(parts.length!==3||parts.some(n=>!Number.isFinite(n)))return "";
@@ -216,7 +216,7 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.68：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+// v2.70：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
 const AUTO_LEAVE_NOTE="【請假】";
 function syncAutoLeaveNote(record,shouldMark){
   record.note=String(record.note||"");
@@ -232,8 +232,13 @@ function syncAutoLeaveNote(record,shouldMark){
     delete record.autoLeaveNote;
   }
 }
-// v2.68: reconcile both automatic causes together; manual states always win.
-function markPastPendingAssignmentsMissing(classData,today=localDateString()){
+// v2.70: reconcile both automatic causes together; manual states always win.
+function markPastPendingAssignmentsMissing(classData,now=new Date()){
+  // Accept a YYYY-MM-DD test date as noon of that date for backward-compatible callers.
+  if(typeof now==="string")now=new Date(`${now}T12:00:00`);
+  if(!(now instanceof Date)||Number.isNaN(now.getTime()))now=new Date();
+  const today=localDateString(now);
+  const isPastNoon=now.getHours()>=12;
   if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
   classData.records ||= [];
   const studentIds=new Set(classData.students.map(s=>s.id));
@@ -260,7 +265,7 @@ function markPastPendingAssignmentsMissing(classData,today=localDateString()){
   for(const assignment of classData.assignments){
     const gradingDate=gradingById.get(assignment.id);
     if(!gradingDate)continue;
-    const overdue=gradingDate<today;
+    const overdue=gradingDate<today||(gradingDate===today&&isPastNoon);
     for(const student of classData.students){
       const leaveDate=leaveByStudentAndDate.get(student.id+"|"+assignment.date);
       let record=classData.records.find(r=>r.assignmentId===assignment.id&&r.studentId===student.id);
@@ -302,11 +307,11 @@ function markPastPendingAssignmentsMissing(classData,today=localDateString()){
   }
   return changed;
 }
-function updateAllClassesForDate(today=localDateString()){
+function updateAllClassesForDate(now=new Date()){
   let changed=0;
   for(const cls of store.classes){
     const classData=(cls.id===activeClassId)?data:cls.data;
-    changed+=markPastPendingAssignmentsMissing(classData,today);
+    changed+=markPastPendingAssignmentsMissing(classData,now);
   }
   if(changed){
     if(activeClassId){
@@ -780,19 +785,22 @@ function setPage(page){
 }
 
 
-let __lastRenderedDate = localDateString();
-
+let __lastRenderedReviewSlot = "";
+function currentReviewSlot(now=new Date()){
+  return `${localDateString(now)}-${now.getHours()>=12?"after-noon":"before-noon"}`;
+}
 function refreshForDateRollover(){
-  const currentDate = localDateString();
-  if(currentDate === __lastRenderedDate) return;
-  __lastRenderedDate = currentDate;
-  updateAllClassesForDate(currentDate);
-  if(activeClassId) renderPage(currentPage);
+  const now=new Date();
+  const slot=currentReviewSlot(now);
+  if(slot===__lastRenderedReviewSlot)return;
+  __lastRenderedReviewSlot=slot;
+  updateAllClassesForDate(now);
+  if(activeClassId)renderPage(currentPage);
   else renderClassHome();
 }
 
 function startDateRolloverGuards(){
-  // 第一層：頁面持續開啟時，定期檢查是否跨日。
+  // 第一層：頁面持續開啟時，定期檢查是否跨日或跨過中午 12:00。
   window.setInterval(refreshForDateRollover, 60000);
 
   // 第二層：從背景切回、重新聚焦時，立即檢查一次。
@@ -3011,7 +3019,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.68: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.70: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3108,7 +3116,7 @@ function applyAttendanceForAssignment(assignment){
   (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
     .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
 }
-// v2.68: point-in-time attendance audit and review invalidation.
+// v2.70: point-in-time attendance audit and review invalidation.
 function markAttendanceReviewChanged(date){
   const check=attendanceCheckForDate(date);
   if(check?.checkedAt){
@@ -3248,7 +3256,7 @@ function undoAttendanceChecked(){
   renderAttendance();
   toast("已取消點名完成標記");
 }
-// v2.68 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
+// v2.70 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
 const ATTENDANCE_LABELS={present:"出席",leave:"請假",absent:"缺席"};
 const ATTENDANCE_LEAVE_TYPES=["事假","病假","公假","喪假","生理假","其他"];
 function openAttendanceHistory(){
@@ -4072,6 +4080,7 @@ noiseEl("noiseThreshold")?.addEventListener("input",()=>{noiseStandard="custom";
 
 
 updateAllClassesForDate();
+__lastRenderedReviewSlot=currentReviewSlot();
 renderClassHome();
 
 startDateRolloverGuards();
@@ -4093,7 +4102,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.68: Native Safari date controls align their internal segments inconsistently.
+// v2.70: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){

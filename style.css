@@ -2363,3 +2363,21 @@ nav.tabs .tab{
 }
 .password-peek-button svg{display:block!important;flex:0 0 auto;width:21px;height:21px;pointer-events:none}
 .password-peek-button.is-revealing{background:#e9efff!important;color:#334eb8!important}
+
+/* v2.70: prevent the teacher attendance password from collapsing in the flex settings row. */
+.attendance-password-settings{align-items:center;min-width:0;}
+.attendance-password-settings>div:first-child{flex:1 1 0;min-width:0;}
+.attendance-password-settings>.attendance-password-field{
+  flex:0 0 300px!important;width:300px!important;min-width:260px!important;
+  max-width:300px!important;box-sizing:border-box;margin-top:0!important;
+}
+.attendance-password-settings>.attendance-password-field>.password-peek-wrap{
+  width:100%!important;min-width:0!important;
+}
+@media(max-width:700px){
+  .attendance-password-settings{align-items:stretch;flex-direction:column;}
+  .attendance-password-settings>.attendance-password-field{
+    flex:0 0 auto!important;width:100%!important;min-width:0!important;
+    max-width:420px!important;margin-top:10px!important;
+  }
+}
