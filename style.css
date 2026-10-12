@@ -2449,3 +2449,18 @@ nav.tabs .tab{
   .modal:has(.assignment-modal-top) .modal-head{padding-right:38px;margin-bottom:12px}
   .modal:has(.assignment-modal-top) .assignment-modal-top{align-items:stretch}
 }
+
+/* v2.75: align assignment dialog close button with the right edge of the group-sort button. */
+.modal:has(.assignment-modal-top) .modal-head{
+  padding-right:0;
+  width:100%;
+  box-sizing:border-box;
+}
+.modal:has(.assignment-modal-top) .modal-head #modalClose{
+  margin-left:auto;
+  margin-right:0;
+  flex:0 0 36px;
+}
+@media(max-width:620px){
+  .modal:has(.assignment-modal-top) .modal-head{padding-right:0}
+}
