@@ -1,4 +1,4 @@
-const APP_VERSION = "2.70";
+const APP_VERSION = "2.71";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -200,7 +200,7 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.70：作業日期的下一個實際上課日是批改日；當天 12:00 起檢視未確認作業。
+// v2.71：作業日期的下一個實際上課日是批改日；當天 12:00 起檢視未確認作業。
 // 例如 10/12 作業 → 10/13 批改 → 10/13 12:00 起，未確認者轉缺交。
 // 依班級行事曆排除假日；請假造成的缺交仍依原規則即時處理。
 function nextClassSchoolDay(classData,dateStr){
@@ -216,7 +216,7 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.70：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+// v2.71：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
 const AUTO_LEAVE_NOTE="【請假】";
 function syncAutoLeaveNote(record,shouldMark){
   record.note=String(record.note||"");
@@ -232,7 +232,7 @@ function syncAutoLeaveNote(record,shouldMark){
     delete record.autoLeaveNote;
   }
 }
-// v2.70: reconcile both automatic causes together; manual states always win.
+// v2.71: reconcile both automatic causes together; manual states always win.
 function markPastPendingAssignmentsMissing(classData,now=new Date()){
   // Accept a YYYY-MM-DD test date as noon of that date for backward-compatible callers.
   if(typeof now==="string")now=new Date(`${now}T12:00:00`);
@@ -3019,7 +3019,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.70: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.71: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3116,7 +3116,7 @@ function applyAttendanceForAssignment(assignment){
   (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
     .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
 }
-// v2.70: point-in-time attendance audit and review invalidation.
+// v2.71: point-in-time attendance audit and review invalidation.
 function markAttendanceReviewChanged(date){
   const check=attendanceCheckForDate(date);
   if(check?.checkedAt){
@@ -3256,7 +3256,7 @@ function undoAttendanceChecked(){
   renderAttendance();
   toast("已取消點名完成標記");
 }
-// v2.70 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
+// v2.71 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
 const ATTENDANCE_LABELS={present:"出席",leave:"請假",absent:"缺席"};
 const ATTENDANCE_LEAVE_TYPES=["事假","病假","公假","喪假","生理假","其他"];
 function openAttendanceHistory(){
@@ -3380,12 +3380,15 @@ function renderAttendance(){
       : `<span class="attendance-checked">✓ 已完成點名 · ${escapeHtml(formatAttendanceTimestamp(check.checkedAt))}</span><button type="button" class="secondary" onclick="undoAttendanceChecked()">取消完成標記</button>`)
     : `<span class="muted">尚未完成點名</span><button type="button" class="primary" onclick="markAttendanceChecked()">完成當日點名</button>`;
   list.innerHTML=students.length?students.map(s=>{
-    const status=(data.attendance||[]).find(a=>a.studentId===s.id&&a.date===date)?.status||"present";
+    const attendanceEntry=(data.attendance||[]).find(a=>a.studentId===s.id&&a.date===date);
+    const status=attendanceEntry?.status||"present";
+    const leaveLabel=ATTENDANCE_LEAVE_TYPES.includes(attendanceEntry?.leaveType)
+      ? attendanceEntry.leaveType : "未註記";
     return `<div class="attendance-student"><span>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span><select class="attendance-status ${status}" aria-label="${escapeAttr(s.name)}出缺席狀態" onchange="setAttendance('${s.id}',this.value)">
       <option value="present" ${status==="present"?"selected":""}>出席</option>
       <option value="leave" ${status==="leave"?"selected":""}>請假</option>
       <option value="absent" ${status==="absent"?"selected":""}>缺席</option>
-    </select>${status==="leave"?`<button type="button" class="secondary attendance-leave-edit" onclick="openAttendanceLeaveType('${s.id}','${date}')">假別</button>`:""}</div>`;
+    </select>${status==="leave"?`<button type="button" class="secondary attendance-leave-edit" aria-label="編輯${escapeAttr(s.name)}假別，目前${escapeAttr(leaveLabel)}" title="點選修改假別與備註" onclick="openAttendanceLeaveType('${s.id}','${date}')">${escapeHtml(leaveLabel)}</button>`:""}</div>`;
   }).join(""):'<div class="empty">尚未建立學生名單。</div>';
 }
 function renderStudents(){
@@ -4102,7 +4105,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.70: Native Safari date controls align their internal segments inconsistently.
+// v2.71: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){
