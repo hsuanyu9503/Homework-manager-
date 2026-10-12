@@ -2431,36 +2431,56 @@ nav.tabs .tab{
   }
 }
 
-/* v2.74: assignment dialog header breathing room; avoid sort buttons colliding with close icon. */
-.modal:has(.assignment-modal-top) .modal-head{
-  padding-right:50px;
-  min-height:44px;
-  margin-bottom:16px;
-}
-.modal:has(.assignment-modal-top) .modal-head h3{min-width:0;overflow-wrap:anywhere}
-.modal:has(.assignment-modal-top) .assignment-modal-top{
-  margin-top:6px;
-  padding-top:4px;
-  gap:14px;
+/* v2.76 — one consistent layout for assignment detail dialogs.
+   Header and sorting row share the same content width and right edge. */
+.assignment-detail-modal{box-sizing:border-box}
+.assignment-detail-modal .modal-head{
+  display:flex;
   align-items:center;
-}
-.modal:has(.assignment-modal-top) .assignment-sort-switch{flex-wrap:wrap;gap:10px}
-@media(max-width:620px){
-  .modal:has(.assignment-modal-top) .modal-head{padding-right:38px;margin-bottom:12px}
-  .modal:has(.assignment-modal-top) .assignment-modal-top{align-items:stretch}
-}
-
-/* v2.75: align assignment dialog close button with the right edge of the group-sort button. */
-.modal:has(.assignment-modal-top) .modal-head{
-  padding-right:0;
+  justify-content:space-between;
+  gap:12px;
+  min-height:40px;
   width:100%;
   box-sizing:border-box;
+  padding:0;
+  margin:0 0 16px;
 }
-.modal:has(.assignment-modal-top) .modal-head #modalClose{
-  margin-left:auto;
-  margin-right:0;
+.assignment-detail-modal .modal-head h3{
+  min-width:0;
+  flex:1 1 auto;
+  overflow-wrap:anywhere;
+}
+.assignment-detail-modal .modal-head #modalClose{
   flex:0 0 36px;
+  width:36px;
+  margin:0 0 0 auto;
 }
+.assignment-detail-modal .assignment-modal-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:12px;
+  width:100%;
+  box-sizing:border-box;
+  padding:0;
+  margin:0 0 16px;
+}
+.assignment-detail-modal .assignment-sort-switch{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:10px;
+  margin-left:auto;
+}
+.assignment-detail-modal .assignment-sort-switch button{max-width:100%}
 @media(max-width:620px){
-  .modal:has(.assignment-modal-top) .modal-head{padding-right:0}
+  .assignment-detail-modal .modal-head{margin-bottom:12px}
+  .assignment-detail-modal .assignment-modal-top{align-items:stretch}
+  .assignment-detail-modal .assignment-sort-switch{
+    width:100%;
+    margin-left:0;
+    justify-content:stretch;
+  }
+  .assignment-detail-modal .assignment-sort-switch button{flex:1 1 0;min-width:0}
 }
