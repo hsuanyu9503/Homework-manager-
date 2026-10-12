@@ -2259,3 +2259,28 @@ nav.tabs .tab{
 .attendance-history-updated{font-size:12px;color:#697586;margin-top:10px}
 .attendance-check-actions .attendance-checked{font-size:13px}
 @media(max-width:640px){.attendance-check-actions{justify-content:flex-start}}
+
+/* v2.65 iPad Safari: center attendance select text symmetrically. */
+.attendance-student select.attendance-status{
+  padding-left:8px;padding-right:8px;
+  text-align:center;text-align-last:center;-webkit-text-align-last:center;
+  appearance:none;-webkit-appearance:none;
+}
+/* History date inputs: separate columns with a real gutter; reset below. */
+.attendance-history-filters{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  column-gap:20px;row-gap:14px;
+  align-items:end;
+}
+.attendance-history-filters>label:first-child{grid-column:1/-1}
+.attendance-history-filters>button{grid-column:1/-1;justify-self:end}
+.attendance-history-filters>label{min-width:0;max-width:100%}
+.attendance-history-filters input[type="date"]{
+  display:block;min-width:0;width:100%;max-width:100%;box-sizing:border-box;
+  -webkit-min-logical-width:0;
+}
+@media(max-width:520px){
+  .attendance-history-filters{grid-template-columns:minmax(0,1fr);column-gap:0}
+  .attendance-history-filters>label:first-child,.attendance-history-filters>button{grid-column:1}
+}
