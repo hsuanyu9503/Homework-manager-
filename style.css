@@ -2384,3 +2384,9 @@ nav.tabs .tab{
 
 /* v2.71: show actual leave category on the attendance card */
 .attendance-leave-edit{min-width:54px;max-width:90px;text-align:center;overflow:hidden;text-overflow:ellipsis}
+
+/* v2.72: per-class homework review time */
+.homework-review-settings .homework-review-time-field{display:flex;flex-direction:column;gap:8px;min-width:0;width:min(100%,300px)}
+.homework-review-time-field label{font-weight:650;font-size:13px}
+.homework-review-time-field input[type="time"]{width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:44px;padding:9px 12px}
+@media(max-width:600px){.homework-review-settings .homework-review-time-field{width:100%}}

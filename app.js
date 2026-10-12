@@ -1,4 +1,4 @@
-const APP_VERSION = "2.71";
+const APP_VERSION = "2.72";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -41,7 +41,7 @@ function defaultData(){
     groups:[],
     groupScores:{},
     assignmentGroups:[],
-    settings:{overdueDays:2,attendancePassword:"1234"}
+    settings:{overdueDays:2,attendancePassword:"1234",missingReviewTime:"12:00"}
   };
 }
 
@@ -127,6 +127,7 @@ function normalizeData(input){
     },
     settings:{
       attendancePassword:typeof input?.settings?.attendancePassword==="string" && input.settings.attendancePassword.length>=4 ? input.settings.attendancePassword : "1234",
+      missingReviewTime:isValidMissingReviewTime(input?.settings?.missingReviewTime)?input.settings.missingReviewTime:"12:00",
       overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2,
       pageLocks:Object.fromEntries(["assignments","contactbook","students","gradebook","scores","seats"].map(page=>{
         const lock=input?.settings?.pageLocks?.[page];
@@ -200,7 +201,19 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.71：作業日期的下一個實際上課日是批改日；當天 12:00 起檢視未確認作業。
+// HH:mm, 24-hour local time; fallback preserves previous 12:00 behavior.
+function isValidMissingReviewTime(value){
+  return typeof value==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+function missingReviewTime(classData){
+  const value=classData?.settings?.missingReviewTime;
+  return isValidMissingReviewTime(value)?value:"12:00";
+}
+function isAfterMissingReviewTime(classData,now){
+  const [hour,minute]=missingReviewTime(classData).split(":").map(Number);
+  return now.getHours()*60+now.getMinutes()>=hour*60+minute;
+}
+// v2.72：下一個實際上課日為批改日，當天達到班級設定的 HH:mm 才轉缺交。
 // 例如 10/12 作業 → 10/13 批改 → 10/13 12:00 起，未確認者轉缺交。
 // 依班級行事曆排除假日；請假造成的缺交仍依原規則即時處理。
 function nextClassSchoolDay(classData,dateStr){
@@ -216,7 +229,7 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.71：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+// v2.72：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
 const AUTO_LEAVE_NOTE="【請假】";
 function syncAutoLeaveNote(record,shouldMark){
   record.note=String(record.note||"");
@@ -232,13 +245,13 @@ function syncAutoLeaveNote(record,shouldMark){
     delete record.autoLeaveNote;
   }
 }
-// v2.71: reconcile both automatic causes together; manual states always win.
+// v2.72: reconcile both automatic causes together; manual states always win.
 function markPastPendingAssignmentsMissing(classData,now=new Date()){
   // Accept a YYYY-MM-DD test date as noon of that date for backward-compatible callers.
   if(typeof now==="string")now=new Date(`${now}T12:00:00`);
   if(!(now instanceof Date)||Number.isNaN(now.getTime()))now=new Date();
   const today=localDateString(now);
-  const isPastNoon=now.getHours()>=12;
+  const reachedReviewTime=isAfterMissingReviewTime(classData,now);
   if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
   classData.records ||= [];
   const studentIds=new Set(classData.students.map(s=>s.id));
@@ -265,7 +278,7 @@ function markPastPendingAssignmentsMissing(classData,now=new Date()){
   for(const assignment of classData.assignments){
     const gradingDate=gradingById.get(assignment.id);
     if(!gradingDate)continue;
-    const overdue=gradingDate<today||(gradingDate===today&&isPastNoon);
+    const overdue=gradingDate<today||(gradingDate===today&&reachedReviewTime);
     for(const student of classData.students){
       const leaveDate=leaveByStudentAndDate.get(student.id+"|"+assignment.date);
       let record=classData.records.find(r=>r.assignmentId===assignment.id&&r.studentId===student.id);
@@ -468,6 +481,19 @@ function openClassSettings(classId){
 
       <div class="settings-divider"></div>
 
+      <div class="settings-block homework-review-settings">
+        <div>
+          <div class="item-title">作業缺交自動判定時間</div>
+          <div class="item-sub">批改日為作業日期的下一個實際上課日。到達指定時間後，尚未確認的作業自動標記為缺交；預設 12:00，每個班級獨立設定。</div>
+        </div>
+        <div class="settings-field homework-review-time-field">
+          <label for="missingReviewTimeSetting">批改日判定時間（24 小時制）</label>
+          <input id="missingReviewTimeSetting" type="time" value="${escapeAttr(missingReviewTime(d))}" required step="60">
+        </div>
+      </div>
+
+      <div class="settings-divider"></div>
+
       <div class="settings-block page-lock-settings">
         <div>
           <div class="item-title">分頁密碼設定</div>
@@ -550,7 +576,14 @@ function openClassSettings(classId){
       document.getElementById("attendancePasswordSetting").focus();
       return;
     }
+    const reviewTime=document.getElementById("missingReviewTimeSetting").value;
+    if(!isValidMissingReviewTime(reviewTime)){
+      toast("請設定有效的缺交判定時間（HH:mm）");
+      document.getElementById("missingReviewTimeSetting").focus();
+      return;
+    }
     d.class.name = newName;
+    d.settings.missingReviewTime=reviewTime;
     d.settings.attendancePassword=attendancePassword;
     d.settings.pageLocks=nextPageLocks;
     d.students = roster.map(s=>{
@@ -581,6 +614,8 @@ function openClassSettings(classId){
 
     cls.name = newName;
     cls.data = d;
+    if(cls.id===activeClassId)data=d;
+    updateAllClassesForDate(new Date());
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
     closeModal();
     renderClassHome();
@@ -787,20 +822,22 @@ function setPage(page){
 
 let __lastRenderedReviewSlot = "";
 function currentReviewSlot(now=new Date()){
-  return `${localDateString(now)}-${now.getHours()>=12?"after-noon":"before-noon"}`;
+  // Minute precision supports each class' independent HH:mm cutoff.
+  return `${localDateString(now)}-${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
 }
 function refreshForDateRollover(){
   const now=new Date();
   const slot=currentReviewSlot(now);
   if(slot===__lastRenderedReviewSlot)return;
   __lastRenderedReviewSlot=slot;
-  updateAllClassesForDate(now);
+  const changed=updateAllClassesForDate(now);
+  if(!changed)return;
   if(activeClassId)renderPage(currentPage);
   else renderClassHome();
 }
 
 function startDateRolloverGuards(){
-  // 第一層：頁面持續開啟時，定期檢查是否跨日或跨過中午 12:00。
+  // 每分鐘檢查是否跨過班級自訂的批改時間；返回分頁時立即補檢。
   window.setInterval(refreshForDateRollover, 60000);
 
   // 第二層：從背景切回、重新聚焦時，立即檢查一次。
@@ -3019,7 +3056,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.71: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.72: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3116,7 +3153,7 @@ function applyAttendanceForAssignment(assignment){
   (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
     .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
 }
-// v2.71: point-in-time attendance audit and review invalidation.
+// v2.72: point-in-time attendance audit and review invalidation.
 function markAttendanceReviewChanged(date){
   const check=attendanceCheckForDate(date);
   if(check?.checkedAt){
@@ -3256,7 +3293,7 @@ function undoAttendanceChecked(){
   renderAttendance();
   toast("已取消點名完成標記");
 }
-// v2.71 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
+// v2.72 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
 const ATTENDANCE_LABELS={present:"出席",leave:"請假",absent:"缺席"};
 const ATTENDANCE_LEAVE_TYPES=["事假","病假","公假","喪假","生理假","其他"];
 function openAttendanceHistory(){
@@ -4105,7 +4142,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.71: Native Safari date controls align their internal segments inconsistently.
+// v2.72: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){
