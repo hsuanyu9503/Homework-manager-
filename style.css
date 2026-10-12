@@ -2137,3 +2137,29 @@ nav.tabs .tab{
 .assignment-search-dates .assignment-date-field .assignment-date-display{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;line-height:1.3}
 .assignment-search-dates .assignment-date-field input[type="date"]{position:absolute;inset:0;z-index:2;opacity:0;width:100%!important;height:100%;cursor:pointer}
 @media(max-width:520px){.assignment-search-dates .assignment-date-field{height:36px}}
+
+/* v2.55 出缺席登記 */
+.attendance-panel{padding:18px;margin:16px 0 20px}
+.attendance-heading{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.attendance-heading h3{margin:0 0 5px}
+.attendance-heading p{margin:0}
+.attendance-heading label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:13px}
+.attendance-heading input[type=date]{width:185px;max-width:100%;box-sizing:border-box;min-height:40px}
+.attendance-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:9px}
+.attendance-student{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px solid #e1e7f1;border-radius:11px;background:#fff}
+.attendance-student select{width:92px;min-width:92px;padding:7px 5px;box-sizing:border-box}
+.attendance-note{font-size:12px;margin:13px 0 0;line-height:1.65}
+
+/* v2.56: school calendar / announcement linkage */
+.attendance-actions{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.calendar-entry-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
+.calendar-entry-form>label{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:13px;font-weight:600}
+.calendar-entry-form input:not([type=checkbox]),.calendar-entry-form select{width:100%;min-width:0;box-sizing:border-box;min-height:38px}
+.calendar-entry-form .calendar-announce{flex-direction:row;align-items:center;gap:8px;grid-column:1/-1}
+.calendar-entry-form .calendar-announce input{width:auto}
+.calendar-entry-form button{justify-self:start}
+.calendar-entry-list{display:grid;gap:9px;margin-top:15px}
+.calendar-entry{display:flex;justify-content:space-between;gap:14px;align-items:center;border:1px solid #e1e7f1;border-radius:11px;padding:11px 13px}
+.calendar-entry .muted{font-size:12px;margin-top:4px}
+.calendar-entry-actions{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:560px){.calendar-entry-form{grid-template-columns:1fr}.calendar-entry{align-items:flex-start;flex-direction:column}.attendance-actions{width:100%}}

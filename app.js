@@ -1,4 +1,4 @@
-const APP_VERSION = "2.54";
+const APP_VERSION = "2.60";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -26,6 +26,8 @@ function defaultData(){
     students:[],
     assignments:[],
     records:[],
+    attendance:[],
+    schoolCalendar:[],
     contactItems:[],
     notices:[],
     memos:[],
@@ -88,6 +90,8 @@ function normalizeData(input){
     students:Array.isArray(input?.students) ? input.students.map(s=>({...s,tags:Array.isArray(s.tags)?s.tags:[]})) : [],
     assignments:Array.isArray(input?.assignments) ? input.assignments : [],
     records:Array.isArray(input?.records) ? input.records : [],
+    attendance:Array.isArray(input?.attendance) ? input.attendance : [],
+    schoolCalendar:Array.isArray(input?.schoolCalendar) ? input.schoolCalendar : [],
     contactItems:(Array.isArray(input?.contactItems)
       ? input.contactItems
       : (Array.isArray(input?.contactBook) ? input.contactBook : [])).map((item,index)=>({
@@ -191,6 +195,102 @@ function ensureRecord(assignmentId, studentId){
     data.records.push(r);
   }
   return r;
+}
+
+// v2.60：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
+// 例如 10/12 作業 → 10/13 批改 → 10/14 起，未確認者轉缺交。
+// 上課日採用該班行事曆；不會在批改日當天提前轉換。
+function nextClassSchoolDay(classData,dateStr){
+  const parts=String(dateStr||"").split("-").map(Number);
+  if(parts.length!==3||parts.some(n=>!Number.isFinite(n)))return "";
+  const d=new Date(parts[0],parts[1]-1,parts[2],12);
+  if(d.getFullYear()!==parts[0]||d.getMonth()!==parts[1]-1||d.getDate()!==parts[2])return "";
+  for(let i=0;i<370;i++){
+    d.setDate(d.getDate()+1);
+    const date=localDateString(d);
+    const special=(classData.schoolCalendar||[]).filter(e=>e.date===date&&e.type!=="event").at(-1);
+    if(special ? special.type==="school" : d.getDay()!==0&&d.getDay()!==6)return date;
+  }
+  return "";
+}
+// v2.60: reconcile both automatic causes together; manual states always win.
+function markPastPendingAssignmentsMissing(classData,today=localDateString()){
+  if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
+  classData.records ||= [];
+  const studentIds=new Set(classData.students.map(s=>s.id));
+  const assignmentById=new Map(classData.assignments.map(a=>[a.id,a]));
+  const gradingById=new Map(classData.assignments.map(a=>[a.id,nextClassSchoolDay(classData,a.date)]));
+  // Leave is linked to the previous actual school day under this class calendar.
+  const leaveByStudentAndDate=new Map();
+  for(const entry of classData.attendance||[]){
+    if(entry.status!=="leave"||!studentIds.has(entry.studentId))continue;
+    const parts=String(entry.date||"").split("-").map(Number);
+    if(parts.length!==3||parts.some(n=>!Number.isFinite(n)))continue;
+    const d=new Date(parts[0],parts[1]-1,parts[2],12);
+    if(d.getFullYear()!==parts[0]||d.getMonth()!==parts[1]-1||d.getDate()!==parts[2])continue;
+    let prev="";
+    for(let i=0;i<370;i++){
+      d.setDate(d.getDate()-1);
+      const candidate=localDateString(d);
+      const special=(classData.schoolCalendar||[]).filter(e=>e.date===candidate&&e.type!=="event").at(-1);
+      if(special ? special.type==="school" : d.getDay()!==0&&d.getDay()!==6){prev=candidate;break;}
+    }
+    if(prev)leaveByStudentAndDate.set(entry.studentId+"|"+prev,entry.date);
+  }
+  let changed=0;
+  for(const assignment of classData.assignments){
+    const gradingDate=gradingById.get(assignment.id);
+    if(!gradingDate)continue;
+    const overdue=gradingDate<today;
+    for(const student of classData.students){
+      const leaveDate=leaveByStudentAndDate.get(student.id+"|"+assignment.date);
+      let record=classData.records.find(r=>r.assignmentId===assignment.id&&r.studentId===student.id);
+      if(!record){
+        if(!overdue&&!leaveDate)continue;
+        record={assignmentId:assignment.id,studentId:student.id,status:"missing",note:""};
+        if(overdue)record.autoOverdue=true;
+        if(leaveDate)record.autoLeaveDate=leaveDate;
+        classData.records.push(record);
+        changed++;
+        continue;
+      }
+      const owned=!!(record.autoOverdue||record.autoLeaveDate);
+      if(!owned&&record.status!=="pending")continue; // teacher-owned status
+      if(owned&&record.status!=="missing"&&record.status!=="pending"){
+        delete record.autoOverdue;
+        delete record.autoLeaveDate;
+        changed++;
+        continue;
+      }
+      const before=JSON.stringify([record.status,record.autoOverdue||false,record.autoLeaveDate||""]);
+      if(overdue||leaveDate){
+        record.status="missing";
+        if(overdue)record.autoOverdue=true;else delete record.autoOverdue;
+        if(leaveDate)record.autoLeaveDate=leaveDate;else delete record.autoLeaveDate;
+      }else if(owned){
+        record.status="pending";
+        delete record.autoOverdue;
+        delete record.autoLeaveDate;
+      }
+      if(before!==JSON.stringify([record.status,record.autoOverdue||false,record.autoLeaveDate||""]))changed++;
+    }
+  }
+  return changed;
+}
+function updateAllClassesForDate(today=localDateString()){
+  let changed=0;
+  for(const cls of store.classes){
+    const classData=(cls.id===activeClassId)?data:cls.data;
+    changed+=markPastPendingAssignmentsMissing(classData,today);
+  }
+  if(changed){
+    if(activeClassId){
+      const cls=store.classes.find(c=>c.id===activeClassId);
+      if(cls)cls.data=data;
+    }
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(store));
+  }
+  return changed;
 }
 
 function assignmentCounts(assignmentId){
@@ -417,6 +517,7 @@ function openClassSettings(classId){
     // Drop records belonging to students no longer in roster.
     const studentIds = new Set(d.students.map(s=>s.id));
     d.records = d.records.filter(r=>studentIds.has(r.studentId));
+    d.attendance=(d.attendance||[]).filter(r=>studentIds.has(r.studentId));
     d.scores = Object.fromEntries(
       Object.entries(d.scores || {}).filter(([studentId])=>studentIds.has(studentId))
     );
@@ -512,6 +613,8 @@ function enterClass(classId){
   unlockedPages = new Set();
   data = normalizeData(cls.data);
   data.class.name = cls.name || data.class.name;
+  markPastPendingAssignmentsMissing(data);
+  persistActiveClass();
   document.getElementById("classHome").classList.add("hidden");
   document.getElementById("workspace").classList.remove("hidden");
   setPage("dashboard");
@@ -635,6 +738,7 @@ function refreshForDateRollover(){
   const currentDate = localDateString();
   if(currentDate === __lastRenderedDate) return;
   __lastRenderedDate = currentDate;
+  updateAllClassesForDate(currentDate);
   if(activeClassId) renderPage(currentPage);
   else renderClassHome();
 }
@@ -674,7 +778,7 @@ function renderTodayNotices(){
     String(tomorrowDate.getDate()).padStart(2,"0")
   ].join("-");
 
-  const notices = Array.isArray(data.notices) ? data.notices : [];
+  const notices = [...(Array.isArray(data.notices) ? data.notices : []),...calendarNotices()];
   const todayNotices = notices.filter(n=>n.date===today);
   const tomorrowNotices = notices.filter(n=>n.date===tomorrow);
 
@@ -817,7 +921,7 @@ function deleteMemo(memoId){
 }
 
 function openNoticeMemo(){
-  const notices=[...(data.notices || [])]
+  const notices=[...(data.notices || []),...calendarNotices()]
     .sort((a,b)=> b.date.localeCompare(a.date) || (b.createdAt || "").localeCompare(a.createdAt || ""));
   const memos=[...(data.memos || [])]
     .sort(compareMemosByDeadline);
@@ -829,8 +933,7 @@ function openNoticeMemo(){
         <div class="settings-item-text">${escapeHtml(n.text)}</div>
       </div>
       <div class="settings-item-actions">
-        <button class="secondary small-btn" type="button" onclick="editNotice('${n.id}')">編輯</button>
-        <button class="ghost-danger small-btn" type="button" onclick="deleteNotice('${n.id}')">刪除</button>
+        ${n.calendarId?`<button class="secondary small-btn" type="button" onclick="editSchoolCalendar('${n.calendarId}')">編輯行事曆</button>`:`<button class="secondary small-btn" type="button" onclick="editNotice('${n.id}')">編輯</button><button class="ghost-danger small-btn" type="button" onclick="deleteNotice('${n.id}')">刪除</button>`}
       </div>
     </article>`).join("") : `<div class="settings-list-empty">目前還沒有公告。</div>`;
 
@@ -854,7 +957,7 @@ function openNoticeMemo(){
           <div>
             <div class="settings-panel-kicker">ANNOUNCEMENT</div>
             <div class="settings-panel-title">公告設定</div>
-            <div class="settings-panel-desc">指定日期的公告只會在當天顯示於總覽。</div>
+            <div class="settings-panel-desc">指定日期的公告只會在當天顯示於總覽；勾選公告的行事曆項目也會同步顯示。</div>
           </div>
           <span class="settings-panel-count">${notices.length} 則</span>
         </div>
@@ -925,6 +1028,7 @@ function openNoticeMemo(){
 }
 
 function editNotice(noticeId){
+  if(String(noticeId).startsWith("calendar-")){editSchoolCalendar(String(noticeId).slice(9));return;}
   const notice=(data.notices || []).find(n=>n.id===noticeId);
   if(!notice) return;
   showModal("編輯公告",`
@@ -960,6 +1064,7 @@ function editNotice(noticeId){
 }
 
 function deleteNotice(noticeId){
+  if(String(noticeId).startsWith("calendar-")){deleteSchoolCalendar(String(noticeId).slice(9));return;}
   const notice=(data.notices || []).find(n=>n.id===noticeId);
   if(!notice) return;
   if(!confirm(`確定要刪除 ${formatDate(notice.date)} 的這則公告嗎？`)) return;
@@ -1350,6 +1455,8 @@ function createAssignmentFromContact(item){
   data.students.forEach(s=>{
     data.records.push({assignmentId:assignment.id, studentId:s.id, status:"pending", note:""});
   });
+  applyAttendanceForAssignment(assignment);
+  markPastPendingAssignmentsMissing(data);
   return assignment;
 }
 
@@ -2856,7 +2963,135 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
+// v2.60: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+function isSchoolDay(dateStr){
+  const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
+  if(entry)return entry.type==="school";
+  const [y,m,d]=String(dateStr).split("-").map(Number);
+  const dt=new Date(y,m-1,d,12);
+  return dt.getFullYear()===y&&dt.getMonth()===m-1&&dt.getDate()===d&&dt.getDay()!==0&&dt.getDay()!==6;
+}
+function previousSchoolDay(dateStr){
+  const parts=String(dateStr||"").split("-").map(Number);
+  if(parts.length!==3||parts.some(n=>!Number.isFinite(n)))return "";
+  const d=new Date(parts[0],parts[1]-1,parts[2],12);
+  if(d.getFullYear()!==parts[0]||d.getMonth()!==parts[1]-1||d.getDate()!==parts[2])return "";
+  for(let i=0;i<370;i++){
+    d.setDate(d.getDate()-1);
+    const date=localDateString(d);
+    if(isSchoolDay(date))return date;
+  }
+  return "";
+}
+function reconcileCalendarLeaveRecords(){
+  // A single reconciliation prevents leave and overdue rules from undoing each other.
+  return markPastPendingAssignmentsMissing(data);
+}
+const SCHOOL_CALENDAR_TYPES={holiday:"不上課／放假",school:"正常上課／補課",event:"一般活動（不影響上課）"};
+function calendarNotices(){
+  return (data.schoolCalendar||[]).filter(e=>e.announce).map(e=>({
+    id:`calendar-${e.id}`,date:e.date,text:e.name,calendarId:e.id,createdAt:e.createdAt||""
+  }));
+}
+function openSchoolCalendar(){
+  const entries=[...(data.schoolCalendar||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  showModal("班級上課日曆",`
+    <div class="school-calendar-panel">
+      <p class="muted">週一至週五預設上課、週末預設休息；可自行設定國定假日、學校放假與補課日。此版本不會自動下載官方假日。</p>
+      <form id="schoolCalendarForm" class="calendar-entry-form">
+        <label>項目名稱<input id="calendarName" maxlength="80" placeholder="例如：國慶日補假" required></label>
+        <label>日期<input id="calendarDate" type="date" value="${localDateString()}" required></label>
+        <label>日期類型<select id="calendarType"><option value="holiday">不上課／放假</option><option value="school">正常上課／補課</option><option value="event">一般活動（不影響上課）</option></select></label>
+        <label class="calendar-announce"><input id="calendarAnnounce" type="checkbox"> 同步顯示於公告區</label>
+        <button class="primary" type="submit">＋ 新增項目</button>
+      </form>
+      <div class="calendar-entry-list">${entries.length?entries.map(e=>`
+        <div class="calendar-entry"><div><strong>${escapeHtml(e.name)}</strong><div class="muted">${escapeHtml(e.date)} · ${SCHOOL_CALENDAR_TYPES[e.type]||"一般活動"} · ${e.announce?"同步公告":"不公告"}</div></div>
+        <div class="calendar-entry-actions"><button type="button" class="secondary" onclick="editSchoolCalendar('${e.id}')">編輯</button><button type="button" class="ghost-danger" onclick="deleteSchoolCalendar('${e.id}')">刪除</button></div></div>`).join(""):"<p class='muted'>尚無特殊日期設定。</p>"}</div>
+    </div>`);
+  document.getElementById("schoolCalendarForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const name=document.getElementById("calendarName").value.trim();
+    const date=document.getElementById("calendarDate").value;
+    const type=document.getElementById("calendarType").value;
+    const announce=document.getElementById("calendarAnnounce").checked;
+    if(!name||!date||!SCHOOL_CALENDAR_TYPES[type])return;
+    if(type!=="event"&&(data.schoolCalendar||[]).some(x=>x.date===date&&x.type!=="event")){
+      toast("該日期已有上課／放假設定，請編輯既有項目");return;
+    }
+    data.schoolCalendar ||= [];
+    data.schoolCalendar.push({id:uid("cal"),name,date,type,announce,createdAt:new Date().toISOString()});
+    reconcileCalendarLeaveRecords();persistActiveClass();renderTodayNotices();renderAttendance();openSchoolCalendar();toast("行事曆項目已新增");
+  });
+}
+function editSchoolCalendar(id){
+  const item=(data.schoolCalendar||[]).find(e=>e.id===id);if(!item)return;
+  showModal("編輯行事曆項目",`<form id="editCalendarForm" class="calendar-entry-form">
+    <label>項目名稱<input id="editCalendarName" value="${escapeAttr(item.name)}" maxlength="80" required></label>
+    <label>日期<input id="editCalendarDate" type="date" value="${escapeAttr(item.date)}" required></label>
+    <label>日期類型<select id="editCalendarType"><option value="holiday" ${item.type==="holiday"?"selected":""}>不上課／放假</option><option value="school" ${item.type==="school"?"selected":""}>正常上課／補課</option><option value="event" ${item.type==="event"?"selected":""}>一般活動（不影響上課）</option></select></label>
+    <label class="calendar-announce"><input id="editCalendarAnnounce" type="checkbox" ${item.announce?"checked":""}> 同步顯示於公告區</label>
+    <button class="primary" type="submit">儲存修改</button><button class="secondary" type="button" onclick="openSchoolCalendar()">返回</button></form>`);
+  document.getElementById("editCalendarForm").addEventListener("submit",e=>{
+    e.preventDefault();const name=document.getElementById("editCalendarName").value.trim();const date=document.getElementById("editCalendarDate").value;const type=document.getElementById("editCalendarType").value;
+    if(!name||!date||!SCHOOL_CALENDAR_TYPES[type])return;
+    if(type!=="event"&&data.schoolCalendar.some(x=>x.id!==id&&x.date===date&&x.type!=="event")){toast("該日期已有上課／放假設定");return;}
+    Object.assign(item,{name,date,type,announce:document.getElementById("editCalendarAnnounce").checked});
+    reconcileCalendarLeaveRecords();persistActiveClass();renderTodayNotices();renderAttendance();openSchoolCalendar();toast("行事曆與公告已同步更新");
+  });
+}
+function deleteSchoolCalendar(id){
+  if(!confirm("確定刪除此行事曆項目？對應公告也會同步移除。"))return;
+  data.schoolCalendar=(data.schoolCalendar||[]).filter(e=>e.id!==id);
+  reconcileCalendarLeaveRecords();persistActiveClass();renderTodayNotices();renderAttendance();openSchoolCalendar();toast("行事曆項目已刪除");
+}
+
+function applyLeaveMissing(studentId,leaveDate){
+  // Reconcile the whole class so an overdue mark remains valid alongside leave.
+  return markPastPendingAssignmentsMissing(data);
+}
+function revertLeaveMissing(studentId,leaveDate){
+  // Called before attendance removal: remove this leave first so reconciliation
+  // sees the final attendance state, while preserving unrelated overdue marks.
+  data.attendance=(data.attendance||[]).filter(a=>!(a.studentId===studentId&&a.date===leaveDate&&a.status==="leave"));
+  return markPastPendingAssignmentsMissing(data);
+}
+function applyAttendanceForAssignment(assignment){
+  (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
+    .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
+}
+function setAttendance(studentId,status){
+  const date=document.getElementById("attendanceDate")?.value;
+  if(!date||!data.students.some(s=>s.id===studentId))return;
+  if(!["present","leave","absent"].includes(status))return;
+  data.attendance ||= [];
+  const previous=data.attendance.find(a=>a.studentId===studentId&&a.date===date);
+  if(previous?.status==="leave"&&status!=="leave")revertLeaveMissing(studentId,date);
+  data.attendance=data.attendance.filter(a=>!(a.studentId===studentId&&a.date===date));
+  if(status!=="present")data.attendance.push({studentId,date,status});
+  const changed=markPastPendingAssignmentsMissing(data);
+  persistActiveClass();
+  renderStudents();
+  toast(status==="leave"?`已登記請假；${previousSchoolDay(date)} 的 ${changed} 筆未確認作業改為缺交`:status==="absent"?"已登記缺席（不自動修改作業）":"已登記出席");
+}
+function renderAttendance(){
+  const input=document.getElementById("attendanceDate");
+  const list=document.getElementById("attendanceList");
+  if(!input||!list)return;
+  if(!input.value)input.value=localDateString();
+  const date=input.value;
+  const students=[...data.students].sort((a,b)=>a.number-b.number);
+  list.innerHTML=students.length?students.map(s=>{
+    const status=(data.attendance||[]).find(a=>a.studentId===s.id&&a.date===date)?.status||"present";
+    return `<div class="attendance-student"><span>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span><select aria-label="${escapeAttr(s.name)}出缺席狀態" onchange="setAttendance('${s.id}',this.value)">
+      <option value="present" ${status==="present"?"selected":""}>出席</option>
+      <option value="leave" ${status==="leave"?"selected":""}>請假</option>
+      <option value="absent" ${status==="absent"?"selected":""}>缺席</option>
+    </select></div>`;
+  }).join(""):'<div class="empty">尚未建立學生名單。</div>';
+}
 function renderStudents(){
+  renderAttendance();
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
   let students = [...data.students].sort((a,b)=>a.number-b.number);
   if(q){
@@ -2958,6 +3193,8 @@ function closeAssignmentModal(){
 function setStatus(assignmentId, studentId, select){
   const r = ensureRecord(assignmentId, studentId);
   r.status = select.value;
+  delete r.autoLeaveDate; // A manual change must not be undone by attendance edits.
+  delete r.autoOverdue;
   persistActiveClass();
   select.className = `status-select ${r.status}`;
   // 從學生區進入作業時，不重繪學生頁／關閉目前作業視窗；回到學生後再更新統計。
@@ -3102,6 +3339,7 @@ function ensureGradeCorrectionAssignment(item){
     assignment.sourceGradeItemId=item.id;
   }
   syncGradeCorrectionRecords(item,assignment);
+  markPastPendingAssignmentsMissing(data);
   return assignment;
 }
 function syncGradeCorrectionRecords(item,assignment){
@@ -3273,6 +3511,8 @@ function openNewAssignment(){
       data.records.push({assignmentId:assignment.id, studentId:s.id, status:"pending", note:""});
     });
 
+    applyAttendanceForAssignment(assignment);
+    markPastPendingAssignmentsMissing(data);
     const assignmentFilter = document.getElementById("assignmentDateFilter");
     if(assignmentFilter){
       assignmentFilter.value = assignment.date;
@@ -3341,6 +3581,9 @@ function saveClassSettings(e){
     });
   });
 
+  data.attendance=(data.attendance||[]).filter(a=>validIds.has(a.studentId));
+  data.assignments.forEach(applyAttendanceForAssignment);
+  markPastPendingAssignmentsMissing(data);
   saveData();
   toast("班級資料已儲存");
 }
@@ -3503,6 +3746,7 @@ document.getElementById("showAllContactItems").addEventListener("click",()=>{
 });
 document.getElementById("addContactItemBtn").addEventListener("click",openNewContactItem);
 document.getElementById("studentSearch").addEventListener("input",renderStudents);
+document.getElementById("attendanceDate")?.addEventListener("change",renderAttendance);
 document.getElementById("classForm").addEventListener("submit",saveClassSettings);
 document.getElementById("exportBtn").addEventListener("click",exportBackup);
 document.getElementById("importInput").addEventListener("change",e=>importBackup(e.target.files[0]));
@@ -3534,6 +3778,7 @@ noiseEl("noiseCalibrateBtn")?.addEventListener("click",startNoiseCalibration);
 noiseEl("noiseThreshold")?.addEventListener("input",()=>{noiseStandard="custom";renderNoiseTool()});
 
 
+updateAllClassesForDate();
 renderClassHome();
 
 startDateRolloverGuards();
@@ -3555,7 +3800,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.54: Native Safari date controls align their internal segments inconsistently.
+// v2.60: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){

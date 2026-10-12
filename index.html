@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=2.54" />
+  <link rel="stylesheet" href="style.css?v=2.60" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.54</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.60</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.54</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.60</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -166,6 +166,11 @@
           <span>搜尋學生</span>
           <input type="search" id="studentSearch" placeholder="輸入座號或姓名" />
         </label>
+      </div>
+      <div class="attendance-panel card">
+        <div class="attendance-heading"><div><h3>學生出缺席登記</h3><p class="muted">請假將連動前一個實際上課日的作業。</p></div><div class="attendance-actions"><button type="button" class="secondary" onclick="openSchoolCalendar()">上課日曆設定</button><label>出缺席日期 <input id="attendanceDate" type="date" /></label></div></div>
+        <div id="attendanceList" class="attendance-list"></div>
+        <p class="muted attendance-note">僅將「未確認」的作業自動改為缺交，不覆蓋已交、完成或人工修改的狀態。取消請假只還原系統自動登記且尚未人工修改的紀錄。可透過「上課日曆設定」登記國定假日、校內休假與週末補課。</p>
       </div>
       <div id="studentList" class="student-grid"></div>
     </section>
@@ -463,6 +468,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=2.54"></script>
+  <script src="app.js?v=2.60"></script>
 </body>
 </html>
