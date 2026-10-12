@@ -2163,3 +2163,55 @@ nav.tabs .tab{
 .calendar-entry .muted{font-size:12px;margin-top:4px}
 .calendar-entry-actions{display:flex;gap:6px;flex-wrap:wrap}
 @media(max-width:560px){.calendar-entry-form{grid-template-columns:1fr}.calendar-entry{align-items:flex-start;flex-direction:column}.attendance-actions{width:100%}}
+
+
+/* v2.61：iPad Safari 出缺席／上課日曆排版 */
+.attendance-panel,.school-calendar-panel{min-width:0;max-width:100%}
+.attendance-heading>div:first-child{min-width:0;flex:1 1 300px}
+.attendance-actions{min-width:0;justify-content:flex-end}
+.attendance-list{grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:10px}
+.attendance-student{min-width:0;overflow:hidden}
+.attendance-student>span{min-width:0;overflow-wrap:anywhere}
+.attendance-student select.attendance-status{
+  flex:0 0 98px;width:98px;min-width:0;max-width:98px;
+  height:40px;padding:7px 20px 7px 8px;
+  text-align:center;text-align-last:center;
+  -webkit-text-align-last:center;
+  font-weight:750;border:1px solid;border-radius:11px;
+  appearance:none;-webkit-appearance:none;
+  background-image:none;
+}
+.attendance-student select.attendance-status.present{background:#e7f8ef;color:#137a4d;border-color:#a6e3c3}
+.attendance-student select.attendance-status.leave{background:#eaf2ff;color:#245fc4;border-color:#b9d0fc}
+.attendance-student select.attendance-status.absent{background:#fff0f1;color:#c63347;border-color:#f4b8c0}
+.attendance-student select.attendance-status:focus-visible{outline:2px solid #6c63ff;outline-offset:2px}
+/* 日曆表單不再使用兩個 Safari 日期欄位會互相擠壓的等寬格 */
+.school-calendar-panel{width:100%;overflow-x:hidden}
+.school-calendar-panel .calendar-entry-form{
+  display:grid;grid-template-columns:minmax(0,1fr);gap:12px;
+  width:100%;max-width:100%;min-width:0
+}
+.school-calendar-panel .calendar-entry-form>label{width:100%;max-width:100%;min-width:0}
+.school-calendar-panel .calendar-entry-form input:not([type=checkbox]),
+.school-calendar-panel .calendar-entry-form select{
+  display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box
+}
+.school-calendar-panel .calendar-entry-form input[type="date"]{
+  width:min(100%,240px);max-width:100%;min-width:0;
+  -webkit-appearance:none;appearance:none;
+  padding-inline:10px;height:42px;line-height:normal
+}
+.school-calendar-panel .calendar-entry-form select{width:min(100%,320px)}
+.school-calendar-panel .calendar-entry-form .calendar-announce{
+  display:flex;flex-direction:row;align-items:center;grid-column:auto;gap:9px
+}
+.school-calendar-panel .calendar-entry-form .calendar-announce input[type=checkbox]{
+  flex:0 0 auto;width:20px;min-width:20px;height:20px;margin:0
+}
+.school-calendar-panel .calendar-entry-form button{max-width:100%}
+.school-calendar-panel .calendar-entry{min-width:0}
+.school-calendar-panel .calendar-entry>div:first-child{min-width:0;overflow-wrap:anywhere}
+@media(max-width:640px){
+ .attendance-actions{width:100%;justify-content:flex-start}
+ .attendance-list{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))}
+}

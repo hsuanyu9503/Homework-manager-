@@ -1,4 +1,4 @@
-const APP_VERSION = "2.60";
+const APP_VERSION = "2.61";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -197,7 +197,7 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.60：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
+// v2.61：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
 // 例如 10/12 作業 → 10/13 批改 → 10/14 起，未確認者轉缺交。
 // 上課日採用該班行事曆；不會在批改日當天提前轉換。
 function nextClassSchoolDay(classData,dateStr){
@@ -213,7 +213,23 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.60: reconcile both automatic causes together; manual states always win.
+// v2.61：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+const AUTO_LEAVE_NOTE="【請假】";
+function syncAutoLeaveNote(record,shouldMark){
+  record.note=String(record.note||"");
+  if(shouldMark){
+    if(!record.autoLeaveNote){
+      if(!record.note.includes(AUTO_LEAVE_NOTE)){
+        record.note=record.note ? `${record.note} ${AUTO_LEAVE_NOTE}` : AUTO_LEAVE_NOTE;
+        record.autoLeaveNote=true;
+      }
+    }
+  }else if(record.autoLeaveNote){
+    record.note=record.note.replace(/(?:\s*)【請假】/g,"").trim();
+    delete record.autoLeaveNote;
+  }
+}
+// v2.61: reconcile both automatic causes together; manual states always win.
 function markPastPendingAssignmentsMissing(classData,today=localDateString()){
   if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
   classData.records ||= [];
@@ -250,19 +266,24 @@ function markPastPendingAssignmentsMissing(classData,today=localDateString()){
         record={assignmentId:assignment.id,studentId:student.id,status:"missing",note:""};
         if(overdue)record.autoOverdue=true;
         if(leaveDate)record.autoLeaveDate=leaveDate;
+        syncAutoLeaveNote(record,!!leaveDate);
         classData.records.push(record);
         changed++;
         continue;
       }
       const owned=!!(record.autoOverdue||record.autoLeaveDate);
-      if(!owned&&record.status!=="pending")continue; // teacher-owned status
+      if(!owned&&record.status!=="pending"){
+        syncAutoLeaveNote(record,false);
+        continue; // teacher-owned status
+      }
       if(owned&&record.status!=="missing"&&record.status!=="pending"){
         delete record.autoOverdue;
         delete record.autoLeaveDate;
+        syncAutoLeaveNote(record,false);
         changed++;
         continue;
       }
-      const before=JSON.stringify([record.status,record.autoOverdue||false,record.autoLeaveDate||""]);
+      const before=JSON.stringify([record.status,record.autoOverdue||false,record.autoLeaveDate||"",record.note||""]);
       if(overdue||leaveDate){
         record.status="missing";
         if(overdue)record.autoOverdue=true;else delete record.autoOverdue;
@@ -272,7 +293,8 @@ function markPastPendingAssignmentsMissing(classData,today=localDateString()){
         delete record.autoOverdue;
         delete record.autoLeaveDate;
       }
-      if(before!==JSON.stringify([record.status,record.autoOverdue||false,record.autoLeaveDate||""]))changed++;
+      syncAutoLeaveNote(record,!!leaveDate && record.status==="missing");
+      if(before!==JSON.stringify([record.status,record.autoOverdue||false,record.autoLeaveDate||"",record.note||""]))changed++;
     }
   }
   return changed;
@@ -2963,7 +2985,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.60: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.61: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3083,7 +3105,7 @@ function renderAttendance(){
   const students=[...data.students].sort((a,b)=>a.number-b.number);
   list.innerHTML=students.length?students.map(s=>{
     const status=(data.attendance||[]).find(a=>a.studentId===s.id&&a.date===date)?.status||"present";
-    return `<div class="attendance-student"><span>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span><select aria-label="${escapeAttr(s.name)}出缺席狀態" onchange="setAttendance('${s.id}',this.value)">
+    return `<div class="attendance-student"><span>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span><select class="attendance-status ${status}" aria-label="${escapeAttr(s.name)}出缺席狀態" onchange="setAttendance('${s.id}',this.value)">
       <option value="present" ${status==="present"?"selected":""}>出席</option>
       <option value="leave" ${status==="leave"?"selected":""}>請假</option>
       <option value="absent" ${status==="absent"?"selected":""}>缺席</option>
@@ -3193,6 +3215,7 @@ function closeAssignmentModal(){
 function setStatus(assignmentId, studentId, select){
   const r = ensureRecord(assignmentId, studentId);
   r.status = select.value;
+  syncAutoLeaveNote(r,false);
   delete r.autoLeaveDate; // A manual change must not be undone by attendance edits.
   delete r.autoOverdue;
   persistActiveClass();
@@ -3225,6 +3248,8 @@ function maybeArchiveCompletedAssignment(assignmentId){
 function updateNote(assignmentId, studentId, note){
   const r = ensureRecord(assignmentId, studentId);
   r.note = note.trim();
+  // 老師自行編輯備註後，後續自動規則不應刪除老師的文字。
+  delete r.autoLeaveNote;
   persistActiveClass();
 }
 
@@ -3800,7 +3825,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.60: Native Safari date controls align their internal segments inconsistently.
+// v2.61: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){
