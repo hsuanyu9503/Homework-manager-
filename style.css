@@ -2430,3 +2430,22 @@ nav.tabs .tab{
     margin-right:0;
   }
 }
+
+/* v2.74: assignment dialog header breathing room; avoid sort buttons colliding with close icon. */
+.modal:has(.assignment-modal-top) .modal-head{
+  padding-right:50px;
+  min-height:44px;
+  margin-bottom:16px;
+}
+.modal:has(.assignment-modal-top) .modal-head h3{min-width:0;overflow-wrap:anywhere}
+.modal:has(.assignment-modal-top) .assignment-modal-top{
+  margin-top:6px;
+  padding-top:4px;
+  gap:14px;
+  align-items:center;
+}
+.modal:has(.assignment-modal-top) .assignment-sort-switch{flex-wrap:wrap;gap:10px}
+@media(max-width:620px){
+  .modal:has(.assignment-modal-top) .modal-head{padding-right:38px;margin-bottom:12px}
+  .modal:has(.assignment-modal-top) .assignment-modal-top{align-items:stretch}
+}
