@@ -2284,3 +2284,40 @@ nav.tabs .tab{
   .attendance-history-filters{grid-template-columns:minmax(0,1fr);column-gap:0}
   .attendance-history-filters>label:first-child,.attendance-history-filters>button{grid-column:1}
 }
+
+
+/* v2.66: iPad Safari date controls have an intrinsic width; use two fixed,
+   narrower tracks instead of stretch-to-fill percentage columns. */
+.attendance-history-filters{
+  grid-template-columns:repeat(2,minmax(0,230px));
+  justify-content:start;
+  column-gap:32px;
+  row-gap:14px;
+}
+.attendance-history-filters>label:first-child{
+  grid-column:1/-1;
+  width:100%;
+  max-width:none;
+}
+.attendance-history-filters>label:has(input[type="date"]){
+  width:230px;
+  max-width:100%;
+  min-width:0;
+}
+.attendance-history-filters input[type="date"]{
+  width:230px;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  padding-inline:8px;
+}
+.attendance-history-filters>button{
+  grid-column:1/-1;
+  justify-self:start;
+}
+@media(max-width:620px){
+  .attendance-history-filters{grid-template-columns:minmax(0,1fr);column-gap:0}
+  .attendance-history-filters>label:first-child,
+  .attendance-history-filters>button{grid-column:1}
+  .attendance-history-filters>label:has(input[type="date"]){width:min(100%,230px)}
+}

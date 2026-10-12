@@ -1,4 +1,4 @@
-const APP_VERSION = "2.65";
+const APP_VERSION = "2.66";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -199,7 +199,7 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.65：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
+// v2.66：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
 // 例如 10/12 作業 → 10/13 批改 → 10/14 起，未確認者轉缺交。
 // 上課日採用該班行事曆；不會在批改日當天提前轉換。
 function nextClassSchoolDay(classData,dateStr){
@@ -215,7 +215,7 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.65：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+// v2.66：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
 const AUTO_LEAVE_NOTE="【請假】";
 function syncAutoLeaveNote(record,shouldMark){
   record.note=String(record.note||"");
@@ -231,7 +231,7 @@ function syncAutoLeaveNote(record,shouldMark){
     delete record.autoLeaveNote;
   }
 }
-// v2.65: reconcile both automatic causes together; manual states always win.
+// v2.66: reconcile both automatic causes together; manual states always win.
 function markPastPendingAssignmentsMissing(classData,today=localDateString()){
   if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
   classData.records ||= [];
@@ -2987,7 +2987,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.65: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.66: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3084,7 +3084,7 @@ function applyAttendanceForAssignment(assignment){
   (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
     .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
 }
-// v2.65: point-in-time attendance audit and review invalidation.
+// v2.66: point-in-time attendance audit and review invalidation.
 function markAttendanceReviewChanged(date){
   const check=attendanceCheckForDate(date);
   if(check?.checkedAt){
@@ -3175,7 +3175,7 @@ function undoAttendanceChecked(){
   renderAttendance();
   toast("已取消點名完成標記");
 }
-// v2.65 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
+// v2.66 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
 const ATTENDANCE_LABELS={present:"出席",leave:"請假",absent:"缺席"};
 const ATTENDANCE_LEAVE_TYPES=["事假","病假","公假","喪假","生理假","其他"];
 function openAttendanceHistory(){
@@ -4020,7 +4020,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.65: Native Safari date controls align their internal segments inconsistently.
+// v2.66: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){
