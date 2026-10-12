@@ -1,4 +1,4 @@
-const APP_VERSION = "2.61";
+const APP_VERSION = "2.64";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -27,6 +27,7 @@ function defaultData(){
     assignments:[],
     records:[],
     attendance:[],
+    attendanceChecks:[],
     schoolCalendar:[],
     contactItems:[],
     notices:[],
@@ -91,6 +92,7 @@ function normalizeData(input){
     assignments:Array.isArray(input?.assignments) ? input.assignments : [],
     records:Array.isArray(input?.records) ? input.records : [],
     attendance:Array.isArray(input?.attendance) ? input.attendance : [],
+    attendanceChecks:Array.isArray(input?.attendanceChecks) ? input.attendanceChecks : [],
     schoolCalendar:Array.isArray(input?.schoolCalendar) ? input.schoolCalendar : [],
     contactItems:(Array.isArray(input?.contactItems)
       ? input.contactItems
@@ -197,7 +199,7 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.61：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
+// v2.64：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
 // 例如 10/12 作業 → 10/13 批改 → 10/14 起，未確認者轉缺交。
 // 上課日採用該班行事曆；不會在批改日當天提前轉換。
 function nextClassSchoolDay(classData,dateStr){
@@ -213,7 +215,7 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.61：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+// v2.64：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
 const AUTO_LEAVE_NOTE="【請假】";
 function syncAutoLeaveNote(record,shouldMark){
   record.note=String(record.note||"");
@@ -229,7 +231,7 @@ function syncAutoLeaveNote(record,shouldMark){
     delete record.autoLeaveNote;
   }
 }
-// v2.61: reconcile both automatic causes together; manual states always win.
+// v2.64: reconcile both automatic causes together; manual states always win.
 function markPastPendingAssignmentsMissing(classData,today=localDateString()){
   if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
   classData.records ||= [];
@@ -2985,7 +2987,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.61: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.64: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3082,6 +3084,22 @@ function applyAttendanceForAssignment(assignment){
   (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
     .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
 }
+// v2.64: point-in-time attendance audit and review invalidation.
+function markAttendanceReviewChanged(date){
+  const check=attendanceCheckForDate(date);
+  if(check?.checkedAt){
+    check.needsReview=true;
+    check.lastChangedAt=new Date().toISOString();
+  }
+}
+function stampAttendanceEntry(entry){
+  entry.updatedAt=new Date().toISOString();
+}
+function formatAttendanceTimestamp(value){
+  if(!value)return "尚無修改時間";
+  const d=new Date(value);
+  return Number.isNaN(d.getTime())?"尚無修改時間":d.toLocaleString("zh-TW",{hour12:false});
+}
 function setAttendance(studentId,status){
   const date=document.getElementById("attendanceDate")?.value;
   if(!date||!data.students.some(s=>s.id===studentId))return;
@@ -3090,11 +3108,181 @@ function setAttendance(studentId,status){
   const previous=data.attendance.find(a=>a.studentId===studentId&&a.date===date);
   if(previous?.status==="leave"&&status!=="leave")revertLeaveMissing(studentId,date);
   data.attendance=data.attendance.filter(a=>!(a.studentId===studentId&&a.date===date));
-  if(status!=="present")data.attendance.push({studentId,date,status});
-  const changed=markPastPendingAssignmentsMissing(data);
+  if(status!=="present"){
+    const entry=previous?.status===status
+      ? {...previous,studentId,date,status}
+      : {studentId,date,status};
+    if(previous?.status!==status)stampAttendanceEntry(entry);
+    data.attendance.push(entry);
+  }
+  if((previous?.status||"present")!==status)markAttendanceReviewChanged(date);
+  markPastPendingAssignmentsMissing(data);
   persistActiveClass();
   renderStudents();
-  toast(status==="leave"?`已登記請假；${previousSchoolDay(date)} 的 ${changed} 筆未確認作業改為缺交`:status==="absent"?"已登記缺席（不自動修改作業）":"已登記出席");
+  if(status==="leave"){
+    openAttendanceLeaveType(studentId,date);
+  }else{
+    toast(status==="absent"?"已登記缺席（不自動修改作業）":"已登記出席");
+  }
+}
+function openAttendanceLeaveType(studentId,date){
+  const student=data.students.find(s=>s.id===studentId);
+  const entry=(data.attendance||[]).find(e=>e.studentId===studentId&&e.date===date&&e.status==="leave");
+  if(!student||!entry)return;
+  showModal("請假假別與備註",`<form id="attendanceLeaveForm" class="modal-form">
+    <p class="muted">${escapeHtml(date)} · ${String(student.number).padStart(2,"0")} ${escapeHtml(student.name)}</p>
+    <label>假別
+      <select id="attendanceLeaveType"><option value="">未註記</option>${ATTENDANCE_LEAVE_TYPES.map(t=>`<option value="${escapeAttr(t)}" ${entry.leaveType===t?"selected":""}>${t}</option>`).join("")}</select>
+    </label>
+    <label>備註（選填）<textarea id="attendanceLeaveNote" rows="3" maxlength="200" placeholder="例如：上午請假、家長已通知">${escapeHtml(entry.note||"")}</textarea></label>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">稍後補充</button><button type="submit" class="primary">儲存請假資料</button></div>
+  </form>`);
+  document.getElementById("attendanceLeaveForm")?.addEventListener("submit",e=>{
+    e.preventDefault();
+    const current=(data.attendance||[]).find(x=>x.studentId===studentId&&x.date===date&&x.status==="leave");
+    if(!current){hideModal();return;}
+    const nextType=document.getElementById("attendanceLeaveType").value;
+    const nextNote=document.getElementById("attendanceLeaveNote").value.trim().slice(0,200);
+    if((current.leaveType||"")!==nextType||(current.note||"")!==nextNote){
+      current.leaveType=nextType;
+      current.note=nextNote;
+      stampAttendanceEntry(current);
+      markAttendanceReviewChanged(date);
+    }
+    persistActiveClass();
+    hideModal();
+    renderStudents();
+    toast("請假假別與備註已儲存");
+  });
+}
+function attendanceCheckForDate(date){
+  return (data.attendanceChecks||[]).find(e=>e.date===date);
+}
+function markAttendanceChecked(){
+  const date=document.getElementById("attendanceDate")?.value;
+  if(!date)return;
+  data.attendanceChecks ||= [];
+  data.attendanceChecks=data.attendanceChecks.filter(e=>e.date!==date);
+  data.attendanceChecks.push({date,checkedAt:new Date().toISOString(),needsReview:false});
+  persistActiveClass();
+  renderAttendance();
+  toast("已完成當日點名");
+}
+function undoAttendanceChecked(){
+  const date=document.getElementById("attendanceDate")?.value;
+  data.attendanceChecks=(data.attendanceChecks||[]).filter(e=>e.date!==date);
+  persistActiveClass();
+  renderAttendance();
+  toast("已取消點名完成標記");
+}
+// v2.64 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
+const ATTENDANCE_LABELS={present:"出席",leave:"請假",absent:"缺席"};
+const ATTENDANCE_LEAVE_TYPES=["事假","病假","公假","喪假","生理假","其他"];
+function openAttendanceHistory(){
+  showModal("學生出缺席紀錄",`
+    <div class="attendance-history">
+      <p class="muted">可依學生及日期範圍查看已登記的請假、缺席紀錄，並補充假別及備註。未登記的日期預設為出席，不列入歷史清單。</p>
+      <div class="attendance-history-filters">
+        <label>學生<select id="attendanceHistoryStudent"><option value="">全班學生</option>${[...data.students].sort((a,b)=>a.number-b.number).map(s=>`<option value="${escapeAttr(s.id)}">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</option>`).join("")}</select></label>
+        <label>起始日期<input id="attendanceHistoryFrom" type="date"></label>
+        <label>結束日期<input id="attendanceHistoryTo" type="date"></label>
+        <button type="button" class="secondary" id="attendanceHistoryReset">清除篩選</button>
+      </div>
+      <div class="attendance-day-review">
+        <label>每日出席一覽日期 <input id="attendanceReviewDate" type="date" value="${escapeAttr(document.getElementById("attendanceDate")?.value||localDateString())}"></label>
+        <div id="attendanceDaySummary" class="muted"></div>
+        <div id="attendanceDayList" class="attendance-day-list"></div>
+      </div>
+      <div class="attendance-history-subtitle"><strong>請假與缺席歷史</strong></div>
+      <div id="attendanceHistorySummary" class="muted"></div>
+      <div id="attendanceHistoryList" class="attendance-history-list"></div>
+    </div>`);
+  for(const id of ["attendanceHistoryStudent","attendanceHistoryFrom","attendanceHistoryTo"]){
+    document.getElementById(id)?.addEventListener("change",renderAttendanceHistory);
+  }
+  document.getElementById("attendanceHistoryReset")?.addEventListener("click",()=>{
+    for(const id of ["attendanceHistoryStudent","attendanceHistoryFrom","attendanceHistoryTo"]){
+      document.getElementById(id).value="";
+    }
+    renderAttendanceHistory();
+  });
+  document.getElementById("attendanceReviewDate")?.addEventListener("change",renderAttendanceDayReview);
+  renderAttendanceDayReview();
+  renderAttendanceHistory();
+}
+function renderAttendanceDayReview(){
+  const list=document.getElementById("attendanceDayList");
+  if(!list)return;
+  const date=document.getElementById("attendanceReviewDate")?.value||localDateString();
+  const entries=[...data.students].sort((a,b)=>a.number-b.number).map(student=>({
+    student,attendance:(data.attendance||[]).find(e=>e.studentId===student.id&&e.date===date)
+  }));
+  const count=status=>entries.filter(e=>(e.attendance?.status||"present")===status).length;
+  const check=attendanceCheckForDate(date);
+  document.getElementById("attendanceDaySummary").textContent=
+    `${date} · 出席 ${count("present")} 人 · 請假 ${count("leave")} 人 · 缺席 ${count("absent")} 人 · ${check?(check.needsReview?"已完成・有異動（待重新確認）":"已完成點名"):"尚未完成點名"}${check?.checkedAt?" · 完成時間 "+formatAttendanceTimestamp(check.checkedAt):""}`;
+  list.innerHTML=entries.map(({student,attendance})=>{
+    const status=attendance?.status||"present";
+    return `<div class="attendance-day-student"><span>${String(student.number).padStart(2,"0")} ${escapeHtml(student.name)}</span><span class="attendance-history-tag ${status}">${ATTENDANCE_LABELS[status]||"出席"}${status==="leave"&&attendance?.leaveType?" · "+escapeHtml(attendance.leaveType):""}</span></div>`;
+  }).join("")||'<p class="muted">尚未建立學生名單。</p>';
+}
+function renderAttendanceHistory(){
+  const list=document.getElementById("attendanceHistoryList");
+  if(!list)return;
+  const studentId=document.getElementById("attendanceHistoryStudent")?.value||"";
+  const from=document.getElementById("attendanceHistoryFrom")?.value||"";
+  const to=document.getElementById("attendanceHistoryTo")?.value||"";
+  const students=new Map(data.students.map(s=>[s.id,s]));
+  const entries=(data.attendance||[]).filter(e=>
+    students.has(e.studentId)&&["leave","absent"].includes(e.status)&&
+    (!studentId||e.studentId===studentId)&&(!from||e.date>=from)&&(!to||e.date<=to)
+  ).sort((a,b)=>b.date.localeCompare(a.date)||
+    (students.get(a.studentId).number-students.get(b.studentId).number));
+  document.getElementById("attendanceHistorySummary").textContent=
+    `共 ${entries.length} 筆紀錄 · 請假 ${entries.filter(e=>e.status==="leave").length} 筆 · 缺席 ${entries.filter(e=>e.status==="absent").length} 筆`;
+  list.innerHTML=entries.length?entries.map(e=>{
+    const student=students.get(e.studentId);
+    const idx=(data.attendance||[]).indexOf(e);
+    const leaveType=String(e.leaveType||"");
+    return `<div class="attendance-history-item">
+      <div class="attendance-history-top">
+        <strong>${escapeHtml(e.date)} · ${String(student.number).padStart(2,"0")} ${escapeHtml(student.name)}</strong>
+        <span class="attendance-history-tag ${e.status}">${ATTENDANCE_LABELS[e.status]}</span>
+      </div>
+      <div class="attendance-history-fields">
+        <label>假別
+          <select ${e.status!=="leave"?"disabled":""} onchange="updateAttendanceHistory(${idx},'leaveType',this.value)">
+            <option value="">${e.status==="leave"?"未註記":"不適用"}</option>
+            ${ATTENDANCE_LEAVE_TYPES.map(t=>`<option value="${escapeAttr(t)}" ${leaveType===t?"selected":""}>${t}</option>`).join("")}
+          </select>
+        </label>
+        <label>備註
+          <input type="text" maxlength="200" value="${escapeAttr(e.note||"")}" placeholder="例如：上午請假、家長已通知" onchange="updateAttendanceHistory(${idx},'note',this.value)">
+        </label>
+      </div>
+      <div class="attendance-history-updated">最後修改：${escapeHtml(formatAttendanceTimestamp(e.updatedAt))}</div>
+    </div>`;
+  }).join(""):'<div class="empty">此篩選條件下尚無請假或缺席紀錄。</div>';
+}
+function updateAttendanceHistory(index,field,value){
+  const entry=(data.attendance||[])[index];
+  if(!entry)return;
+  let next;
+  if(field==="leaveType"){
+    if(entry.status!=="leave"||!["",...ATTENDANCE_LEAVE_TYPES].includes(value))return;
+    next=value;
+  }else if(field==="note"){
+    next=String(value).trim().slice(0,200);
+  }else return;
+  if((entry[field]||"")===next)return;
+  entry[field]=next;
+  stampAttendanceEntry(entry);
+  markAttendanceReviewChanged(entry.date);
+  persistActiveClass();
+  renderAttendanceHistory();
+  renderAttendanceDayReview();
+  renderAttendance();
+  toast("出缺席紀錄已儲存");
 }
 function renderAttendance(){
   const input=document.getElementById("attendanceDate");
@@ -3103,13 +3291,20 @@ function renderAttendance(){
   if(!input.value)input.value=localDateString();
   const date=input.value;
   const students=[...data.students].sort((a,b)=>a.number-b.number);
+  const check=attendanceCheckForDate(date);
+  const actions=document.getElementById("attendanceCheckActions");
+  if(actions)actions.innerHTML=check
+    ? (check.needsReview
+      ? `<span class="attendance-review-needed">● 已完成・有異動（待重新確認）</span><button type="button" class="primary" onclick="markAttendanceChecked()">重新確認點名</button><button type="button" class="secondary" onclick="undoAttendanceChecked()">取消完成標記</button>`
+      : `<span class="attendance-checked">✓ 已完成點名 · ${escapeHtml(formatAttendanceTimestamp(check.checkedAt))}</span><button type="button" class="secondary" onclick="undoAttendanceChecked()">取消完成標記</button>`)
+    : `<span class="muted">尚未完成點名</span><button type="button" class="primary" onclick="markAttendanceChecked()">完成當日點名</button>`;
   list.innerHTML=students.length?students.map(s=>{
     const status=(data.attendance||[]).find(a=>a.studentId===s.id&&a.date===date)?.status||"present";
     return `<div class="attendance-student"><span>${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</span><select class="attendance-status ${status}" aria-label="${escapeAttr(s.name)}出缺席狀態" onchange="setAttendance('${s.id}',this.value)">
       <option value="present" ${status==="present"?"selected":""}>出席</option>
       <option value="leave" ${status==="leave"?"selected":""}>請假</option>
       <option value="absent" ${status==="absent"?"selected":""}>缺席</option>
-    </select></div>`;
+    </select>${status==="leave"?`<button type="button" class="secondary attendance-leave-edit" onclick="openAttendanceLeaveType('${s.id}','${date}')">假別</button>`:""}</div>`;
   }).join(""):'<div class="empty">尚未建立學生名單。</div>';
 }
 function renderStudents(){
@@ -3825,7 +4020,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.61: Native Safari date controls align their internal segments inconsistently.
+// v2.64: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){
