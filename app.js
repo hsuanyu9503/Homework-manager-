@@ -1,4 +1,4 @@
-const APP_VERSION = "2.66";
+const APP_VERSION = "2.67";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -41,7 +41,7 @@ function defaultData(){
     groups:[],
     groupScores:{},
     assignmentGroups:[],
-    settings:{overdueDays:2}
+    settings:{overdueDays:2,attendancePassword:"1234"}
   };
 }
 
@@ -126,6 +126,7 @@ function normalizeData(input){
       history:Array.isArray(input?.seating?.history)?input.seating.history.slice(0,20):[]
     },
     settings:{
+      attendancePassword:typeof input?.settings?.attendancePassword==="string" && input.settings.attendancePassword.length>=4 ? input.settings.attendancePassword : "1234",
       overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2,
       pageLocks:Object.fromEntries(["assignments","contactbook","students","gradebook","scores","seats"].map(page=>{
         const lock=input?.settings?.pageLocks?.[page];
@@ -199,7 +200,7 @@ function ensureRecord(assignmentId, studentId){
   return r;
 }
 
-// v2.66：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
+// v2.67：作業日期的下一個上課日是批改日；批改日隔天才自動轉缺交。
 // 例如 10/12 作業 → 10/13 批改 → 10/14 起，未確認者轉缺交。
 // 上課日採用該班行事曆；不會在批改日當天提前轉換。
 function nextClassSchoolDay(classData,dateStr){
@@ -215,7 +216,7 @@ function nextClassSchoolDay(classData,dateStr){
   }
   return "";
 }
-// v2.66：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
+// v2.67：僅管理系統附加的請假備註，不覆蓋教師自行輸入的內容。
 const AUTO_LEAVE_NOTE="【請假】";
 function syncAutoLeaveNote(record,shouldMark){
   record.note=String(record.note||"");
@@ -231,7 +232,7 @@ function syncAutoLeaveNote(record,shouldMark){
     delete record.autoLeaveNote;
   }
 }
-// v2.66: reconcile both automatic causes together; manual states always win.
+// v2.67: reconcile both automatic causes together; manual states always win.
 function markPastPendingAssignmentsMissing(classData,today=localDateString()){
   if(!classData||!Array.isArray(classData.assignments)||!Array.isArray(classData.students))return 0;
   classData.records ||= [];
@@ -448,6 +449,20 @@ function openClassSettings(classId){
 
       <div class="settings-divider"></div>
 
+      <div class="settings-block attendance-password-settings">
+        <div>
+          <div class="item-title">點名確認密碼</div>
+          <div class="item-sub">完成點名及重新確認點名時必須輸入。預設為 1234，可設定 4～12 碼；眼睛圖示需按住才會顯示密碼。</div>
+        </div>
+        <label class="settings-field"><span>教師點名密碼</span>
+          <span class="password-peek-wrap"><input id="attendancePasswordSetting" type="password" minlength="4" maxlength="12" autocomplete="new-password" value="${escapeAttr(d.settings.attendancePassword||"1234")}" required>
+            <button type="button" class="password-peek-button" aria-label="按住顯示密碼" title="按住顯示密碼" onpointerdown="showPasswordWhileHeld(event)" onpointerup="hidePasswordAfterHold(event)" onpointercancel="hidePasswordAfterHold(event)" onpointerleave="hidePasswordAfterHold(event)" oncontextmenu="event.preventDefault()">${passwordEyeIcon()}</button>
+          </span>
+        </label>
+      </div>
+
+      <div class="settings-divider"></div>
+
       <div class="settings-block page-lock-settings">
         <div>
           <div class="item-title">分頁密碼設定</div>
@@ -458,7 +473,9 @@ function openClassSettings(classId){
             const lock=d.settings.pageLocks?.[page] || {enabled:false,password:""};
             return `<div class="page-lock-row">
               <label class="page-lock-toggle"><input type="checkbox" data-lock-enabled="${page}" ${lock.enabled?"checked":""}><span>${label}</span></label>
-              <input type="password" class="page-lock-password" data-lock-password="${page}" value="${escapeAttr(lock.password||"")}" minlength="4" maxlength="12" placeholder="4～12 碼" autocomplete="new-password" ${lock.enabled?"":"disabled"}>
+              <span class="password-peek-wrap"><input type="password" class="page-lock-password" data-lock-password="${page}" value="${escapeAttr(lock.password||"")}" minlength="4" maxlength="12" placeholder="4～12 碼" autocomplete="new-password" ${lock.enabled?"":"disabled"}>
+                <button type="button" class="password-peek-button" aria-label="按住顯示密碼" title="按住顯示密碼" onpointerdown="showPasswordWhileHeld(event)" onpointerup="hidePasswordAfterHold(event)" onpointercancel="hidePasswordAfterHold(event)" onpointerleave="hidePasswordAfterHold(event)" oncontextmenu="event.preventDefault()">${passwordEyeIcon()}</button>
+              </span>
             </div>`;
           }).join("")}
         </div>
@@ -522,7 +539,14 @@ function openClassSettings(classId){
       nextPageLocks[page]={enabled,password:enabled?password:""};
     }
 
+    const attendancePassword=document.getElementById("attendancePasswordSetting").value;
+    if(attendancePassword.length<4||attendancePassword.length>12){
+      toast("點名確認密碼需為 4～12 碼");
+      document.getElementById("attendancePasswordSetting").focus();
+      return;
+    }
     d.class.name = newName;
+    d.settings.attendancePassword=attendancePassword;
     d.settings.pageLocks=nextPageLocks;
     d.students = roster.map(s=>{
       const old = oldByNumber.get(s.number);
@@ -2987,7 +3011,7 @@ function toggleSeatPresentation(forceOff=false){
     if(back)back.remove();
   }
 }
-// v2.66: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
+// v2.67: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
   const entry=(data.schoolCalendar||[]).filter(x=>x.date===dateStr&&x.type!=="event").at(-1);
   if(entry)return entry.type==="school";
@@ -3084,7 +3108,7 @@ function applyAttendanceForAssignment(assignment){
   (data.attendance||[]).filter(entry=>entry.status==="leave"&&previousSchoolDay(entry.date)===assignment.date)
     .forEach(entry=>applyLeaveMissing(entry.studentId,entry.date));
 }
-// v2.66: point-in-time attendance audit and review invalidation.
+// v2.67: point-in-time attendance audit and review invalidation.
 function markAttendanceReviewChanged(date){
   const check=attendanceCheckForDate(date);
   if(check?.checkedAt){
@@ -3158,15 +3182,62 @@ function openAttendanceLeaveType(studentId,date){
 function attendanceCheckForDate(date){
   return (data.attendanceChecks||[]).find(e=>e.date===date);
 }
+// Hold-to-reveal works for mouse, touch and Apple Pencil; release always hides.
+function passwordEyeIcon(){
+  return `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+}
+function showPasswordWhileHeld(event){
+  if(event.pointerType==="mouse"&&event.button!==0)return;
+  event.preventDefault();
+  const button=event.currentTarget;
+  const input=button.closest(".password-peek-wrap")?.querySelector("input");
+  if(!input||input.disabled)return;
+  input.type="text";
+  button.classList.add("is-revealing");
+  try{button.setPointerCapture(event.pointerId);}catch(e){}
+}
+function hidePasswordAfterHold(event){
+  const button=event.currentTarget;
+  const input=button.closest(".password-peek-wrap")?.querySelector("input");
+  if(input)input.type="password";
+  button.classList.remove("is-revealing");
+  try{if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);}catch(e){}
+}
 function markAttendanceChecked(){
   const date=document.getElementById("attendanceDate")?.value;
   if(!date)return;
-  data.attendanceChecks ||= [];
-  data.attendanceChecks=data.attendanceChecks.filter(e=>e.date!==date);
-  data.attendanceChecks.push({date,checkedAt:new Date().toISOString(),needsReview:false});
-  persistActiveClass();
-  renderAttendance();
-  toast("已完成當日點名");
+  const classId=activeClassId;
+  const check=attendanceCheckForDate(date);
+  const title=check?.needsReview?"重新確認點名":"完成當日點名";
+  showModal(title,`<form id="attendanceConfirmForm" class="modal-form">
+    <p class="muted">${escapeHtml(date)} · 請輸入教師點名密碼，確認當日出缺席紀錄。</p>
+    <label><span>教師密碼</span>
+      <span class="password-peek-wrap"><input id="attendanceConfirmPassword" type="password" autocomplete="off" minlength="4" maxlength="12" required placeholder="請輸入教師密碼">
+        <button type="button" class="password-peek-button" aria-label="按住顯示密碼" title="按住顯示密碼" onpointerdown="showPasswordWhileHeld(event)" onpointerup="hidePasswordAfterHold(event)" onpointercancel="hidePasswordAfterHold(event)" onpointerleave="hidePasswordAfterHold(event)" oncontextmenu="event.preventDefault()">${passwordEyeIcon()}</button>
+      </span>
+    </label>
+    <div id="attendanceConfirmError" class="attendance-confirm-error" role="alert" aria-live="polite"></div>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button type="submit" class="primary">確認點名</button></div>
+  </form>`);
+  document.getElementById("attendanceConfirmForm")?.addEventListener("submit",event=>{
+    event.preventDefault();
+    if(activeClassId!==classId){hideModal();return;}
+    const password=document.getElementById("attendanceConfirmPassword")?.value||"";
+    if(password!==(data.settings?.attendancePassword||"1234")){
+      document.getElementById("attendanceConfirmError").textContent="密碼不正確，請重新輸入。";
+      document.getElementById("attendanceConfirmPassword").value="";
+      document.getElementById("attendanceConfirmPassword").focus();
+      return;
+    }
+    data.attendanceChecks ||= [];
+    data.attendanceChecks=data.attendanceChecks.filter(e=>e.date!==date);
+    data.attendanceChecks.push({date,checkedAt:new Date().toISOString(),needsReview:false});
+    persistActiveClass();
+    hideModal();
+    renderAttendance();
+    toast("已完成當日點名");
+  });
+  document.getElementById("attendanceConfirmPassword")?.focus();
 }
 function undoAttendanceChecked(){
   const date=document.getElementById("attendanceDate")?.value;
@@ -3175,7 +3246,7 @@ function undoAttendanceChecked(){
   renderAttendance();
   toast("已取消點名完成標記");
 }
-// v2.66 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
+// v2.67 出缺席紀錄：僅列出明確登記的請假／缺席，未登記者仍預設出席。
 const ATTENDANCE_LABELS={present:"出席",leave:"請假",absent:"缺席"};
 const ATTENDANCE_LEAVE_TYPES=["事假","病假","公假","喪假","生理假","其他"];
 function openAttendanceHistory(){
@@ -4020,7 +4091,7 @@ document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHist
 document.getElementById("saveSeatSnapshotBtn")?.addEventListener("click",()=>saveSeatHistory("手動儲存"));
 
 
-// v2.66: Native Safari date controls align their internal segments inconsistently.
+// v2.67: Native Safari date controls align their internal segments inconsistently.
 // Show a centered, non-interactive visual label while preserving the native picker.
 function syncAssignmentDateDisplays(){
   for(const id of ["assignmentSearchStart","assignmentSearchEnd"]){

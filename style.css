@@ -2321,3 +2321,13 @@ nav.tabs .tab{
   .attendance-history-filters>button{grid-column:1}
   .attendance-history-filters>label:has(input[type="date"]){width:min(100%,230px)}
 }
+
+/* v2.67 hold-to-reveal password inputs */
+.password-peek-wrap{position:relative;display:block;min-width:0;width:100%}
+.password-peek-wrap input{width:100%;min-width:0;box-sizing:border-box;padding-right:49px!important}
+.password-peek-button{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:40px;height:38px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#65758c;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.password-peek-button:hover,.password-peek-button.is-revealing{background:#e9efff;color:#425bc4}
+.password-peek-button:focus-visible{outline:2px solid #6377ff;outline-offset:1px}
+.attendance-confirm-error{min-height:1.25em;color:#c63347;font-size:13px}
+.attendance-password-settings .settings-field{display:block;max-width:360px;margin-top:12px}
+.attendance-password-settings .settings-field>span:first-child{display:block;margin-bottom:7px}
