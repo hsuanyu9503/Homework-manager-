@@ -2331,3 +2331,35 @@ nav.tabs .tab{
 .attendance-confirm-error{min-height:1.25em;color:#c63347;font-size:13px}
 .attendance-password-settings .settings-field{display:block;max-width:360px;margin-top:12px}
 .attendance-password-settings .settings-field>span:first-child{display:block;margin-bottom:7px}
+
+/* v2.68: keep the password eye visible inside settings inputs, including iPad Safari */
+.attendance-password-settings .attendance-password-field{display:flex;flex-direction:column;gap:8px;max-width:380px;margin-top:12px}
+.attendance-password-field>label{display:block;font-size:13px;font-weight:700;color:#475467}
+.attendance-password-settings .password-peek-wrap,
+.page-lock-row .password-peek-wrap,
+.modal-form .password-peek-wrap{
+  display:flex!important;position:relative;align-items:stretch;
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;
+  border:1px solid #d8e0ed;border-radius:10px;background:#fff;overflow:hidden;
+}
+.attendance-password-settings .password-peek-wrap>input,
+.page-lock-row .password-peek-wrap>input,
+.modal-form .password-peek-wrap>input{
+  display:block;position:relative;flex:1 1 auto;min-width:0;width:0;max-width:100%;
+  border:0!important;box-shadow:none!important;outline-offset:-2px;
+  padding:11px 12px!important;background:transparent!important;
+  -webkit-appearance:none;appearance:none;
+}
+.attendance-password-settings .password-peek-wrap>.password-peek-button,
+.page-lock-row .password-peek-wrap>.password-peek-button,
+.modal-form .password-peek-wrap>.password-peek-button{
+  position:relative!important;right:auto!important;top:auto!important;transform:none!important;
+  display:flex!important;align-items:center;justify-content:center;
+  flex:0 0 46px;width:46px!important;height:auto;min-height:44px;
+  padding:0!important;margin:0!important;border:0!important;border-left:1px solid #e4e9f2!important;
+  border-radius:0!important;background:#f7f9fe!important;color:#4c5c79!important;
+  opacity:1!important;visibility:visible!important;z-index:2;
+  touch-action:none;-webkit-user-select:none;user-select:none;
+}
+.password-peek-button svg{display:block!important;flex:0 0 auto;width:21px;height:21px;pointer-events:none}
+.password-peek-button.is-revealing{background:#e9efff!important;color:#334eb8!important}
