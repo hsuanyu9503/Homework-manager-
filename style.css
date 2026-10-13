@@ -2722,3 +2722,8 @@ nav.tabs .tab{
 #students.reminder-presentation>.student-view-switch{display:none!important}
 #students.reminder-presentation>.daily-reminder{display:block!important}
 @media(max-width:620px){.student-view-switch{width:100%}.student-view-tab{flex:1;min-width:0;padding:11px 9px!important}}
+
+/* v2.84 — 切換區塊與標題間距；切換時 JS 回到學生區頂端。 */
+#students>.section-head{margin-bottom:16px}
+#students>.student-view-switch{margin-bottom:20px}
+@media(max-width:620px){#students>.student-view-switch{margin-bottom:16px}}

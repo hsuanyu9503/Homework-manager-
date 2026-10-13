@@ -1,4 +1,4 @@
-const APP_VERSION = "2.83";
+const APP_VERSION = "2.84";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3432,7 +3432,7 @@ function renderAttendance(){
   }).join(""):'<div class="empty">尚未建立學生名單。</div>';
 }
 
-// v2.83 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
+// v2.84 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
 let reminderDisplayMode=false;
 let studentViewMode="tracking";
 function setStudentView(mode){
@@ -3441,11 +3441,21 @@ function setStudentView(mode){
   // 切回個別追蹤時自動退出全螢幕展示，避免隱藏操作區塊。
   if(mode==="tracking")reminderDisplayMode=false;
   syncStudentView();
+  // 僅在使用者切換學生子頁面時定位，避免背景資料刷新打斷閱讀。
+  const section=document.getElementById("students");
+  if(section?.classList.contains("active")){
+    const top=Math.max(0,section.getBoundingClientRect().top+window.scrollY-16);
+    window.scrollTo({top,behavior:"instant"});
+  }
 }
 function syncStudentView(){
   const page=document.getElementById("students");
   if(!page)return;
   const reminder=studentViewMode==="reminder";
+  const title=document.getElementById("studentPageTitle");
+  const description=document.getElementById("studentPageDescription");
+  if(title)title.textContent=reminder?"今日作業提醒":"學生作業追蹤";
+  if(description)description.textContent=reminder?"全班待處理作業優先清單，依日期由舊到新，同日缺交優先。":"查看個別學生的作業紀錄與出缺席資訊";
   page.classList.toggle("student-view-reminder",reminder);
   page.classList.toggle("student-view-tracking",!reminder);
   page.classList.toggle("reminder-presentation",reminder && reminderDisplayMode);
@@ -3622,7 +3632,7 @@ function setStatus(assignmentId, studentId, select){
   delete r.autoLeaveDate; // A manual change must not be undone by attendance edits.
   delete r.autoOverdue;
   persistActiveClass();
-  // v2.83: 更新提醒卡片而不重繪作業視窗，避免中斷教師操作。
+  // v2.84: 更新提醒卡片而不重繪作業視窗，避免中斷教師操作。
   renderDailyReminder();
   select.className = `status-select ${r.status}`;
   // 從學生區進入作業時，不重繪學生頁／關閉目前作業視窗；回到學生後再更新統計。
