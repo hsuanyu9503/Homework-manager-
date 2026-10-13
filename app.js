@@ -1,4 +1,4 @@
-const APP_VERSION = "2.84";
+const APP_VERSION = "2.85";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3435,18 +3435,29 @@ function renderAttendance(){
 // v2.84 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
 let reminderDisplayMode=false;
 let studentViewMode="tracking";
+// v2.85: 只在老師操作模式切換時捲動；避開頂端 sticky 導覽列，
+// 並使用 Safari 支援的 auto 行為，不讓背景刷新造成畫面跳動。
+function focusStudentViewStart(presentation=false){
+  const section=document.getElementById("students");
+  if(!section?.classList.contains("active"))return;
+  const target=presentation?section.querySelector(".daily-reminder"):section;
+  if(!target)return;
+  requestAnimationFrame(()=>{
+    const tabs=document.querySelector(".tabs");
+    const navHeight=tabs && getComputedStyle(tabs).position==="sticky"
+      ? tabs.getBoundingClientRect().height+16 : 16;
+    const top=Math.max(0,target.getBoundingClientRect().top+window.scrollY-navHeight);
+    window.scrollTo({top,behavior:"auto"});
+  });
+}
 function setStudentView(mode){
   if(mode!=="tracking" && mode!=="reminder")return;
+  if(studentViewMode===mode && !reminderDisplayMode)return;
   studentViewMode=mode;
-  // 切回個別追蹤時自動退出全螢幕展示，避免隱藏操作區塊。
+  // 切回個別追蹤時自動退出展示模式，保留頁面中的現有資料及表單狀態。
   if(mode==="tracking")reminderDisplayMode=false;
   syncStudentView();
-  // 僅在使用者切換學生子頁面時定位，避免背景資料刷新打斷閱讀。
-  const section=document.getElementById("students");
-  if(section?.classList.contains("active")){
-    const top=Math.max(0,section.getBoundingClientRect().top+window.scrollY-16);
-    window.scrollTo({top,behavior:"instant"});
-  }
+  focusStudentViewStart();
 }
 function syncStudentView(){
   const page=document.getElementById("students");
@@ -3479,7 +3490,8 @@ function toggleReminderDisplay(){
   reminderDisplayMode=!reminderDisplayMode;
   if(studentViewMode!=="reminder")studentViewMode="reminder";
   syncStudentView();
-  renderDailyReminder();
+  // 展示進出不重新建立卡片，減少 iPad 上不必要的 DOM 更新及捲動卡頓。
+  focusStudentViewStart(reminderDisplayMode);
 }
 function renderDailyReminder(){
   if(!data || !Array.isArray(data.students) || !Array.isArray(data.assignments) || !Array.isArray(data.records))return;

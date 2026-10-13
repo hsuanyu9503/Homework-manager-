@@ -2727,3 +2727,65 @@ nav.tabs .tab{
 #students>.section-head{margin-bottom:16px}
 #students>.student-view-switch{margin-bottom:20px}
 @media(max-width:620px){#students>.student-view-switch{margin-bottom:16px}}
+
+
+/* v2.85 — 作業 / 聯絡簿日期一致化。保持原生日期選取功能，
+   避免 iPad Safari 的日期文字變成系統連結藍色。 */
+#assignments > .toolbar.card > label > #assignmentDateFilter,
+#contactbook > .toolbar.card > label > #contactDateFilter {
+  color:var(--text) !important;
+  -webkit-text-fill-color:var(--text) !important;
+  text-align:center !important;
+  text-align-last:center;
+  color-scheme:light;
+  font-weight:500;
+  line-height:normal;
+}
+#assignmentDateFilter::-webkit-date-and-time-value,
+#contactDateFilter::-webkit-date-and-time-value {
+  text-align:center !important;
+  width:100%;
+  min-width:0;
+  color:var(--text);
+  -webkit-text-fill-color:var(--text);
+}
+#assignmentDateFilter::-webkit-datetime-edit,
+#contactDateFilter::-webkit-datetime-edit {
+  text-align:center !important;
+  width:100%;
+  color:var(--text);
+  -webkit-text-fill-color:var(--text);
+}
+#assignmentDateFilter::-webkit-datetime-edit-fields-wrapper,
+#contactDateFilter::-webkit-datetime-edit-fields-wrapper {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  color:var(--text);
+  -webkit-text-fill-color:var(--text);
+}
+#assignmentDateFilter::-webkit-datetime-edit-year-field,
+#assignmentDateFilter::-webkit-datetime-edit-month-field,
+#assignmentDateFilter::-webkit-datetime-edit-day-field,
+#contactDateFilter::-webkit-datetime-edit-year-field,
+#contactDateFilter::-webkit-datetime-edit-month-field,
+#contactDateFilter::-webkit-datetime-edit-day-field {
+  color:var(--text);
+  -webkit-text-fill-color:var(--text);
+}
+
+/* v2.85 — 展示模式字級略提高，保留平板三欄及長標題完整換行。 */
+#students.reminder-presentation .daily-reminder-head h3{font-size:1.38rem}
+#students.reminder-presentation .daily-reminder-student-head strong{font-size:1.08rem;line-height:1.4}
+#students.reminder-presentation .daily-reminder-item-title{font-size:1.02rem;line-height:1.5}
+#students.reminder-presentation .daily-reminder-status,
+#students.reminder-presentation .daily-reminder-date{font-size:.83rem;line-height:1.5}
+#students.reminder-presentation .daily-reminder-student-head{padding:13px 15px}
+#students.reminder-presentation .daily-reminder-items{gap:10px;padding:12px}
+#students.reminder-presentation .daily-reminder-item{padding:12px 13px}
+@media(max-width:620px){
+  #students.reminder-presentation .daily-reminder{padding:16px}
+  #students.reminder-presentation .daily-reminder-student-head strong{font-size:1rem}
+  #students.reminder-presentation .daily-reminder-item-title{font-size:1rem}
+}
