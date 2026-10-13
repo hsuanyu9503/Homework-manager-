@@ -1,4 +1,4 @@
-const APP_VERSION = "2.88";
+const APP_VERSION = "2.89";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3926,6 +3926,27 @@ function deleteGradeItem(id){
 let assignmentReturnStudentId=null;
 let assignmentModalOpenFromStudent=false;
 let studentTrackingIncludeCompleted=false;
+// 學生個別作業視窗：依日期（新到舊）或作業名稱（中文語系）排列。
+// 僅影響教師看到的清單順序，不改動作業日期及「今日作業提醒」的優先順序。
+let studentTrackingSortMode="date";
+function studentTrackingHistorySort(items,mode=studentTrackingSortMode){
+  return [...items].sort((x,y)=>{
+    const nameCompare=String(x.a.title||"").localeCompare(String(y.a.title||""),"zh-Hant",{numeric:true,sensitivity:"base"});
+    const dateCompare=String(y.a.date||"").localeCompare(String(x.a.date||""));
+    if(mode==="name")return nameCompare||dateCompare||String(x.a.id||"").localeCompare(String(y.a.id||""));
+    return dateCompare||nameCompare||String(x.a.id||"").localeCompare(String(y.a.id||""));
+  });
+}
+function setStudentTrackingSort(mode,studentId){
+  if(mode!=="date" && mode!=="name")return;
+  if(studentTrackingSortMode===mode)return;
+  studentTrackingSortMode=mode;
+  const modal=document.querySelector("#modalBackdrop .modal");
+  const scroll=modal?.scrollTop||0;
+  openStudent(studentId);
+  const updatedModal=document.querySelector("#modalBackdrop .modal");
+  if(updatedModal)updatedModal.scrollTop=scroll;
+}
 
 function toggleStudentCompleted(studentId){
   studentTrackingIncludeCompleted=!studentTrackingIncludeCompleted;
@@ -3946,9 +3967,8 @@ function openStudent(studentId){
   const s=data.students.find(x=>x.id===studentId);
   if(!s)return;
   // 完成紀錄預設隱藏以免清單過長；教師仍可切到完整清單更正已完成狀態。
-  const allHistory=data.assignments
-    .map(a=>({a,r:getRecord(a.id,s.id)||{status:"pending",note:""}}))
-    .sort((x,y)=>String(y.a.date||"").localeCompare(String(x.a.date||"")));
+  const allHistory=studentTrackingHistorySort(data.assignments
+    .map(a=>({a,r:getRecord(a.id,s.id)||{status:"pending",note:""}})));
   const history=studentTrackingIncludeCompleted?allHistory:allHistory.filter(x=>x.r.status!=="completed");
   const missing=allHistory.filter(x=>x.r.status==="missing").length;
   const correction=allHistory.filter(x=>x.r.status==="correction").length;
@@ -3960,7 +3980,13 @@ function openStudent(studentId){
         <span class="badge correction">待訂正 ${correction}</span>
         <span class="badge completed">完成 ${completed}</span>
       </div>
-      <button type="button" class="secondary student-completed-toggle" onclick="toggleStudentCompleted('${s.id}')" aria-pressed="${studentTrackingIncludeCompleted}">${studentTrackingIncludeCompleted?"隱藏已完成":"顯示已完成"}</button>
+      <div class="student-tracking-head-actions">
+        <div class="student-tracking-sort" role="group" aria-label="學生作業排序方式">
+          <button type="button" class="student-tracking-sort-btn ${studentTrackingSortMode==="date"?"active":""}" aria-pressed="${studentTrackingSortMode==="date"}" onclick="setStudentTrackingSort('date','${s.id}')">日期排序</button>
+          <button type="button" class="student-tracking-sort-btn ${studentTrackingSortMode==="name"?"active":""}" aria-pressed="${studentTrackingSortMode==="name"}" onclick="setStudentTrackingSort('name','${s.id}')">名稱排序</button>
+        </div>
+        <button type="button" class="secondary student-completed-toggle" onclick="toggleStudentCompleted('${s.id}')" aria-pressed="${studentTrackingIncludeCompleted}">${studentTrackingIncludeCompleted?"隱藏已完成":"顯示已完成"}</button>
+      </div>
     </div>
     <p class="muted student-tracking-help">可直接登記或修改每項作業的狀態；修改會同步更新今日作業提醒。</p>
     <div class="student-tracking-edit-list">

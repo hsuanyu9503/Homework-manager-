@@ -2895,3 +2895,17 @@ body.reminder-fullscreen-active{overflow:hidden!important}
 .student-tracking-row-links .item-sub{margin:0}
 .student-tracking-open-assignment{border:0;background:transparent;color:#5d57d7;font-weight:750;padding:2px 0;font-size:.81rem;min-height:27px;text-align:left}
 .student-tracking-open-assignment:hover{text-decoration:underline}
+
+/* v2.89 — 學生個別作業清單可依日期或名稱切換排序。 */
+.student-tracking-head-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;min-width:0}
+.student-tracking-sort{display:flex;align-items:center;gap:4px;padding:4px;border-radius:12px;background:#edf0ff;border:1px solid #e2e7f8;box-sizing:border-box;min-width:0}
+.student-tracking-sort-btn{appearance:none;-webkit-appearance:none;border:0!important;box-shadow:none!important;background:transparent!important;color:#5f6c8b!important;border-radius:9px!important;min-height:38px;padding:8px 13px!important;font-size:.85rem;font-weight:750;line-height:1.4;cursor:pointer;white-space:nowrap}
+.student-tracking-sort-btn.active{background:#fff!important;color:#5d56da!important;box-shadow:0 2px 7px rgba(45,58,105,.12)!important}
+.student-tracking-sort-btn:focus-visible{outline:2px solid #6c63ff;outline-offset:2px}
+@media(max-width:650px){
+ .student-tracking-editor-head{align-items:stretch}
+ .student-tracking-head-actions{width:100%;justify-content:flex-start;gap:8px}
+ .student-tracking-sort{flex:1 1 auto}
+ .student-tracking-sort-btn{flex:1 1 auto;min-width:0;padding:9px 8px!important}
+ .student-tracking-head-actions .student-completed-toggle{flex:1 1 auto;white-space:normal}
+}
