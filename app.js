@@ -1,4 +1,4 @@
-const APP_VERSION = "2.80";
+const APP_VERSION = "2.81";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -41,7 +41,7 @@ function defaultData(){
     groups:[],
     groupScores:{},
     assignmentGroups:[],
-    settings:{overdueDays:2,attendancePassword:"1234",missingReviewTime:"12:00"}
+    settings:{overdueDays:2,attendancePassword:"1234",missingReviewTime:"12:00",reminderLimit:3,reminderHideClear:true,reminderShowStatus:true}
   };
 }
 
@@ -129,6 +129,9 @@ function normalizeData(input){
       attendancePassword:typeof input?.settings?.attendancePassword==="string" && input.settings.attendancePassword.length>=4 ? input.settings.attendancePassword : "1234",
       missingReviewTime:isValidMissingReviewTime(input?.settings?.missingReviewTime)?input.settings.missingReviewTime:"12:00",
       overdueDays:Number.isFinite(Number(input?.settings?.overdueDays)) ? Math.max(0, Number(input.settings.overdueDays)) : 2,
+      reminderLimit:Math.max(1,Math.min(6,Number(input?.settings?.reminderLimit)||3)),
+      reminderHideClear:input?.settings?.reminderHideClear!==false,
+      reminderShowStatus:input?.settings?.reminderShowStatus!==false,
       pageLocks:Object.fromEntries(["assignments","contactbook","students","gradebook","scores","seats"].map(page=>{
         const lock=input?.settings?.pageLocks?.[page];
         return [page,{enabled:Boolean(lock?.enabled),password:String(lock?.password||"").slice(0,12)}];
@@ -3428,8 +3431,68 @@ function renderAttendance(){
     </select>${status==="leave"?`<button type="button" class="secondary attendance-leave-edit" aria-label="編輯${escapeAttr(s.name)}假別，目前${escapeAttr(leaveLabel)}" title="點選修改假別與備註" onclick="openAttendanceLeaveType('${s.id}','${date}')">${escapeHtml(leaveLabel)}</button>`:""}</div>`;
   }).join(""):'<div class="empty">尚未建立學生名單。</div>';
 }
+
+// v2.81 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
+let reminderDisplayMode=false;
+function updateReminderSettings(){
+  if(!data?.settings)return;
+  const limit=document.getElementById("reminderLimit");
+  data.settings.reminderLimit=Math.max(1,Math.min(6,Number(limit?.value)||3));
+  data.settings.reminderHideClear=Boolean(document.getElementById("reminderHideClear")?.checked);
+  data.settings.reminderShowStatus=Boolean(document.getElementById("reminderShowStatus")?.checked);
+  persistActiveClass();
+  renderDailyReminder();
+}
+function toggleReminderDisplay(){
+  reminderDisplayMode=!reminderDisplayMode;
+  document.getElementById("students")?.classList.toggle("reminder-presentation",reminderDisplayMode);
+  const btn=document.getElementById("reminderDisplayBtn");
+  if(btn)btn.textContent=reminderDisplayMode?"結束展示":"展示模式";
+  renderDailyReminder();
+}
+function renderDailyReminder(){
+  const root=document.getElementById("dailyReminderGrid");
+  if(!root)return;
+  const settings=data.settings||{};
+  const limit=Math.max(1,Math.min(6,Number(settings.reminderLimit)||3));
+  const hideClear=settings.reminderHideClear!==false;
+  const showStatus=settings.reminderShowStatus!==false;
+  const limitInput=document.getElementById("reminderLimit");if(limitInput)limitInput.value=String(limit);
+  const hideInput=document.getElementById("reminderHideClear");if(hideInput)hideInput.checked=hideClear;
+  const statusInput=document.getElementById("reminderShowStatus");if(statusInput)statusInput.checked=showStatus;
+  const assignmentById=new Map(data.assignments.map(a=>[String(a.id),a]));
+  const issuesByStudent=new Map();
+  for(const r of data.records){
+    if(r.status!=="missing" && r.status!=="correction")continue;
+    const a=assignmentById.get(String(r.assignmentId));
+    if(!a)continue;
+    const key=String(r.studentId);
+    if(!issuesByStudent.has(key))issuesByStudent.set(key,[]);
+    issuesByStudent.get(key).push({a,r});
+  }
+  const all=[...data.students].sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+  const visible=hideClear?all.filter(s=>(issuesByStudent.get(String(s.id))||[]).length):all;
+  const meta=document.getElementById("dailyReminderMeta");
+  if(meta)meta.textContent=`共 ${all.length} 位學生 · ${visible.length} 位顯示 · 每人最多 ${limit} 項`;
+  if(!visible.length){root.innerHTML='<div class="empty">目前沒有需要提醒的缺交或待訂正作業。</div>';return;}
+  root.innerHTML=visible.map(s=>{
+    const issues=(issuesByStudent.get(String(s.id))||[]).sort((x,y)=>{
+      const dateCompare=String(x.a.date||"").localeCompare(String(y.a.date||""));
+      if(dateCompare)return dateCompare;
+      const statusCompare=(x.r.status==="missing"?0:1)-(y.r.status==="missing"?0:1);
+      if(statusCompare)return statusCompare;
+      return String(x.a.title||"").localeCompare(String(y.a.title||""),"zh-Hant");
+    });
+    return `<article class="daily-reminder-student">
+      <div class="daily-reminder-student-head"><span class="daily-reminder-number">${String(s.number).padStart(2,"0")}</span><strong>${escapeHtml(s.name)}</strong>${issues.length>limit?`<span class="daily-reminder-more">另有 ${issues.length-limit} 項</span>`:""}</div>
+      <div class="daily-reminder-items">${issues.length?issues.slice(0,limit).map(({a,r})=>`<div class="daily-reminder-item ${r.status}"><span class="daily-reminder-item-title">${escapeHtml(a.title||"未命名作業")}</span>${showStatus?`<span class="daily-reminder-status">${r.status==="missing"?"缺交":"待訂正"}</span>`:""}<span class="daily-reminder-date">${escapeHtml(formatDate(a.date||""))}</span></div>`).join(""):'<div class="daily-reminder-clear">✓ 目前無待處理作業</div>'}</div>
+    </article>`;
+  }).join("");
+}
+
 function renderStudents(){
   renderAttendance();
+  renderDailyReminder();
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
   let students = [...data.students].sort((a,b)=>a.number-b.number);
   if(q){

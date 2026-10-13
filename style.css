@@ -2660,3 +2660,35 @@ nav.tabs .tab{
     grid-column: 1; justify-self: stretch; width: 100%;
   }
 }
+
+/* v2.81 — 今日作業提醒：全班卡片與投影展示 */
+.daily-reminder{margin-bottom:18px;padding:22px;min-width:0}
+.daily-reminder-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:18px}
+.daily-reminder-head h3{margin:4px 0 6px;font-size:1.25rem}
+.daily-reminder-head p{margin:0}
+.daily-reminder-controls{display:flex;flex-wrap:wrap;align-items:center;gap:16px 26px;margin-bottom:16px}
+.daily-reminder-controls>label:first-child{display:flex;align-items:center;gap:12px;font-weight:600}
+.daily-reminder-controls select{width:105px;min-height:42px}
+.daily-reminder-check{display:flex;align-items:center;gap:8px;white-space:normal;cursor:pointer}
+.daily-reminder-check input{width:18px;height:18px;flex:0 0 18px}
+.daily-reminder-meta{color:var(--muted,#748098);font-size:.85rem;margin-bottom:12px}
+.daily-reminder-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px;min-width:0}
+.daily-reminder-student{min-width:0;border:1px solid #e1e7f5;border-radius:16px;background:#fff;overflow:hidden}
+.daily-reminder-student-head{display:flex;align-items:center;gap:9px;min-height:48px;padding:11px 14px;background:#f4f6ff;border-bottom:1px solid #e8ecfa}
+.daily-reminder-number{font-size:.75rem;color:#6265c7;background:#e7e9ff;border-radius:7px;padding:4px 6px;font-weight:800}
+.daily-reminder-student-head strong{font-size:1rem}
+.daily-reminder-more{margin-left:auto;color:#64748b;font-size:.75rem;white-space:nowrap}
+.daily-reminder-items{padding:10px;display:grid;gap:8px}
+.daily-reminder-item{display:flex;align-items:flex-start;flex-wrap:wrap;gap:5px 8px;padding:9px 10px;border-radius:10px;background:#f8f9fd;border-left:3px solid #9da5ba;min-width:0}
+.daily-reminder-item.missing{background:#fff5f4;border-left-color:#e16c6c}
+.daily-reminder-item.correction{background:#fffaf0;border-left-color:#e7ae46}
+.daily-reminder-item-title{flex:1 1 100%;font-weight:650;overflow-wrap:anywhere;line-height:1.45}
+.daily-reminder-status{font-size:.75rem;font-weight:700;color:#af3d42}
+.daily-reminder-item.correction .daily-reminder-status{color:#a56a10}
+.daily-reminder-date{font-size:.75rem;color:#68748c;margin-left:auto}
+.daily-reminder-clear{color:#367c63;font-weight:600;padding:12px}
+#students.reminder-presentation>.section-head,#students.reminder-presentation>.toolbar,#students.reminder-presentation>.attendance-panel,#students.reminder-presentation>#studentList{display:none!important}
+#students.reminder-presentation .daily-reminder{padding:26px}
+#students.reminder-presentation .daily-reminder-controls{display:none}
+#students.reminder-presentation .daily-reminder-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,285px),1fr));gap:18px}
+@media(max-width:620px){.daily-reminder{padding:16px}.daily-reminder-head{align-items:flex-start}.daily-reminder-grid{grid-template-columns:minmax(0,1fr)}.daily-reminder-controls{gap:12px}}
