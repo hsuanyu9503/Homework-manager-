@@ -2566,3 +2566,87 @@ nav.tabs .tab{
   .settings-hub-polished .settings-compose-grid{grid-template-columns:minmax(0,1fr);gap:12px}
   .settings-hub-polished .settings-compose-grid>.settings-add-btn{grid-column:1;justify-self:stretch;width:100%}
 }
+
+/* v2.78 — explicit, non-overlapping date/action layout.  The native Safari
+   date input never participates in the same flex row as its action buttons. */
+#assignments > .toolbar.card,
+#contactbook > .toolbar.card{
+  display:grid!important;
+  grid-template-columns:210px minmax(0,1fr)!important;
+  align-items:end!important;
+  column-gap:28px!important;
+  row-gap:14px!important;
+  min-width:0;
+  padding:16px 20px!important;
+}
+#assignments > .toolbar.card > label,
+#contactbook > .toolbar.card > label{
+  display:flex!important;flex-direction:column!important;gap:7px!important;
+  width:210px!important;max-width:210px!important;min-width:0!important;
+  box-sizing:border-box!important;margin:0!important;
+}
+#assignments > .toolbar.card > label > input[type="date"],
+#contactbook > .toolbar.card > label > input[type="date"]{
+  display:block!important;box-sizing:border-box!important;
+  width:210px!important;max-width:210px!important;min-width:0!important;
+  margin:0!important;padding:10px 12px!important;
+  -webkit-appearance:none;appearance:none;
+}
+#assignments > .toolbar.card > .toolbar-actions,
+#contactbook > .toolbar.card > .toolbar-actions{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;
+  gap:12px;min-width:0;padding:0;margin:0;
+}
+#assignments > .toolbar.card > .toolbar-actions > button,
+#contactbook > .toolbar.card > .toolbar-actions > button{
+  position:static!important;transform:none!important;flex:0 0 auto!important;
+  width:auto!important;min-height:44px;margin:0!important;
+}
+/* Announcement and memo: fixed date column, independent content column,
+   and action on its own row with a genuine vertical gap. */
+.settings-hub-polished .settings-compose-card .settings-compose-grid{
+  display:grid!important;
+  grid-template-columns:210px minmax(0,1fr)!important;
+  column-gap:28px!important;row-gap:16px!important;
+  align-items:end!important;min-width:0;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field{
+  display:flex!important;flex-direction:column!important;gap:7px!important;
+  min-width:0!important;width:100%!important;max-width:100%!important;
+  margin:0!important;padding:0!important;box-sizing:border-box!important;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field.compact-field{
+  width:210px!important;max-width:210px!important;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input{
+  display:block!important;min-width:0!important;max-width:100%!important;
+  width:100%!important;box-sizing:border-box!important;
+  margin:0!important;padding:10px 12px!important;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input[type="date"]{
+  -webkit-appearance:none;appearance:none;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn{
+  grid-column:1/-1!important;justify-self:end!important;
+  align-self:center!important;width:auto!important;
+  min-width:138px!important;max-width:100%!important;
+  margin:0!important;
+}
+@media(max-width:640px){
+  #assignments > .toolbar.card,#contactbook > .toolbar.card{
+    grid-template-columns:minmax(0,1fr)!important;column-gap:0!important;
+  }
+  #assignments > .toolbar.card > label,#contactbook > .toolbar.card > label{
+    width:min(100%,210px)!important;max-width:210px!important;
+  }
+  #assignments > .toolbar.card > label > input[type="date"],
+  #contactbook > .toolbar.card > label > input[type="date"]{
+    width:100%!important;max-width:210px!important;
+  }
+  .settings-hub-polished .settings-compose-card .settings-compose-grid{
+    grid-template-columns:minmax(0,1fr)!important;row-gap:14px!important;
+  }
+  .settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn{
+    grid-column:1!important;justify-self:stretch!important;width:100%!important;
+  }
+}
