@@ -2485,69 +2485,89 @@ nav.tabs .tab{
   .assignment-detail-modal .assignment-sort-switch button{flex:1 1 0;min-width:0}
 }
 
-/* v2.77 — unified form spacing: dates never share an overlapping inline edge with actions. */
-#assignments>.toolbar,
-#contactbook>.toolbar{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:flex-end;
-  justify-content:flex-start;
-  column-gap:18px;
-  row-gap:12px;
+/* v2.79: one structural contract for date filters and their actions. */
+#assignments > .toolbar.card,
+#contactbook > .toolbar.card {
+  display:grid;
+  grid-template-columns:minmax(0,210px) minmax(0,1fr);
+  column-gap:28px;
+  row-gap:14px;
+  align-items:end;
   box-sizing:border-box;
-}
-#assignments>.toolbar>label,
-#contactbook>.toolbar>label{
-  flex:0 1 220px;
-  width:220px;
-  max-width:220px;
+  padding:18px 20px;
   min-width:0;
+}
+#assignments > .toolbar.card > label,
+#contactbook > .toolbar.card > label {
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  min-width:0;
+  width:100%;
   margin:0;
   box-sizing:border-box;
 }
-#assignments>.toolbar input[type="date"],
-#contactbook>.toolbar input[type="date"]{
+#assignments > .toolbar.card > label > input[type="date"],
+#contactbook > .toolbar.card > label > input[type="date"] {
   display:block;
   width:100%;
-  max-width:100%;
   min-width:0;
+  max-width:100%;
+  min-height:44px;
   box-sizing:border-box;
   margin:0;
-  min-height:44px;
+  padding:10px 12px;
 }
-#assignments>.toolbar>button,
-#contactbook>.toolbar>button{
+#assignments > .toolbar.card > .toolbar-actions,
+#contactbook > .toolbar.card > .toolbar-actions {
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  flex-wrap:wrap;
+  gap:12px;
+  min-width:0;
+  margin:0;
+  padding:0;
+}
+#assignments > .toolbar.card > .toolbar-actions > button,
+#contactbook > .toolbar.card > .toolbar-actions > button {
   flex:0 0 auto;
-  width:auto;
+  position:static;
   min-height:44px;
   margin:0;
+  width:auto;
   box-sizing:border-box;
 }
-/* Announcement and memo editors use one grid contract, not native date-field intrinsic widths. */
-.settings-hub-polished .settings-compose-grid{
+/* Settings: date and text are distinct grid cells; submit occupies its own row. */
+.settings-hub-polished .settings-compose-card .settings-compose-grid {
   display:grid;
-  grid-template-columns:minmax(0,220px) minmax(0,1fr);
-  column-gap:20px;
-  row-gap:12px;
+  grid-template-columns:minmax(0,210px) minmax(0,1fr);
+  column-gap:28px;
+  row-gap:16px;
   align-items:end;
   min-width:0;
 }
-.settings-hub-polished .settings-compose-grid>.settings-field{
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field {
+  display:flex;
+  flex-direction:column;
+  gap:7px;
   min-width:0;
   width:100%;
   max-width:100%;
+  margin:0;
+  padding:0;
   box-sizing:border-box;
 }
-.settings-hub-polished .settings-compose-grid input{
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input {
   display:block;
   width:100%;
   min-width:0;
   max-width:100%;
-  box-sizing:border-box;
-  margin:0;
   min-height:44px;
+  margin:0;
+  box-sizing:border-box;
 }
-.settings-hub-polished .settings-compose-grid>.settings-add-btn{
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn {
   grid-column:1/-1;
   justify-self:end;
   align-self:center;
@@ -2556,97 +2576,22 @@ nav.tabs .tab{
   max-width:100%;
   margin:0;
 }
-@media(max-width:620px){
-  #assignments>.toolbar,
-  #contactbook>.toolbar{column-gap:12px;row-gap:12px}
-  #assignments>.toolbar>label,
-  #contactbook>.toolbar>label{flex:1 1 100%;width:100%;max-width:100%}
-  #assignments>.toolbar>button,
-  #contactbook>.toolbar>button{flex:1 1 auto;width:auto}
-  .settings-hub-polished .settings-compose-grid{grid-template-columns:minmax(0,1fr);gap:12px}
-  .settings-hub-polished .settings-compose-grid>.settings-add-btn{grid-column:1;justify-self:stretch;width:100%}
-}
-
-/* v2.78 — explicit, non-overlapping date/action layout.  The native Safari
-   date input never participates in the same flex row as its action buttons. */
-#assignments > .toolbar.card,
-#contactbook > .toolbar.card{
-  display:grid!important;
-  grid-template-columns:210px minmax(0,1fr)!important;
-  align-items:end!important;
-  column-gap:28px!important;
-  row-gap:14px!important;
-  min-width:0;
-  padding:16px 20px!important;
-}
-#assignments > .toolbar.card > label,
-#contactbook > .toolbar.card > label{
-  display:flex!important;flex-direction:column!important;gap:7px!important;
-  width:210px!important;max-width:210px!important;min-width:0!important;
-  box-sizing:border-box!important;margin:0!important;
-}
-#assignments > .toolbar.card > label > input[type="date"],
-#contactbook > .toolbar.card > label > input[type="date"]{
-  display:block!important;box-sizing:border-box!important;
-  width:210px!important;max-width:210px!important;min-width:0!important;
-  margin:0!important;padding:10px 12px!important;
-  -webkit-appearance:none;appearance:none;
-}
-#assignments > .toolbar.card > .toolbar-actions,
-#contactbook > .toolbar.card > .toolbar-actions{
-  display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;
-  gap:12px;min-width:0;padding:0;margin:0;
-}
-#assignments > .toolbar.card > .toolbar-actions > button,
-#contactbook > .toolbar.card > .toolbar-actions > button{
-  position:static!important;transform:none!important;flex:0 0 auto!important;
-  width:auto!important;min-height:44px;margin:0!important;
-}
-/* Announcement and memo: fixed date column, independent content column,
-   and action on its own row with a genuine vertical gap. */
-.settings-hub-polished .settings-compose-card .settings-compose-grid{
-  display:grid!important;
-  grid-template-columns:210px minmax(0,1fr)!important;
-  column-gap:28px!important;row-gap:16px!important;
-  align-items:end!important;min-width:0;
-}
-.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field{
-  display:flex!important;flex-direction:column!important;gap:7px!important;
-  min-width:0!important;width:100%!important;max-width:100%!important;
-  margin:0!important;padding:0!important;box-sizing:border-box!important;
-}
-.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field.compact-field{
-  width:210px!important;max-width:210px!important;
-}
-.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input{
-  display:block!important;min-width:0!important;max-width:100%!important;
-  width:100%!important;box-sizing:border-box!important;
-  margin:0!important;padding:10px 12px!important;
-}
-.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input[type="date"]{
-  -webkit-appearance:none;appearance:none;
-}
-.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn{
-  grid-column:1/-1!important;justify-self:end!important;
-  align-self:center!important;width:auto!important;
-  min-width:138px!important;max-width:100%!important;
-  margin:0!important;
-}
-@media(max-width:640px){
-  #assignments > .toolbar.card,#contactbook > .toolbar.card{
-    grid-template-columns:minmax(0,1fr)!important;column-gap:0!important;
+@media(max-width:640px) {
+  #assignments > .toolbar.card,
+  #contactbook > .toolbar.card {
+    grid-template-columns:minmax(0,1fr);
+    column-gap:0;
+    padding:16px;
   }
-  #assignments > .toolbar.card > label,#contactbook > .toolbar.card > label{
-    width:min(100%,210px)!important;max-width:210px!important;
+  #assignments > .toolbar.card > label,
+  #contactbook > .toolbar.card > label {max-width:210px;}
+  .settings-hub-polished .settings-compose-card .settings-compose-grid {
+    grid-template-columns:minmax(0,1fr);
+    row-gap:14px;
   }
-  #assignments > .toolbar.card > label > input[type="date"],
-  #contactbook > .toolbar.card > label > input[type="date"]{
-    width:100%!important;max-width:210px!important;
-  }
-  .settings-hub-polished .settings-compose-card .settings-compose-grid{
-    grid-template-columns:minmax(0,1fr)!important;row-gap:14px!important;
-  }
-  .settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn{
-    grid-column:1!important;justify-self:stretch!important;width:100%!important;
+  .settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn {
+    grid-column:1;
+    justify-self:stretch;
+    width:100%;
   }
 }
