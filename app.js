@@ -1,4 +1,4 @@
-const APP_VERSION = "2.78";
+const APP_VERSION = "2.80";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";

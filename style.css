@@ -2595,3 +2595,68 @@ nav.tabs .tab{
     width:100%;
   }
 }
+
+
+/* v2.80 — iPad Safari comfortable form spacing, explicit sizing. */
+#assignments > .toolbar.card,
+#contactbook > .toolbar.card {
+  grid-template-columns: minmax(0, 252px) minmax(0, 1fr);
+  column-gap: 38px;
+  row-gap: 20px;
+  padding: 22px 26px;
+}
+#assignments > .toolbar.card > label,
+#contactbook > .toolbar.card > label {
+  width: 100%; max-width: 100%; min-width: 0;
+}
+#assignments > .toolbar.card > label input[type="date"],
+#contactbook > .toolbar.card > label input[type="date"] {
+  width: 100%; min-width: 0; max-width: 100%;
+  box-sizing: border-box; min-height: 48px;
+  -webkit-appearance: none; appearance: none;
+}
+#assignments > .toolbar.card > .toolbar-actions,
+#contactbook > .toolbar.card > .toolbar-actions {
+  gap: 14px; padding-left: 0; min-width: 0;
+}
+#assignments > .toolbar.card > .toolbar-actions > button,
+#contactbook > .toolbar.card > .toolbar-actions > button {
+  min-height: 48px; padding-inline: 17px;
+}
+.settings-hub-polished .settings-compose-card {
+  padding: 18px 20px 20px;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid {
+  grid-template-columns: minmax(0, 252px) minmax(0, 1fr);
+  column-gap: 38px;
+  row-gap: 20px;
+  align-items: end;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input {
+  min-height: 48px; min-width: 0; width: 100%; max-width: 100%;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-field input[type="date"] {
+  -webkit-appearance: none; appearance: none;
+}
+.settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn {
+  min-height: 46px; margin-top: 2px; padding-inline: 22px;
+}
+@media (max-width: 740px) {
+  #assignments > .toolbar.card,
+  #contactbook > .toolbar.card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 20px;
+  }
+  #assignments > .toolbar.card > label,
+  #contactbook > .toolbar.card > label { max-width: 100%; }
+  #assignments > .toolbar.card > .toolbar-actions,
+  #contactbook > .toolbar.card > .toolbar-actions { gap: 12px; }
+  .settings-hub-polished .settings-compose-card .settings-compose-grid {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 16px;
+  }
+  .settings-hub-polished .settings-compose-card .settings-compose-grid > .settings-add-btn {
+    grid-column: 1; justify-self: stretch; width: 100%;
+  }
+}
