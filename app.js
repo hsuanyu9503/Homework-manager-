@@ -1,4 +1,4 @@
-const APP_VERSION = "2.85";
+const APP_VERSION = "2.86";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3435,7 +3435,7 @@ function renderAttendance(){
 // v2.84 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
 let reminderDisplayMode=false;
 let studentViewMode="tracking";
-// v2.85: 只在老師操作模式切換時捲動；避開頂端 sticky 導覽列，
+// v2.86: 只在老師操作模式切換時捲動；避開頂端 sticky 導覽列，
 // 並使用 Safari 支援的 auto 行為，不讓背景刷新造成畫面跳動。
 function focusStudentViewStart(presentation=false){
   const section=document.getElementById("students");

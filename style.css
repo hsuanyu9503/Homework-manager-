@@ -2789,3 +2789,48 @@ nav.tabs .tab{
   #students.reminder-presentation .daily-reminder-student-head strong{font-size:1rem}
   #students.reminder-presentation .daily-reminder-item-title{font-size:1rem}
 }
+
+
+/* v2.86 — iPad Safari 日期垂直置中修正。只影響作業、聯絡簿的日期篩選。
+   移除 input 垂直 padding 造成的原生 WebKit 文字基線偏移；
+   以輸入框與 WebKit 日期內層各自 100% 高度垂直對齊。 */
+#assignments > .toolbar.card > label > #assignmentDateFilter,
+#contactbook > .toolbar.card > label > #contactDateFilter {
+  height:48px;
+  min-height:48px;
+  padding:0 12px !important;
+  line-height:normal;
+  vertical-align:middle;
+}
+#assignmentDateFilter::-webkit-date-and-time-value,
+#contactDateFilter::-webkit-date-and-time-value {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:100%;
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+#assignmentDateFilter::-webkit-datetime-edit,
+#contactDateFilter::-webkit-datetime-edit {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:100%;
+  min-height:0;
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+#assignmentDateFilter::-webkit-datetime-edit-fields-wrapper,
+#contactDateFilter::-webkit-datetime-edit-fields-wrapper {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:100%;
+  min-height:0;
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
