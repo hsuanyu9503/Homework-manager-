@@ -2834,3 +2834,64 @@ nav.tabs .tab{
   padding:0;
   box-sizing:border-box;
 }
+
+
+/* v2.87 — 今日作業提醒：與座位展示相同的唯讀全畫面。 */
+body.reminder-fullscreen-active{overflow:hidden!important}
+.reminder-presentation-overlay{
+  position:fixed;inset:0;z-index:1100;
+  overflow-y:auto;overscroll-behavior:contain;
+  background:#f6f9fe;padding:22px clamp(14px,3vw,36px) 42px;
+  box-sizing:border-box;-webkit-overflow-scrolling:touch;
+}
+.reminder-presentation-overlay.hidden{display:none!important}
+.reminder-presentation-back{
+  display:inline-flex;align-items:center;justify-content:center;
+  position:sticky;top:0;z-index:2;
+  border:1px solid #e1e7f4;border-radius:13px;
+  background:#fff;color:#4e51af;font-weight:800;
+  min-height:46px;padding:11px 17px;margin:0 0 20px;
+  box-shadow:0 4px 14px rgba(48,63,110,.1);
+}
+.reminder-presentation-grid{
+  width:100%;max-width:1560px;margin:0 auto;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:stretch;
+}
+.reminder-presentation-grid .daily-reminder-student{border-radius:16px}
+.reminder-presentation-grid .daily-reminder-student-head{min-height:54px;padding:13px 15px}
+.reminder-presentation-grid .daily-reminder-student-head strong{font-size:1.09rem;line-height:1.45}
+.reminder-presentation-grid .daily-reminder-items{gap:10px;padding:12px}
+.reminder-presentation-grid .daily-reminder-item{padding:12px 13px}
+.reminder-presentation-grid .daily-reminder-item-title{font-size:1.02rem;line-height:1.5}
+.reminder-presentation-grid .daily-reminder-status,.reminder-presentation-grid .daily-reminder-date{font-size:.84rem;line-height:1.5}
+@media(min-width:1500px){.reminder-presentation-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:900px){.reminder-presentation-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+@media(max-width:620px){
+ .reminder-presentation-overlay{padding:14px 12px 28px}
+ .reminder-presentation-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+ .reminder-presentation-back{margin-bottom:14px;width:auto}
+}
+/* v2.87 — 個別學生作業視窗直接管理狀態與備註。 */
+.student-tracking-editor-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0 10px}
+.student-tracking-editor-head .assignment-summary{margin-top:0}
+.student-completed-toggle{min-height:40px;white-space:nowrap}
+.student-tracking-help{margin:0 0 12px;line-height:1.5}
+.student-tracking-edit-list{display:grid;gap:10px;min-width:0}
+.student-tracking-edit-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(140px,180px);gap:11px 16px;align-items:end;min-width:0;border:1px solid #e1e8f5;border-radius:14px;background:#fbfcff;padding:14px}
+.student-tracking-edit-description{min-width:0;align-self:center}
+.student-tracking-edit-description .item-title{overflow-wrap:anywhere}
+.student-tracking-edit-row label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:.79rem;color:var(--muted);font-weight:650}
+.student-tracking-edit-row select{width:100%;min-width:0;min-height:42px;margin:0}
+.student-tracking-edit-row .student-tracking-note-label{grid-column:1/-1}
+.student-tracking-edit-row .note-input{width:100%;max-width:100%;margin:0;box-sizing:border-box;min-height:42px}
+@media(max-width:560px){
+ .student-tracking-edit-row{grid-template-columns:minmax(0,1fr);gap:10px;padding:12px}
+ .student-tracking-edit-row .student-tracking-note-label{grid-column:1}
+ .student-tracking-edit-row .student-tracking-status-label{width:100%}
+ .student-tracking-editor-head .student-completed-toggle{flex:0 0 auto}
+}
+
+.student-tracking-row-links{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;margin-top:5px}
+.student-tracking-row-links .item-sub{margin:0}
+.student-tracking-open-assignment{border:0;background:transparent;color:#5d57d7;font-weight:750;padding:2px 0;font-size:.81rem;min-height:27px;text-align:left}
+.student-tracking-open-assignment:hover{text-decoration:underline}

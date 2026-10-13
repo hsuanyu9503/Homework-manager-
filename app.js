@@ -1,4 +1,4 @@
-const APP_VERSION = "2.86";
+const APP_VERSION = "2.88";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -712,6 +712,7 @@ function enterClass(classId){
 }
 
 function leaveClass(){
+  if(reminderDisplayMode)toggleReminderDisplay(true);
   persistActiveClass();
   unmountSeatModule();
   stopNoiseMonitor();
@@ -809,6 +810,7 @@ function requestPageUnlock(page){
 }
 
 function setPage(page){
+  if(page!=="students" && reminderDisplayMode)toggleReminderDisplay(true);
   if(isPageLocked(page)){
     requestPageUnlock(page);
     return;
@@ -1297,7 +1299,8 @@ function renderAssignments(){
   const input = document.getElementById("assignmentDateFilter");
   syncPageDateFilter(input,"assignment");
 
-  let items = [...data.assignments].sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  // v2.88: 兼容舊版或匯入資料缺少 createdAt 的同日作業。
+  let items = [...data.assignments].sort((a,b)=> String(b.date||"").localeCompare(String(a.date||"")) || String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
   const keyword=(document.getElementById("assignmentKeyword")?.value||"").trim().toLocaleLowerCase();
   const start=document.getElementById("assignmentSearchStart")?.value||"";
   const end=document.getElementById("assignmentSearchEnd")?.value||"";
@@ -3435,7 +3438,7 @@ function renderAttendance(){
 // v2.84 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
 let reminderDisplayMode=false;
 let studentViewMode="tracking";
-// v2.86: 只在老師操作模式切換時捲動；避開頂端 sticky 導覽列，
+// v2.87: 只在老師操作模式切換時捲動；避開頂端 sticky 導覽列，
 // 並使用 Safari 支援的 auto 行為，不讓背景刷新造成畫面跳動。
 function focusStudentViewStart(presentation=false){
   const section=document.getElementById("students");
@@ -3454,8 +3457,8 @@ function setStudentView(mode){
   if(mode!=="tracking" && mode!=="reminder")return;
   if(studentViewMode===mode && !reminderDisplayMode)return;
   studentViewMode=mode;
-  // 切回個別追蹤時自動退出展示模式，保留頁面中的現有資料及表單狀態。
-  if(mode==="tracking")reminderDisplayMode=false;
+  // 切回追蹤時先撤下全畫面展示，避免殘留捲動鎖定。
+  if(mode==="tracking" && reminderDisplayMode)toggleReminderDisplay(true);
   syncStudentView();
   focusStudentViewStart();
 }
@@ -3470,6 +3473,9 @@ function syncStudentView(){
   page.classList.toggle("student-view-reminder",reminder);
   page.classList.toggle("student-view-tracking",!reminder);
   page.classList.toggle("reminder-presentation",reminder && reminderDisplayMode);
+  const overlay=document.getElementById("reminderPresentationOverlay");
+  overlay?.classList.toggle("hidden",!(reminder && reminderDisplayMode));
+  document.body.classList.toggle("reminder-fullscreen-active",reminder && reminderDisplayMode);
   for(const [id,active] of [["studentTrackingTab",!reminder],["studentReminderTab",reminder]]){
     const btn=document.getElementById(id);
     if(btn){btn.classList.toggle("active",active);btn.setAttribute("aria-pressed",String(active));}
@@ -3486,12 +3492,24 @@ function updateReminderSettings(){
   persistActiveClass();
   renderDailyReminder();
 }
-function toggleReminderDisplay(){
-  reminderDisplayMode=!reminderDisplayMode;
-  if(studentViewMode!=="reminder")studentViewMode="reminder";
+function toggleReminderDisplay(forceOff=false){
+  const entering=forceOff===true?false:!reminderDisplayMode;
+  if(entering && (studentViewMode!=="reminder" || currentPage!=="students"))return;
+  reminderDisplayMode=entering;
+  if(entering){
+    // 直接複製目前已渲染的唯讀提醒內容；不在展示時移動教師端元件。
+    const source=document.getElementById("dailyReminderGrid");
+    const grid=document.getElementById("reminderPresentationGrid");
+    if(source&&grid)grid.innerHTML=source.innerHTML;
+  }
   syncStudentView();
-  // 展示進出不重新建立卡片，減少 iPad 上不必要的 DOM 更新及捲動卡頓。
-  focusStudentViewStart(reminderDisplayMode);
+  if(entering){
+    const overlay=document.getElementById("reminderPresentationOverlay");
+    if(overlay)overlay.scrollTop=0;
+  }else{
+    // 回到教師設定畫面，不變更剛才的選項或學生資料。
+    focusStudentViewStart(false);
+  }
 }
 function renderDailyReminder(){
   if(!data || !Array.isArray(data.students) || !Array.isArray(data.assignments) || !Array.isArray(data.records))return;
@@ -3518,7 +3536,11 @@ function renderDailyReminder(){
   const visible=hideClear?all.filter(s=>(issuesByStudent.get(String(s.id))||[]).length):all;
   const meta=document.getElementById("dailyReminderMeta");
   if(meta)meta.textContent=`共 ${all.length} 位學生 · ${visible.length} 位顯示 · 每人最多 ${limit} 項`;
-  if(!visible.length){root.innerHTML='<div class="empty">目前沒有需要提醒的缺交或待訂正作業。</div>';return;}
+  if(!visible.length){
+    root.innerHTML='<div class="empty">目前沒有需要提醒的缺交或待訂正作業。</div>';
+    if(reminderDisplayMode){const mirror=document.getElementById("reminderPresentationGrid");if(mirror)mirror.innerHTML=root.innerHTML;}
+    return;
+  }
   root.innerHTML=visible.map(s=>{
     const issues=(issuesByStudent.get(String(s.id))||[]).sort((x,y)=>{
       const dateCompare=String(x.a.date||"").localeCompare(String(y.a.date||""));
@@ -3532,6 +3554,10 @@ function renderDailyReminder(){
       <div class="daily-reminder-items">${issues.length?issues.slice(0,limit).map(({a,r})=>`<div class="daily-reminder-item ${r.status}"><span class="daily-reminder-item-title">${escapeHtml(a.title||"未命名作業")}</span>${showStatus?`<span class="daily-reminder-status">${r.status==="missing"?"缺交":"待訂正"}</span>`:""}<span class="daily-reminder-date">${escapeHtml(formatDate(a.date||""))}</span></div>`).join(""):'<div class="daily-reminder-clear">✓ 目前無待處理作業</div>'}</div>
     </article>`;
   }).join("");
+  if(reminderDisplayMode){
+    const overlayGrid=document.getElementById("reminderPresentationGrid");
+    if(overlayGrid)overlayGrid.innerHTML=root.innerHTML;
+  }
 }
 
 function renderStudents(){
@@ -3899,37 +3925,65 @@ function deleteGradeItem(id){
 
 let assignmentReturnStudentId=null;
 let assignmentModalOpenFromStudent=false;
+let studentTrackingIncludeCompleted=false;
 
-function openStudent(studentId){
-  const s = data.students.find(x=>x.id===studentId);
-  if(!s) return;
-  const history = data.assignments
-    .map(a=>({a, r:getRecord(a.id,s.id)}))
-    .filter(x=>x.r && x.r.status!=="completed")
-    .sort((x,y)=>y.a.date.localeCompare(x.a.date));
-  showModal(
-    `${String(s.number).padStart(2,"0")} ${s.name}`,
-    `
-      <div class="assignment-summary">
-        <span class="badge missing">缺交 ${history.filter(x=>x.r.status==="missing").length}</span>
-        <span class="badge correction">待訂正 ${history.filter(x=>x.r.status==="correction").length}</span>
-      </div>
-      ${studentIssueDetailsHtml(history,s.id)}
-      <div class="tracker-list">
-        ${history.length ? history.map(x=>`
-          <div class="item-card clickable" onclick="assignmentReturnStudentId='${studentId}';assignmentModalOpenFromStudent=true;openAssignment('${x.a.id}')">
-            <div class="item-main">
-              <div class="item-title">${escapeHtml(x.a.title)}</div>
-              <div class="item-sub">${formatDate(x.a.date)}${x.r.note?`｜${escapeHtml(x.r.note)}`:""}</div>
-            </div>
-            <span class="badge ${x.r.status}">${STATUS_LABEL[x.r.status]}</span>
-          </div>
-        `).join("") : `<div class="empty">尚無作業紀錄。</div>`}
-      </div>
-    `
-  );
+function toggleStudentCompleted(studentId){
+  studentTrackingIncludeCompleted=!studentTrackingIncludeCompleted;
+  openStudent(studentId);
+}
+function updateStudentTrackingStatus(assignmentId,studentId,select){
+  if(!STATUS_ORDER.includes(select?.value))return;
+  const modal=document.querySelector("#modalBackdrop .modal");
+  const scroll=modal?.scrollTop||0;
+  // 使用作業管理的原始 setStatus：狀態、人工註記、儲存及提醒同步共用。
+  setStatus(assignmentId,studentId,select);
+  openStudent(studentId);
+  const updatedModal=document.querySelector("#modalBackdrop .modal");
+  if(updatedModal)updatedModal.scrollTop=scroll;
 }
 
+function openStudent(studentId){
+  const s=data.students.find(x=>x.id===studentId);
+  if(!s)return;
+  // 完成紀錄預設隱藏以免清單過長；教師仍可切到完整清單更正已完成狀態。
+  const allHistory=data.assignments
+    .map(a=>({a,r:getRecord(a.id,s.id)||{status:"pending",note:""}}))
+    .sort((x,y)=>String(y.a.date||"").localeCompare(String(x.a.date||"")));
+  const history=studentTrackingIncludeCompleted?allHistory:allHistory.filter(x=>x.r.status!=="completed");
+  const missing=allHistory.filter(x=>x.r.status==="missing").length;
+  const correction=allHistory.filter(x=>x.r.status==="correction").length;
+  const completed=allHistory.filter(x=>x.r.status==="completed").length;
+  showModal(`${String(s.number).padStart(2,"0")} ${s.name}`,`
+    <div class="student-tracking-editor-head">
+      <div class="assignment-summary">
+        <span class="badge missing">缺交 ${missing}</span>
+        <span class="badge correction">待訂正 ${correction}</span>
+        <span class="badge completed">完成 ${completed}</span>
+      </div>
+      <button type="button" class="secondary student-completed-toggle" onclick="toggleStudentCompleted('${s.id}')" aria-pressed="${studentTrackingIncludeCompleted}">${studentTrackingIncludeCompleted?"隱藏已完成":"顯示已完成"}</button>
+    </div>
+    <p class="muted student-tracking-help">可直接登記或修改每項作業的狀態；修改會同步更新今日作業提醒。</p>
+    <div class="student-tracking-edit-list">
+      ${history.length?history.map(({a,r})=>`
+        <div class="student-tracking-edit-row" data-assignment-id="${escapeAttr(a.id)}">
+          <div class="student-tracking-edit-description">
+            <div class="item-title">${escapeHtml(a.title||"未命名作業")}</div>
+            <div class="student-tracking-row-links">
+              <span class="item-sub">${escapeHtml(formatDate(a.date||""))}</span>
+              <button type="button" class="student-tracking-open-assignment" onclick="assignmentReturnStudentId='${s.id}';assignmentModalOpenFromStudent=true;openAssignment('${a.id}')">查看全班作業 ›</button>
+            </div>
+          </div>
+          <label class="student-tracking-status-label">
+            <span>作業狀態</span>
+            <select class="status-select ${escapeAttr(r.status)}" aria-label="${escapeAttr(a.title||"作業")}的狀態" onchange="updateStudentTrackingStatus('${a.id}','${s.id}',this)">
+              ${STATUS_ORDER.map(st=>`<option value="${st}" ${r.status===st?"selected":""}>${STATUS_LABEL[st]}</option>`).join("")}
+            </select>
+          </label>
+          <label class="student-tracking-note-label"><span>備註</span><input class="note-input" type="text" maxlength="200" placeholder="可選填備註" value="${escapeAttr(r.note||"")}" onchange="updateNote('${a.id}','${s.id}',this.value)" /></label>
+        </div>`).join(""):`<div class="empty">${allHistory.length?"目前沒有其他未完成作業，可選擇「顯示已完成」查看歷史紀錄。":"尚無作業紀錄。"}</div>`}
+    </div>
+  `);
+}
 function openNewAssignment(){
   if(!data.students.length){
     toast("請先回到班級首頁，在「班級資料管理」建立學生名單");
@@ -4247,6 +4301,9 @@ document.getElementById("exportSeatPngBtn")?.addEventListener("click",exportSeat
 document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
 document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape" && reminderDisplayMode){event.preventDefault();toggleReminderDisplay(true);}
+});
 document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.addEventListener("click",()=>setSeatRevealMode(btn.dataset.seatRevealMode)));
 setSeatRevealMode(seatRevealMode);
 
