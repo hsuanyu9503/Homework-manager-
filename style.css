@@ -2692,3 +2692,33 @@ nav.tabs .tab{
 #students.reminder-presentation .daily-reminder-controls{display:none}
 #students.reminder-presentation .daily-reminder-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,285px),1fr));gap:18px}
 @media(max-width:620px){.daily-reminder{padding:16px}.daily-reminder-head{align-items:flex-start}.daily-reminder-grid{grid-template-columns:minmax(0,1fr)}.daily-reminder-controls{gap:12px}}
+
+/* v2.82 — 投影模式：固定可預期的欄數、卡片對齊及長文字換行 */
+.daily-reminder-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));align-items:stretch;gap:18px}
+.daily-reminder-student{display:flex;flex-direction:column;min-width:0;height:100%}
+.daily-reminder-student-head{flex-wrap:wrap;column-gap:10px;row-gap:5px}
+.daily-reminder-student-head strong{min-width:0;overflow-wrap:anywhere}
+.daily-reminder-more{margin-left:auto}
+.daily-reminder-items{align-content:start;flex:1;min-width:0}
+.daily-reminder-item{min-width:0}
+.daily-reminder-item-title{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+#students.reminder-presentation .daily-reminder-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+#students.reminder-presentation .daily-reminder-student-head{min-height:54px}
+#students.reminder-presentation .daily-reminder-item{padding:12px}
+@media(min-width:1500px){#students.reminder-presentation .daily-reminder-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:900px){#students.reminder-presentation .daily-reminder-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+@media(max-width:620px){.daily-reminder-grid,#students.reminder-presentation .daily-reminder-grid{grid-template-columns:minmax(0,1fr);gap:12px}#students.reminder-presentation .daily-reminder{padding:16px}}
+
+
+/* v2.83 — 學生作業追蹤／今日作業提醒：同頁切換，互不干擾。 */
+.student-view-switch{display:flex;align-items:center;gap:6px;padding:6px;margin:0 0 18px;border:1px solid #e0e7f6;background:#eef2ff;border-radius:16px;width:max-content;max-width:100%;box-sizing:border-box}
+.student-view-tab{border:0!important;background:transparent!important;color:#66738f!important;border-radius:11px!important;padding:12px 22px!important;min-height:44px;box-shadow:none!important;font-weight:750;white-space:normal;line-height:1.4}
+.student-view-tab.active{background:#fff!important;color:#5e57d8!important;box-shadow:0 2px 9px rgba(60,66,120,.09)!important}
+#students.student-view-tracking>.daily-reminder{display:none!important}
+#students.student-view-reminder>.student-tracking-toolbar,
+#students.student-view-reminder>.attendance-panel,
+#students.student-view-reminder>#studentList{display:none!important}
+#students.student-view-reminder>.daily-reminder{display:block}
+#students.reminder-presentation>.student-view-switch{display:none!important}
+#students.reminder-presentation>.daily-reminder{display:block!important}
+@media(max-width:620px){.student-view-switch{width:100%}.student-view-tab{flex:1;min-width:0;padding:11px 9px!important}}

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.81";
+const APP_VERSION = "2.83";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3432,8 +3432,30 @@ function renderAttendance(){
   }).join(""):'<div class="empty">尚未建立學生名單。</div>';
 }
 
-// v2.81 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
+// v2.83 — 全班作業提醒，僅顯示既有作業紀錄，不變更學生個別追蹤。
 let reminderDisplayMode=false;
+let studentViewMode="tracking";
+function setStudentView(mode){
+  if(mode!=="tracking" && mode!=="reminder")return;
+  studentViewMode=mode;
+  // 切回個別追蹤時自動退出全螢幕展示，避免隱藏操作區塊。
+  if(mode==="tracking")reminderDisplayMode=false;
+  syncStudentView();
+}
+function syncStudentView(){
+  const page=document.getElementById("students");
+  if(!page)return;
+  const reminder=studentViewMode==="reminder";
+  page.classList.toggle("student-view-reminder",reminder);
+  page.classList.toggle("student-view-tracking",!reminder);
+  page.classList.toggle("reminder-presentation",reminder && reminderDisplayMode);
+  for(const [id,active] of [["studentTrackingTab",!reminder],["studentReminderTab",reminder]]){
+    const btn=document.getElementById(id);
+    if(btn){btn.classList.toggle("active",active);btn.setAttribute("aria-pressed",String(active));}
+  }
+  const btn=document.getElementById("reminderDisplayBtn");
+  if(btn)btn.textContent=reminderDisplayMode?"結束展示":"展示模式";
+}
 function updateReminderSettings(){
   if(!data?.settings)return;
   const limit=document.getElementById("reminderLimit");
@@ -3445,12 +3467,12 @@ function updateReminderSettings(){
 }
 function toggleReminderDisplay(){
   reminderDisplayMode=!reminderDisplayMode;
-  document.getElementById("students")?.classList.toggle("reminder-presentation",reminderDisplayMode);
-  const btn=document.getElementById("reminderDisplayBtn");
-  if(btn)btn.textContent=reminderDisplayMode?"結束展示":"展示模式";
+  if(studentViewMode!=="reminder")studentViewMode="reminder";
+  syncStudentView();
   renderDailyReminder();
 }
 function renderDailyReminder(){
+  if(!data || !Array.isArray(data.students) || !Array.isArray(data.assignments) || !Array.isArray(data.records))return;
   const root=document.getElementById("dailyReminderGrid");
   if(!root)return;
   const settings=data.settings||{};
@@ -3491,6 +3513,7 @@ function renderDailyReminder(){
 }
 
 function renderStudents(){
+  syncStudentView();
   renderAttendance();
   renderDailyReminder();
   const q = document.getElementById("studentSearch").value.trim().toLowerCase();
@@ -3524,6 +3547,7 @@ function renderStudents(){
 function refreshStudentCardSummary(studentId){
   if(currentPage!=="students") return;
   const card=[...document.querySelectorAll(".student-card")].find(el=>el.dataset.studentId===studentId);
+  renderDailyReminder();
   if(!card) return;
   const rs=data.records.filter(r=>r.studentId===studentId);
   const missing=rs.filter(r=>r.status==="missing").length;
@@ -3598,6 +3622,8 @@ function setStatus(assignmentId, studentId, select){
   delete r.autoLeaveDate; // A manual change must not be undone by attendance edits.
   delete r.autoOverdue;
   persistActiveClass();
+  // v2.83: 更新提醒卡片而不重繪作業視窗，避免中斷教師操作。
+  renderDailyReminder();
   select.className = `status-select ${r.status}`;
   // 從學生區進入作業時，不重繪學生頁／關閉目前作業視窗；回到學生後再更新統計。
   if(currentPage==="students" && assignmentModalOpenFromStudent && assignmentReturnStudentId){
