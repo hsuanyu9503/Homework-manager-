@@ -2484,3 +2484,85 @@ nav.tabs .tab{
   }
   .assignment-detail-modal .assignment-sort-switch button{flex:1 1 0;min-width:0}
 }
+
+/* v2.77 — unified form spacing: dates never share an overlapping inline edge with actions. */
+#assignments>.toolbar,
+#contactbook>.toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-end;
+  justify-content:flex-start;
+  column-gap:18px;
+  row-gap:12px;
+  box-sizing:border-box;
+}
+#assignments>.toolbar>label,
+#contactbook>.toolbar>label{
+  flex:0 1 220px;
+  width:220px;
+  max-width:220px;
+  min-width:0;
+  margin:0;
+  box-sizing:border-box;
+}
+#assignments>.toolbar input[type="date"],
+#contactbook>.toolbar input[type="date"]{
+  display:block;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  margin:0;
+  min-height:44px;
+}
+#assignments>.toolbar>button,
+#contactbook>.toolbar>button{
+  flex:0 0 auto;
+  width:auto;
+  min-height:44px;
+  margin:0;
+  box-sizing:border-box;
+}
+/* Announcement and memo editors use one grid contract, not native date-field intrinsic widths. */
+.settings-hub-polished .settings-compose-grid{
+  display:grid;
+  grid-template-columns:minmax(0,220px) minmax(0,1fr);
+  column-gap:20px;
+  row-gap:12px;
+  align-items:end;
+  min-width:0;
+}
+.settings-hub-polished .settings-compose-grid>.settings-field{
+  min-width:0;
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+}
+.settings-hub-polished .settings-compose-grid input{
+  display:block;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+  margin:0;
+  min-height:44px;
+}
+.settings-hub-polished .settings-compose-grid>.settings-add-btn{
+  grid-column:1/-1;
+  justify-self:end;
+  align-self:center;
+  width:auto;
+  min-width:138px;
+  max-width:100%;
+  margin:0;
+}
+@media(max-width:620px){
+  #assignments>.toolbar,
+  #contactbook>.toolbar{column-gap:12px;row-gap:12px}
+  #assignments>.toolbar>label,
+  #contactbook>.toolbar>label{flex:1 1 100%;width:100%;max-width:100%}
+  #assignments>.toolbar>button,
+  #contactbook>.toolbar>button{flex:1 1 auto;width:auto}
+  .settings-hub-polished .settings-compose-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+  .settings-hub-polished .settings-compose-grid>.settings-add-btn{grid-column:1;justify-self:stretch;width:100%}
+}
