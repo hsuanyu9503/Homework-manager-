@@ -1,7 +1,14 @@
-const APP_VERSION = "2.89";
+const APP_VERSION = "2.93";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
+
+// v2.93: A stale open tab must never silently overwrite a newer saved class state.
+// Keep a byte-for-byte baseline of the last storage value read or written in this tab.
+let __knownStoreRaw = null;
+let __storageLoadUnsafe = false;
+let __storageWriteBlocked = false;
+let __storageWarningShown = false;
 
 const STATUS_ORDER = ["pending","submitted","correction","completed","missing"];
 const STATUS_LABEL = {
@@ -48,6 +55,7 @@ function defaultData(){
 function loadStore(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
+    __knownStoreRaw = raw;
     if(raw){
       const parsed = JSON.parse(raw);
       if(parsed && Array.isArray(parsed.classes)){
@@ -61,6 +69,10 @@ function loadStore(){
           }))
         };
       }
+      // An existing but unreadable/unsupported V2 store is NOT an empty class list.
+      // Never allow a later save to replace it with an empty store.
+      __storageLoadUnsafe = true;
+      return {version:2, classes:[]};
     }
 
     const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -75,11 +87,14 @@ function loadStore(){
           data:legacy
         }]
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      const migratedRaw=JSON.stringify(migrated);
+      localStorage.setItem(STORAGE_KEY, migratedRaw);
+      __knownStoreRaw=migratedRaw;
       return migrated;
     }
   }catch(e){
-    console.error(e);
+    console.error("班級資料載入失敗，為保護資料已禁止覆寫原始儲存內容",e);
+    __storageLoadUnsafe = true;
   }
   return {version:2, classes:[]};
 }
@@ -140,6 +155,74 @@ function normalizeData(input){
   };
 }
 
+// A warning is deliberately persistent: a toast could disappear before a teacher notices.
+function showDataStorageWarning(){
+  if(typeof document==="undefined"||!document.body)return;
+  let panel=document.getElementById("cmDataSafetyWarning");
+  if(!panel){
+    panel=document.createElement("aside");
+    panel.id="cmDataSafetyWarning";
+    panel.className="cm-data-safety-warning";
+    panel.setAttribute("role","alert");
+    const message=document.createElement("div");
+    message.className="cm-data-safety-message";
+    const actions=document.createElement("div");
+    actions.className="cm-data-safety-actions";
+    const backup=document.createElement("button");
+    backup.type="button";backup.textContent="下載本頁資料備份";
+    backup.addEventListener("click",downloadCurrentTabDataBackup);
+    const reload=document.createElement("button");
+    reload.type="button";reload.textContent="重新載入最新資料";
+    reload.addEventListener("click",()=>location.reload());
+    actions.append(backup,reload);panel.append(message,actions);
+    document.body.appendChild(panel);
+  }
+  const message=panel.querySelector(".cm-data-safety-message");
+  if(message)message.textContent=__storageLoadUnsafe
+    ? "資料安全保護：原始班級資料無法正確讀取，已暫停儲存，避免清空現有紀錄。請保留原分頁並先備份資料。"
+    : "資料安全保護：偵測到其他分頁修改了班級資料，或儲存失敗。本頁已暫停寫入，避免將較新的資料覆蓋成舊版本。請先下載本頁備份，再重新載入。";
+  __storageWarningShown=true;
+}
+function downloadCurrentTabDataBackup(){
+  try{
+    const cls=activeClassId?store.classes.find(c=>c.id===activeClassId):null;
+    const backup=__storageLoadUnsafe
+      ? (localStorage.getItem(STORAGE_KEY)||localStorage.getItem(LEGACY_STORAGE_KEY)||JSON.stringify(store))
+      : JSON.stringify(cls?{
+          app:"classroom-manager",version:APP_VERSION,backupDate:new Date().toISOString(),
+          className:cls.name,data:cls.data
+        }:{app:"classroom-manager",version:APP_VERSION,backupDate:new Date().toISOString(),classes:store.classes},null,2);
+    const file=new Blob([backup],{type:"application/json"});
+    const url=URL.createObjectURL(file);
+    const a=document.createElement("a");a.href=url;
+    a.download=`ClassroomManager-資料安全備份-${new Date().toISOString().slice(0,19).replace(/[T:]/g,"-")}.json`;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),3000);
+  }catch(e){console.error("備份下載失敗",e);alert("備份無法下載，請保留此分頁並勿清除瀏覽器資料。");}
+}
+function persistStoreSafely(){
+  // A parsing error is not permission to replace the stored record with empty defaults.
+  if(__storageLoadUnsafe||__storageWriteBlocked){showDataStorageWarning();return false;}
+  try{
+    const currentRaw=localStorage.getItem(STORAGE_KEY);
+    if(currentRaw!==__knownStoreRaw){
+      __storageWriteBlocked=true;
+      showDataStorageWarning();
+      console.warn("資料寫入已停止：偵測到另一分頁在本頁載入後修改原始班級資料");
+      return false;
+    }
+    const nextRaw=JSON.stringify(store);
+    localStorage.setItem(STORAGE_KEY,nextRaw);
+    __knownStoreRaw=nextRaw;
+    return true;
+  }catch(e){
+    __storageWriteBlocked=true;
+    console.error("班級資料寫入失敗，已啟動防覆寫保護",e);
+    showDataStorageWarning();
+    return false;
+  }
+}
+
 function saveData(){
   if(activeClassId){
     const cls = store.classes.find(c=>c.id===activeClassId);
@@ -148,7 +231,7 @@ function saveData(){
       cls.data = data;
     }
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  persistStoreSafely();
   if(activeClassId) renderPage(currentPage);
   else renderClassHome();
 }
@@ -334,7 +417,7 @@ function updateAllClassesForDate(now=new Date()){
       const cls=store.classes.find(c=>c.id===activeClassId);
       if(cls)cls.data=data;
     }
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(store));
+    persistStoreSafely();
   }
   return changed;
 }
@@ -362,7 +445,7 @@ function persistActiveClass(){
   if(!cls) return;
   cls.name = data.class.name || cls.name || "未命名班級";
   cls.data = data;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  persistStoreSafely();
 }
 
 function renderClassHome(){
@@ -440,7 +523,7 @@ function openAddClass(){
       data:classData
     };
     store.classes.push(cls);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    persistStoreSafely();
     closeModal();
     renderClassHome();
     enterClass(cls.id);
@@ -591,7 +674,7 @@ function openClassSettings(classId){
     d.settings.pageLocks=nextPageLocks;
     d.students = roster.map(s=>{
       const old = oldByNumber.get(s.number);
-      return {id: old?.id || uid("s"), number:s.number, name:s.name};
+      return {...(old||{}), id:old?.id || uid("s"), number:s.number, name:s.name};
     });
 
     // Ensure every assignment has a record for every current student.
@@ -619,7 +702,7 @@ function openClassSettings(classId){
     cls.data = d;
     if(cls.id===activeClassId)data=d;
     updateAllClassesForDate(new Date());
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    persistStoreSafely();
     closeModal();
     renderClassHome();
     toast("班級資料已儲存");
@@ -645,6 +728,10 @@ function exportClassBackup(classId){
   URL.revokeObjectURL(url);
 }
 
+function isClassBackupData(obj){
+  return obj && typeof obj==="object" &&
+    Array.isArray(obj.students) && Array.isArray(obj.assignments) && Array.isArray(obj.records);
+}
 function importClassBackup(classId, file){
   if(!file) return;
   const cls = store.classes.find(c=>c.id===classId);
@@ -653,7 +740,12 @@ function importClassBackup(classId, file){
   reader.onload = ()=>{
     try{
       const parsed = JSON.parse(reader.result);
-      const incoming = normalizeData(parsed.data || parsed);
+      const source=parsed?.data||parsed;
+      if(!isClassBackupData(source)){
+        alert("這不是有效的單班級備份檔；為保護原有資料，已取消匯入。");
+        return;
+      }
+      const incoming = normalizeData(source);
       const ok = confirm(`確定要匯入備份到「${cls.name}」嗎？\n\n目前班級資料會被備份內容取代。`);
       if(!ok) return;
       cls.data = incoming;
@@ -661,7 +753,7 @@ function importClassBackup(classId, file){
         cls.name = parsed.className;
         cls.data.class.name = parsed.className;
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      persistStoreSafely();
       closeModal();
       renderClassHome();
       toast("班級備份已匯入");
@@ -680,7 +772,7 @@ function clearClassFromHome(classId){
   const fresh = defaultData();
   fresh.class.name = cls.name;
   cls.data = fresh;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  persistStoreSafely();
   closeModal();
   renderClassHome();
   toast("班級資料已清除");
@@ -734,7 +826,7 @@ function renameClass(classId){
   cls.name = trimmed;
   cls.data = normalizeData(cls.data);
   cls.data.class.name = trimmed;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  persistStoreSafely();
   renderClassHome();
 }
 
@@ -3926,26 +4018,48 @@ function deleteGradeItem(id){
 let assignmentReturnStudentId=null;
 let assignmentModalOpenFromStudent=false;
 let studentTrackingIncludeCompleted=false;
-// 學生個別作業視窗：依日期（新到舊）或作業名稱（中文語系）排列。
-// 僅影響教師看到的清單順序，不改動作業日期及「今日作業提醒」的優先順序。
+// 學生個別作業視窗：排序欄位（日期／名稱）和方向（遞增／遞減）均可設定。
+// 每個欄位分別保留最後使用的方向；初始值沿用 v2.91：日期新到舊、名稱遞增。
+// 僅影響教師檢視順序，不能修改作業日期或「今日作業提醒」的優先排序。
 let studentTrackingSortMode="date";
+const studentTrackingSortDirections={date:"desc",name:"asc"};
+// 個別學生作業追蹤：缺交、待訂正固定優先；其餘狀態接續排列。
+// 各優先群組內才依教師選擇的日期／名稱及 ↑↓ 排序，避免方向切換將急件移到底部。
+function studentTrackingStatusPriority(status){
+  if(status==="missing")return 0;
+  if(status==="correction")return 1;
+  return 2;
+}
 function studentTrackingHistorySort(items,mode=studentTrackingSortMode){
+  const direction=studentTrackingSortDirections[mode]==="desc"?-1:1;
   return [...items].sort((x,y)=>{
+    const priority=studentTrackingStatusPriority(x.r?.status)-studentTrackingStatusPriority(y.r?.status);
+    if(priority)return priority;
     const nameCompare=String(x.a.title||"").localeCompare(String(y.a.title||""),"zh-Hant",{numeric:true,sensitivity:"base"});
-    const dateCompare=String(y.a.date||"").localeCompare(String(x.a.date||""));
-    if(mode==="name")return nameCompare||dateCompare||String(x.a.id||"").localeCompare(String(y.a.id||""));
-    return dateCompare||nameCompare||String(x.a.id||"").localeCompare(String(y.a.id||""));
+    const dateCompare=String(x.a.date||"").localeCompare(String(y.a.date||""));
+    const primary=mode==="name"?nameCompare:dateCompare;
+    // 同日依名稱升冪；同名依日期新到舊，結果穩定且容易查找。
+    const secondary=mode==="name"?-dateCompare:nameCompare;
+    return direction*primary||secondary||String(x.a.id||"").localeCompare(String(y.a.id||""));
   });
 }
-function setStudentTrackingSort(mode,studentId){
-  if(mode!=="date" && mode!=="name")return;
-  if(studentTrackingSortMode===mode)return;
-  studentTrackingSortMode=mode;
+function refreshStudentTrackingSort(studentId){
   const modal=document.querySelector("#modalBackdrop .modal");
   const scroll=modal?.scrollTop||0;
   openStudent(studentId);
   const updatedModal=document.querySelector("#modalBackdrop .modal");
   if(updatedModal)updatedModal.scrollTop=scroll;
+}
+function setStudentTrackingSort(mode,studentId){
+  if(mode!=="date" && mode!=="name")return;
+  if(studentTrackingSortMode===mode)return;
+  studentTrackingSortMode=mode;
+  refreshStudentTrackingSort(studentId);
+}
+function toggleStudentTrackingSortDirection(studentId){
+  const mode=studentTrackingSortMode;
+  studentTrackingSortDirections[mode]=studentTrackingSortDirections[mode]==="asc"?"desc":"asc";
+  refreshStudentTrackingSort(studentId);
 }
 
 function toggleStudentCompleted(studentId){
@@ -3981,14 +4095,15 @@ function openStudent(studentId){
         <span class="badge completed">完成 ${completed}</span>
       </div>
       <div class="student-tracking-head-actions">
-        <div class="student-tracking-sort" role="group" aria-label="學生作業排序方式">
-          <button type="button" class="student-tracking-sort-btn ${studentTrackingSortMode==="date"?"active":""}" aria-pressed="${studentTrackingSortMode==="date"}" onclick="setStudentTrackingSort('date','${s.id}')">日期排序</button>
-          <button type="button" class="student-tracking-sort-btn ${studentTrackingSortMode==="name"?"active":""}" aria-pressed="${studentTrackingSortMode==="name"}" onclick="setStudentTrackingSort('name','${s.id}')">名稱排序</button>
+        <div class="student-tracking-sort" role="group" aria-label="學生作業排序">
+          <button type="button" class="student-tracking-sort-btn ${studentTrackingSortMode==="date"?"active":""}" aria-pressed="${studentTrackingSortMode==="date"}" title="依日期排序" onclick="setStudentTrackingSort('date','${s.id}')">日期</button>
+          <button type="button" class="student-tracking-sort-btn ${studentTrackingSortMode==="name"?"active":""}" aria-pressed="${studentTrackingSortMode==="name"}" title="依作業名稱排序" onclick="setStudentTrackingSort('name','${s.id}')">名稱</button>
+          <button type="button" class="student-tracking-order-btn" aria-label="排序方向：目前${studentTrackingSortDirections[studentTrackingSortMode]==="asc"?"遞增":"遞減"}，點選切換為${studentTrackingSortDirections[studentTrackingSortMode]==="asc"?"遞減":"遞增"}" title="${studentTrackingSortMode==="date"?(studentTrackingSortDirections.date==="asc"?"日期：舊到新":"日期：新到舊"):(studentTrackingSortDirections.name==="asc"?"名稱：前到後":"名稱：後到前")}" onclick="toggleStudentTrackingSortDirection('${s.id}')">${studentTrackingSortDirections[studentTrackingSortMode]==="asc"?"↑":"↓"}</button>
         </div>
         <button type="button" class="secondary student-completed-toggle" onclick="toggleStudentCompleted('${s.id}')" aria-pressed="${studentTrackingIncludeCompleted}">${studentTrackingIncludeCompleted?"隱藏已完成":"顯示已完成"}</button>
       </div>
     </div>
-    <p class="muted student-tracking-help">可直接登記或修改每項作業的狀態；修改會同步更新今日作業提醒。</p>
+    <p class="muted student-tracking-help">缺交、待訂正自動置頂；同狀態依日期／名稱及 ↑↓ 排序。修改狀態會同步更新今日作業提醒。</p>
     <div class="student-tracking-edit-list">
       ${history.length?history.map(({a,r})=>`
         <div class="student-tracking-edit-row" data-assignment-id="${escapeAttr(a.id)}">
@@ -4141,7 +4256,12 @@ async function importBackup(file){
   try{
     const text = await file.text();
     const parsed = JSON.parse(text);
-    const candidate = normalizeData(parsed);
+    const source=parsed?.data||parsed;
+    if(!isClassBackupData(source)){
+      alert("這不是有效的單班級備份檔；為保護原有資料，已取消匯入。");
+      return;
+    }
+    const candidate = normalizeData(source);
     const summary = `班級：${candidate.class.name || "未命名"}\n學生：${candidate.students.length} 人\n作業：${candidate.assignments.length} 項\n紀錄：${candidate.records.length} 筆\n\n匯入後會取代目前瀏覽器中的資料，確定繼續嗎？`;
     if(!confirm(summary)) return;
     data = candidate;
@@ -4354,3 +4474,12 @@ document.addEventListener("input",e=>{if(e.target?.matches?.("#assignmentSearchS
 document.addEventListener("change",e=>{if(e.target?.matches?.("#assignmentSearchStart,#assignmentSearchEnd"))syncAssignmentDateDisplays()});
 document.addEventListener("click",e=>{if(e.target?.closest?.("#clearAssignmentKeyword"))queueMicrotask(syncAssignmentDateDisplays)});
 syncAssignmentDateDisplays();
+
+// v2.93: Detect updates originating from another open tab of this same origin.
+window.addEventListener("storage",e=>{
+  if(e.key===STORAGE_KEY && e.newValue!==__knownStoreRaw){
+    __storageWriteBlocked=true;
+    showDataStorageWarning();
+  }
+});
+if(__storageLoadUnsafe)showDataStorageWarning();

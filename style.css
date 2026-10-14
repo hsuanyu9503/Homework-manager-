@@ -2909,3 +2909,48 @@ body.reminder-fullscreen-active{overflow:hidden!important}
  .student-tracking-sort-btn{flex:1 1 auto;min-width:0;padding:9px 8px!important}
  .student-tracking-head-actions .student-completed-toggle{flex:1 1 auto;white-space:normal}
 }
+
+
+/* v2.91 — 三鍵排序：日期 / 名稱 / 單鍵 ↑↓，方向切換不增加欄位。 */
+.student-tracking-head-actions{gap:10px}
+.student-tracking-sort{display:inline-flex;align-items:stretch;flex:0 1 auto;max-width:100%;gap:4px;padding:4px}
+.student-tracking-sort-btn{min-width:58px;min-height:42px;padding:9px 13px!important}
+.student-tracking-order-btn{
+  appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 46px;min-width:46px;min-height:42px;margin:0;padding:5px!important;
+  border:0!important;border-left:1px solid #dce2f5!important;border-radius:9px!important;
+  background:transparent!important;color:#5751d3!important;
+  font-size:1.35rem;font-weight:850;line-height:1;box-shadow:none!important;
+  cursor:pointer;box-sizing:border-box;
+}
+.student-tracking-order-btn:hover{background:rgba(255,255,255,.75)!important}
+.student-tracking-order-btn:focus-visible{outline:2px solid #6c63ff;outline-offset:2px}
+@media(max-width:650px){
+ .student-tracking-head-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:9px;width:100%}
+ .student-tracking-sort{flex:0 1 auto;width:auto;min-width:0;max-width:100%}
+ .student-tracking-sort-btn{flex:0 1 auto;min-width:58px;padding:9px 12px!important}
+ .student-tracking-order-btn{flex:0 0 46px}
+ .student-tracking-head-actions .student-completed-toggle{flex:0 1 auto;min-height:48px;white-space:normal}
+}
+@media(max-width:390px){
+ .student-tracking-head-actions{gap:8px}
+ .student-tracking-sort-btn{min-width:52px;padding:9px 9px!important}
+ .student-tracking-order-btn{flex-basis:42px;min-width:42px}
+}
+
+
+/* v2.93 — 資料安全保護警示（不能被一般 toast 蓋過或自動消失） */
+.cm-data-safety-warning{
+  position:fixed;z-index:2147483647;left:max(12px,env(safe-area-inset-left));
+  right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:16px 18px;background:#fff9ec;color:#633f0d;border:2px solid #ebb95c;
+  border-radius:14px;box-shadow:0 12px 35px rgba(35,42,60,.25);
+  font-size:15px;font-weight:700;line-height:1.5;
+}
+.cm-data-safety-message{flex:1 1 350px;min-width:0}
+.cm-data-safety-actions{display:flex;gap:9px;flex-wrap:wrap}
+.cm-data-safety-actions button{min-height:44px;background:#fff;border:1px solid #b6822b;
+ color:#633f0d;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:700}
+@media(max-width:620px){.cm-data-safety-warning{padding:12px;font-size:13px}
+ .cm-data-safety-actions{width:100%}.cm-data-safety-actions button{flex:1 1 120px}}
