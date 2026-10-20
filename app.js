@@ -1,9 +1,9 @@
-const APP_VERSION = "2.94";
+const APP_VERSION = "2.95";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
 
-// v2.94: A stale open tab must never silently overwrite a newer saved class state.
+// v2.95: A stale open tab must never silently overwrite a newer saved class state.
 // Keep a byte-for-byte baseline of the last storage value read or written in this tab.
 let __knownStoreRaw = null;
 let __storageLoadUnsafe = false;
@@ -2708,6 +2708,8 @@ function unmountSeatModule(){
   if(grid){grid.replaceChildren();grid.style.gridTemplateColumns="";}
   const room=document.getElementById("seatRoom");
   seatPositionRevealed=new Set();
+  const panel=document.getElementById("seatCardPanel");
+  if(panel)panel.replaceChildren();
   document.body.classList.remove("seat-presentation-active");
   document.getElementById("seatPresentationToolbar")?.remove();
   if(room){
@@ -2741,7 +2743,10 @@ function renderSeats(){
     }
   }
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
-  if(room?.classList.contains("presentation"))syncSeatRevealAccessibility();
+  if(room?.classList.contains("presentation")){
+    renderSeatCardPanel();
+    syncSeatRevealAccessibility();
+  }
   grid.querySelectorAll(".seat-slot").forEach(el=>{
     el.addEventListener("click",()=>{
       const room=document.getElementById("seatRoom");
@@ -3107,9 +3112,32 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
-// v2.94: Reveal the student occupying a seat POSITION, never a student card.
-// This Set is UI-only; it is intentionally not stored in data.seating or localStorage.
+// v2.95: Bi-directional reveal. Both student name cards and seat positions
+// refer to the SAME, position-based, UI-only Set. Nothing is saved to class data.
 let seatPositionRevealed=new Set();
+function renderSeatCardPanel(){
+  const panel=document.getElementById("seatCardPanel");
+  const room=document.getElementById("seatRoom");
+  if(!panel||!room?.classList.contains("presentation"))return;
+  const assigned=data.students.filter(student=>data.seating.slots.some((id,index)=>
+    id===student.id && data.seating.blocked[index]!==true
+  )).sort((a,b)=>Number(a.number)-Number(b.number));
+  panel.innerHTML=`<div class="seat-card-panel-head"><strong>學生字卡</strong>
+      <span id="seatCardProgress" aria-live="polite"></span></div>
+      <p class="seat-card-hint">點選姓名或座位，都能揭曉同一個位置</p>
+      <div class="seat-card-list">${assigned.map(student=>{
+        const index=data.seating.slots.indexOf(student.id);
+        return `<button type="button" class="seat-student-card" data-seat-card-index="${index}"
+          aria-label="揭曉 ${escapeHtml(String(student.number))} 號 ${escapeHtml(student.name)} 的座位">
+          <span class="seat-student-card-inner">
+            <span class="seat-student-card-front"><b>${escapeHtml(String(student.number).padStart(2,"0"))}</b>${escapeHtml(student.name)}</span>
+            <span class="seat-student-card-back">已揭曉</span>
+          </span></button>`;
+      }).join("")||`<div class="empty">目前尚未分配座位。</div>`}</div>`;
+  panel.querySelectorAll("[data-seat-card-index]").forEach(button=>{
+    button.addEventListener("click",()=>revealSeatAt(Number(button.dataset.seatCardIndex)));
+  });
+}
 function syncSeatRevealAccessibility(){
   const room=document.getElementById("seatRoom");
   const presenting=!!room?.classList.contains("presentation");
@@ -3129,8 +3157,17 @@ function syncSeatRevealAccessibility(){
     const back=el.querySelector(".seat-flip-back");
     if(back)back.setAttribute("aria-hidden",presenting&&!revealed?"true":"false");
   });
+  // Also flip the corresponding name card when the seat itself was clicked.
+  room?.querySelectorAll("[data-seat-card-index]").forEach(card=>{
+    const revealed=presenting&&seatPositionRevealed.has(Number(card.dataset.seatCardIndex));
+    card.classList.toggle("flipped",revealed);
+    card.disabled=revealed;
+    card.setAttribute("aria-label",revealed?"此學生座位已揭曉":"點選學生姓名揭曉座位");
+  });
   const total=room?.querySelectorAll(".seat-slot.occupied").length||0;
   const count=seatPositionRevealed.size;
+  const cardProgress=document.getElementById("seatCardProgress");
+  if(cardProgress)cardProgress.textContent=`${Math.min(count,total)}／${total} 已揭曉`;
   const status=document.getElementById("seatRevealStatus");
   if(status)status.textContent=`已揭曉 ${Math.min(count,total)}／${total} 個座位`;
   const all=document.getElementById("seatRevealAllBtn");
@@ -3169,6 +3206,7 @@ function toggleSeatPresentation(forceOff=false){
   seatPositionRevealed.clear();
   const old=document.getElementById("seatPresentationToolbar");
   if(entering){
+    renderSeatCardPanel();
     if(!old){
       const toolbar=document.createElement("div");
       toolbar.id="seatPresentationToolbar";
@@ -4509,7 +4547,7 @@ document.addEventListener("change",e=>{if(e.target?.matches?.("#assignmentSearch
 document.addEventListener("click",e=>{if(e.target?.closest?.("#clearAssignmentKeyword"))queueMicrotask(syncAssignmentDateDisplays)});
 syncAssignmentDateDisplays();
 
-// v2.94: Detect updates originating from another open tab of this same origin.
+// v2.95: Detect updates originating from another open tab of this same origin.
 window.addEventListener("storage",e=>{
   if(e.key===STORAGE_KEY && e.newValue!==__knownStoreRaw){
     __storageWriteBlocked=true;

@@ -3030,3 +3030,45 @@ body.reminder-fullscreen-active{overflow:hidden!important}
 @media(prefers-reduced-motion:reduce){
   .seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-inner{transition:none}
 }
+
+
+/* v2.95 — Two-way reveal: classic student-name cards + seat-position flip share state. */
+.seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+  display:grid;grid-template-columns:minmax(224px,274px) minmax(0,1fr);
+  align-items:start;column-gap:clamp(14px,2vw,26px);row-gap:18px;
+  width:100%;min-width:0;flex:1;
+}
+.seat-room.presentation.seat-position-reveal .seat-card-panel{
+  display:block;min-width:0;box-sizing:border-box;
+  padding:15px 13px;border:1px solid #dfe7f7;border-radius:17px;
+  background:#fff;box-shadow:0 5px 20px rgba(63,84,140,.06);
+}
+.seat-room.presentation.seat-position-reveal .seat-card-panel-head{margin-bottom:5px}
+.seat-room.presentation.seat-position-reveal .seat-card-panel-head strong{color:#27344d;font-size:.98rem}
+.seat-room.presentation.seat-position-reveal .seat-card-hint{
+  margin:0 0 13px;color:#7b879d;font-size:.78rem;line-height:1.5;
+}
+.seat-room.presentation.seat-position-reveal .seat-card-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.seat-room.presentation.seat-position-reveal .seat-student-card{min-width:0;min-height:60px;border-radius:12px}
+.seat-room.presentation.seat-position-reveal .seat-student-card-inner{height:60px;}
+.seat-room.presentation.seat-position-reveal .seat-student-card-front{
+  color:#34415c;font-size:.87rem;min-width:0;overflow-wrap:anywhere;
+}
+.seat-room.presentation.seat-position-reveal .seat-student-card-back{
+  background:#eaeafc;color:#5d5ac0;font-size:.86rem;
+}
+.seat-room.presentation.seat-position-reveal .seat-student-card:focus-visible{outline:3px solid #7771ec;outline-offset:3px}
+.seat-room.presentation.seat-position-reveal .seat-grid-wrap{min-width:0;box-sizing:border-box;}
+@media(max-width:900px){
+  .seat-room.presentation.seat-position-reveal .seat-presentation-stage{grid-template-columns:minmax(0,1fr)}
+  .seat-room.presentation.seat-position-reveal .seat-card-list{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(max-width:620px){
+  .seat-room.presentation.seat-position-reveal .seat-card-panel{padding:12px}
+  .seat-room.presentation.seat-position-reveal .seat-card-list{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+  .seat-room.presentation.seat-position-reveal .seat-student-card-inner{height:55px}
+  .seat-room.presentation.seat-position-reveal .seat-student-card{min-height:55px}
+}
+@media(prefers-reduced-motion:reduce){
+  .seat-room.presentation.seat-position-reveal .seat-student-card-inner{transition:none}
+}
