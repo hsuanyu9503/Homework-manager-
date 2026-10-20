@@ -1,9 +1,9 @@
-const APP_VERSION = "2.93";
+const APP_VERSION = "2.94";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
 
-// v2.93: A stale open tab must never silently overwrite a newer saved class state.
+// v2.94: A stale open tab must never silently overwrite a newer saved class state.
 // Keep a byte-for-byte baseline of the last storage value read or written in this tab.
 let __knownStoreRaw = null;
 let __storageLoadUnsafe = false;
@@ -136,6 +136,8 @@ function normalizeData(input){
       rows:Math.max(1,Math.min(10,Number(input?.seating?.rows)||5)),
       cols:Math.max(1,Math.min(10,Number(input?.seating?.cols)||3)),
       slots:Array.isArray(input?.seating?.slots) ? input.seating.slots : [],
+      // Preserve legacy blocked-seat flags rather than losing them on load/upgrade.
+      blocked:Array.isArray(input?.seating?.blocked) ? input.seating.blocked : [],
       view:input?.seating?.view==="student" ? "student" : "teacher",
       rules:Array.isArray(input?.seating?.rules)?input.seating.rules:[],
       history:Array.isArray(input?.seating?.history)?input.seating.history.slice(0,20):[]
@@ -2705,10 +2707,11 @@ function unmountSeatModule(){
   const grid=document.getElementById("seatGrid");
   if(grid){grid.replaceChildren();grid.style.gridTemplateColumns="";}
   const room=document.getElementById("seatRoom");
-  const cardPanel=document.getElementById("seatCardPanel");if(cardPanel)cardPanel.replaceChildren();
-  seatCardRevealed=new Set();
+  seatPositionRevealed=new Set();
+  document.body.classList.remove("seat-presentation-active");
+  document.getElementById("seatPresentationToolbar")?.remove();
   if(room){
-    room.classList.remove("presentation","step-reveal","card-reveal","front-step-reveal","front-card-reveal","student-view");
+    room.classList.remove("presentation","seat-position-reveal","step-reveal","card-reveal","front-step-reveal","front-card-reveal","student-view");
     const front=room.querySelector(".seat-front"),wrap=room.querySelector(".seat-presentation-stage");
     if(front&&wrap)room.append(front,wrap);
   }
@@ -2723,7 +2726,7 @@ function renderSeats(){
   grid.innerHTML=order.map(index=>{
     const student=data.students.find(x=>x.id===s.slots[index]),blocked=s.blocked[index]===true;
     return `<div class="seat-slot ${blocked?"blocked":student?"occupied":"empty"}" data-seat-index="${index}" ${student?`data-student-id="${student.id}"`:""} draggable="${!blocked&&student?"true":"false"}">
-      ${blocked?`<span class="seat-blocked-label">已封鎖</span>`:student?`<div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong><div class="seat-reveal-cover"><span>點擊揭曉</span></div>`:`<span>空位</span>`}
+      ${blocked?`<span class="seat-blocked-label">已封鎖</span>`:student?`<div class="seat-flip-inner"><div class="seat-flip-face seat-flip-front" aria-hidden="true"><span class="seat-mystery-mark">？</span></div><div class="seat-flip-face seat-flip-back"><div class="seat-number">${String(student.number).padStart(2,"0")}</div><strong>${escapeHtml(student.name)}</strong></div></div>`:`<span>空位</span>`}
     </div>`;
   }).join("");
   const rows=document.getElementById("seatRows"),cols=document.getElementById("seatCols");
@@ -2738,9 +2741,19 @@ function renderSeats(){
     }
   }
   const vb=document.getElementById("seatViewBtn");if(vb)vb.textContent=s.view==="teacher"?"切換學生視角":"切換教師視角";
+  if(room?.classList.contains("presentation"))syncSeatRevealAccessibility();
   grid.querySelectorAll(".seat-slot").forEach(el=>{
-    el.addEventListener("click",()=>{const room=document.getElementById("seatRoom");if(room?.classList.contains("presentation"))return;toggleSeatBlocked(Number(el.dataset.seatIndex))});
-    el.addEventListener("dragstart",e=>{if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
+    el.addEventListener("click",()=>{
+      const room=document.getElementById("seatRoom");
+      if(room?.classList.contains("presentation")){revealSeatAt(Number(el.dataset.seatIndex));return;}
+      toggleSeatBlocked(Number(el.dataset.seatIndex));
+    });
+    el.addEventListener("keydown",e=>{
+      if((e.key==="Enter"||e.key===" ")&&document.getElementById("seatRoom")?.classList.contains("presentation")&&el.classList.contains("occupied")){
+        e.preventDefault();revealSeatAt(Number(el.dataset.seatIndex));
+      }
+    });
+    el.addEventListener("dragstart",e=>{if(document.getElementById("seatRoom")?.classList.contains("presentation")){e.preventDefault();return;}if(!el.classList.contains("occupied"))return;e.dataTransfer.setData("text/plain",el.dataset.seatIndex);el.classList.add("dragging")});
     el.addEventListener("dragend",()=>el.classList.remove("dragging"));
     el.addEventListener("dragover",e=>{if(el.classList.contains("blocked"))return;e.preventDefault();el.classList.add("drag-over")});
     el.addEventListener("dragleave",()=>el.classList.remove("drag-over"));
@@ -2762,9 +2775,6 @@ function moveSeat(from,to){
   normalizeSeating();if(!Number.isInteger(from)||!Number.isInteger(to)||from===to||data.seating.blocked[from]||data.seating.blocked[to])return;
   [data.seating.slots[from],data.seating.slots[to]]=[data.seating.slots[to],data.seating.slots[from]];
   saveData();
-  const seatRoom=document.getElementById("seatRoom");
-  if(seatRoom)seatRoom.classList.toggle("front-step-reveal",seatRevealMode==="step");
-
 }
 function applySeatGrid(){
   normalizeSeating();
@@ -3097,62 +3107,86 @@ function clearSeats(){
   normalizeSeating();data.seating.slots=Array(data.seating.rows*data.seating.cols).fill(null);saveData();
 }
 function toggleSeatView(){normalizeSeating();data.seating.view=data.seating.view==="teacher"?"student":"teacher";saveData()}
-let seatRevealMode=localStorage.getItem("cmSeatRevealMode")==="direct"?"direct":"cards";
-let seatCardRevealed=new Set();
-function renderSeatCardPanel(){
-  const panel=document.getElementById("seatCardPanel");if(!panel)return;
-  const assigned=[...data.students].filter(s=>data.seating.slots.includes(s.id)).sort((a,b)=>a.number-b.number);
-  panel.innerHTML=`<div class="seat-card-panel-head"><strong>學生字卡</strong><span id="seatCardProgress">${seatCardRevealed.size} / ${assigned.length} 已揭曉</span></div>
-    <div class="seat-card-list">${assigned.map(s=>`<button type="button" class="seat-student-card ${seatCardRevealed.has(s.id)?"flipped":""}" data-seat-card-student="${s.id}" ${seatCardRevealed.has(s.id)?"disabled":""}>
-      <span class="seat-student-card-inner"><span class="seat-student-card-front"><b>${String(s.number).padStart(2,"0")}</b>${escapeHtml(s.name)}</span><span class="seat-student-card-back">已揭曉</span></span>
-    </button>`).join("")||`<div class="empty">目前尚未分配座位。</div>`}</div>`;
-  panel.querySelectorAll("[data-seat-card-student]").forEach(btn=>btn.addEventListener("click",()=>revealSeatByStudent(btn.dataset.seatCardStudent)));
-}
-function revealSeatByStudent(studentId){
-  if(seatRevealMode!=="cards"||seatCardRevealed.has(studentId))return;
-  const seat=document.querySelector(`.seat-slot[data-student-id="${studentId}"]`);
-  const card=document.querySelector(`[data-seat-card-student="${studentId}"]`);
-  if(!seat||!card)return;
-  seatCardRevealed.add(studentId);
-  card.classList.add("flipped");card.disabled=true;
-  seat.classList.add("revealed","card-revealed");
-  const progress=document.getElementById("seatCardProgress");
-  if(progress){
-    const total=document.querySelectorAll("[data-seat-card-student]").length;
-    progress.textContent=`${seatCardRevealed.size} / ${total} 已揭曉`;
-  }
-}
-function setSeatRevealMode(mode){
-  seatRevealMode=mode==="direct"?"direct":"cards";
-  localStorage.setItem("cmSeatRevealMode",seatRevealMode);
-  document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.classList.toggle("active",btn.dataset.seatRevealMode===seatRevealMode));
+// v2.94: Reveal the student occupying a seat POSITION, never a student card.
+// This Set is UI-only; it is intentionally not stored in data.seating or localStorage.
+let seatPositionRevealed=new Set();
+function syncSeatRevealAccessibility(){
   const room=document.getElementById("seatRoom");
-  if(room){
-    room.classList.remove("front-step-reveal");
-    room.classList.toggle("front-card-reveal",seatRevealMode==="cards");
-    if(seatRevealMode==="direct")room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed","card-revealed"));
-  }
+  const presenting=!!room?.classList.contains("presentation");
+  room?.querySelectorAll(".seat-slot").forEach(el=>{
+    const occupied=el.classList.contains("occupied");
+    const index=Number(el.dataset.seatIndex);
+    const revealed=presenting&&occupied&&seatPositionRevealed.has(index);
+    el.classList.toggle("revealed",revealed);
+    el.draggable=!presenting&&occupied&&!el.classList.contains("blocked");
+    if(presenting&&occupied){
+      el.setAttribute("role","button");
+      el.tabIndex=revealed?-1:0;
+      el.setAttribute("aria-label",revealed?"此座位已揭曉":"揭曉這個座位");
+    }else{
+      el.removeAttribute("role");el.removeAttribute("tabindex");el.removeAttribute("aria-label");
+    }
+    const back=el.querySelector(".seat-flip-back");
+    if(back)back.setAttribute("aria-hidden",presenting&&!revealed?"true":"false");
+  });
+  const total=room?.querySelectorAll(".seat-slot.occupied").length||0;
+  const count=seatPositionRevealed.size;
+  const status=document.getElementById("seatRevealStatus");
+  if(status)status.textContent=`已揭曉 ${Math.min(count,total)}／${total} 個座位`;
+  const all=document.getElementById("seatRevealAllBtn");
+  if(all)all.disabled=count>=total||total===0;
+  const reset=document.getElementById("seatRevealResetBtn");
+  if(reset)reset.disabled=count===0;
+}
+function revealSeatAt(index){
+  const room=document.getElementById("seatRoom");
+  if(!room?.classList.contains("presentation")||!Number.isInteger(index)||seatPositionRevealed.has(index))return;
+  const seat=[...room.querySelectorAll(".seat-slot.occupied")].find(el=>Number(el.dataset.seatIndex)===index);
+  if(!seat)return; // blocked and empty slots never reveal
+  seatPositionRevealed.add(index);
+  syncSeatRevealAccessibility();
+}
+function revealAllSeats(){
+  const room=document.getElementById("seatRoom");
+  if(!room?.classList.contains("presentation"))return;
+  room.querySelectorAll(".seat-slot.occupied").forEach(el=>seatPositionRevealed.add(Number(el.dataset.seatIndex)));
+  syncSeatRevealAccessibility();
+}
+function hideAllSeats(){
+  if(!document.getElementById("seatRoom")?.classList.contains("presentation"))return;
+  seatPositionRevealed.clear();
+  syncSeatRevealAccessibility();
 }
 function toggleSeatPresentation(forceOff=false){
   const room=document.getElementById("seatRoom");if(!room)return;
   const entering=forceOff===true?false:!room.classList.contains("presentation");
   room.classList.toggle("presentation",entering);
-  room.classList.remove("step-reveal");
-  room.classList.toggle("card-reveal",entering&&seatRevealMode==="cards");
+  room.classList.toggle("seat-position-reveal",entering);
+  room.classList.remove("step-reveal","card-reveal","front-step-reveal","front-card-reveal");
   document.body.classList.toggle("seat-presentation-active",entering);
-  document.getElementById("seatPresentationBtn").textContent=entering?"展示中":"展示模式";
-  let back=document.getElementById("seatPresentationBackBtn");
+  const trigger=document.getElementById("seatPresentationBtn");
+  if(trigger)trigger.textContent=entering?"展示中":"座位揭曉展示";
+  seatPositionRevealed.clear();
+  const old=document.getElementById("seatPresentationToolbar");
   if(entering){
-    seatCardRevealed=new Set();
-    room.querySelectorAll(".seat-slot").forEach(el=>el.classList.remove("revealed","card-revealed"));
-    if(seatRevealMode==="cards")renderSeatCardPanel();
-    if(!back){back=document.createElement("button");back.id="seatPresentationBackBtn";back.className="seat-presentation-back";back.textContent="← 返回座位管理";back.addEventListener("click",()=>toggleSeatPresentation(true));room.prepend(back)}
+    if(!old){
+      const toolbar=document.createElement("div");
+      toolbar.id="seatPresentationToolbar";
+      toolbar.className="seat-presentation-toolbar";
+      toolbar.innerHTML=`<button type="button" class="seat-presentation-back" id="seatPresentationBackBtn">← 返回</button>
+        <div class="seat-reveal-actions"><span class="seat-reveal-status" id="seatRevealStatus" aria-live="polite"></span>
+          <button type="button" class="secondary" id="seatRevealAllBtn">全部揭曉</button>
+          <button type="button" class="secondary" id="seatRevealResetBtn">重新隱藏</button></div>`;
+      room.prepend(toolbar);
+      toolbar.querySelector("#seatPresentationBackBtn").addEventListener("click",()=>toggleSeatPresentation(true));
+      toolbar.querySelector("#seatRevealAllBtn").addEventListener("click",revealAllSeats);
+      toolbar.querySelector("#seatRevealResetBtn").addEventListener("click",hideAllSeats);
+    }
   }else{
-    seatCardRevealed=new Set();
-    const panel=document.getElementById("seatCardPanel");if(panel)panel.replaceChildren();
-    room.classList.remove("card-reveal");
-    if(back)back.remove();
+    old?.remove();
+    trigger?.focus({preventScroll:true});
   }
+  syncSeatRevealAccessibility();
 }
 // v2.79: attendance and homework linkage. Dates are local YYYY-MM-DD strings.
 function isSchoolDay(dateStr){
@@ -4448,10 +4482,10 @@ document.getElementById("clearSeatsBtn")?.addEventListener("click",clearSeats);
 document.getElementById("seatViewBtn")?.addEventListener("click",toggleSeatView);
 document.getElementById("seatPresentationBtn")?.addEventListener("click",()=>toggleSeatPresentation(false));
 document.addEventListener("keydown",event=>{
-  if(event.key==="Escape" && reminderDisplayMode){event.preventDefault();toggleReminderDisplay(true);}
+  if(event.key==="Escape" && document.getElementById("seatRoom")?.classList.contains("presentation")){
+    event.preventDefault();toggleSeatPresentation(true);
+  }else if(event.key==="Escape" && reminderDisplayMode){event.preventDefault();toggleReminderDisplay(true);}
 });
-document.querySelectorAll("[data-seat-reveal-mode]").forEach(btn=>btn.addEventListener("click",()=>setSeatRevealMode(btn.dataset.seatRevealMode)));
-setSeatRevealMode(seatRevealMode);
 
 document.getElementById("seatSettingsBtn")?.addEventListener("click",openSeatSettings);
 document.getElementById("seatHistoryBtn")?.addEventListener("click",openSeatHistory);
@@ -4475,7 +4509,7 @@ document.addEventListener("change",e=>{if(e.target?.matches?.("#assignmentSearch
 document.addEventListener("click",e=>{if(e.target?.closest?.("#clearAssignmentKeyword"))queueMicrotask(syncAssignmentDateDisplays)});
 syncAssignmentDateDisplays();
 
-// v2.93: Detect updates originating from another open tab of this same origin.
+// v2.94: Detect updates originating from another open tab of this same origin.
 window.addEventListener("storage",e=>{
   if(e.key===STORAGE_KEY && e.newValue!==__knownStoreRaw){
     __storageWriteBlocked=true;

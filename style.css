@@ -2954,3 +2954,79 @@ body.reminder-fullscreen-active{overflow:hidden!important}
  color:#633f0d;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:700}
 @media(max-width:620px){.cm-data-safety-warning{padding:12px;font-size:13px}
  .cm-data-safety-actions{width:100%}.cm-data-safety-actions button{flex:1 1 120px}}
+
+
+/* v2.94 — Seat-position reveal. No separate student-name cards. */
+.seat-flip-inner{display:contents}
+.seat-flip-front{display:none}
+.seat-flip-back{display:contents}
+.seat-room.presentation.seat-position-reveal{
+  position:fixed;inset:0;z-index:1400;margin:0;border:0;border-radius:0;
+  padding:calc(12px + env(safe-area-inset-top,0px)) clamp(12px,2.5vw,32px) calc(18px + env(safe-area-inset-bottom,0px));
+  min-height:0;height:100dvh;box-sizing:border-box;overflow:auto;
+  background:#f6f9fe;-webkit-overflow-scrolling:touch;
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-toolbar{
+  order:0;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  position:sticky;top:0;z-index:11;padding:0 0 12px;
+  background:#f6f9fe;flex-wrap:wrap;
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-back{
+  position:static;top:auto;align-self:auto;margin:0;min-height:44px;
+  color:#4c51ad;border:1px solid #e1e7f4;background:#fff;
+}
+.seat-reveal-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+.seat-reveal-actions .secondary{min-height:44px;padding:10px 14px;margin:0}
+.seat-reveal-actions .secondary:disabled{opacity:.42;cursor:default}
+.seat-reveal-status{font-size:.86rem;color:#6c7990;font-weight:700;white-space:nowrap}
+.seat-room.presentation.seat-position-reveal .seat-presentation-stage{display:block;width:100%;flex:1;min-height:0;order:2}
+.seat-room.presentation.seat-position-reveal .seat-grid-wrap{overflow:auto;padding:8px 4px 16px;align-items:center}
+.seat-room.presentation.seat-position-reveal .seat-grid{width:min(100%,1100px);max-width:1100px;gap:clamp(7px,1.3vw,16px)}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied{
+  min-height:clamp(88px,10vw,138px);position:relative;
+  border:1px solid #dce5f6;border-radius:16px;background:transparent;
+  box-shadow:0 4px 18px rgba(63,84,140,.07);cursor:pointer;
+  perspective:900px;overflow:visible;isolation:isolate;
+  -webkit-tap-highlight-color:transparent;
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied:not(.revealed):hover{border-color:#9aa9ef}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied:focus-visible{outline:3px solid #7771ec;outline-offset:4px}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-inner{
+  position:absolute;inset:0;display:block;border-radius:inherit;
+  transform-style:preserve-3d;-webkit-transform-style:preserve-3d;
+  transition:transform .58s cubic-bezier(.22,.72,.2,1);
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied.revealed .seat-flip-inner{transform:rotateY(180deg)}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-face{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;padding:8px;box-sizing:border-box;border-radius:inherit;
+  -webkit-backface-visibility:hidden;backface-visibility:hidden;
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-front{
+  background:linear-gradient(160deg,#e9edff,#f4f6ff);color:#7770db;
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-back{
+  transform:rotateY(180deg);background:#fff;color:var(--text);overflow:hidden;
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-mystery-mark{
+  display:block;font-size:clamp(1.7rem,3vw,2.5rem);font-weight:850;line-height:1;
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-back strong{
+  display:block;font-size:clamp(.88rem,1.7vw,1.35rem);line-height:1.35;text-align:center;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-number{font-size:clamp(.76rem,1.2vw,.95rem)}
+.seat-room.presentation.seat-position-reveal .seat-slot.empty{opacity:.56;cursor:default}
+.seat-room.presentation.seat-position-reveal .seat-slot.blocked{opacity:.29;cursor:default}
+@media(max-width:620px){
+  .seat-room.presentation.seat-position-reveal .seat-presentation-toolbar{align-items:stretch}
+  .seat-room.presentation.seat-position-reveal .seat-presentation-back{flex:0 0 auto}
+  .seat-reveal-actions{flex:1;justify-content:flex-end;gap:6px}
+  .seat-reveal-status{width:100%;text-align:right;font-size:.75rem}
+  .seat-reveal-actions .secondary{min-height:42px;padding:8px 10px;font-size:.82rem}
+  .seat-room.presentation.seat-position-reveal .seat-slot.occupied{min-height:82px;border-radius:12px}
+  .seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-face{gap:4px;padding:5px}
+}
+@media(prefers-reduced-motion:reduce){
+  .seat-room.presentation.seat-position-reveal .seat-slot.occupied .seat-flip-inner{transition:none}
+}
