@@ -3072,3 +3072,292 @@ body.reminder-fullscreen-active{overflow:hidden!important}
 @media(prefers-reduced-motion:reduce){
   .seat-room.presentation.seat-position-reveal .seat-student-card-inner{transition:none}
 }
+
+
+/* v2.96 — Seat reveal projection layout rebalance */
+.seat-room.presentation.seat-position-reveal{
+  display:flex;
+  flex-direction:column;
+  gap:clamp(10px,1.5vh,16px);
+  padding:calc(10px + env(safe-area-inset-top,0px)) clamp(12px,2.2vw,28px) calc(14px + env(safe-area-inset-bottom));
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-toolbar{
+  flex:0 0 auto;
+  padding:0 0 6px;
+  margin:0;
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+  display:grid;
+  grid-template-columns:minmax(232px,276px) minmax(0,1fr);
+  align-items:stretch;
+  column-gap:clamp(14px,1.8vw,24px);
+  row-gap:14px;
+  width:100%;
+  min-width:0;
+  min-height:0;
+  flex:1 1 auto;
+}
+.seat-room.presentation.seat-position-reveal .seat-card-panel{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  height:100%;
+  padding:14px 12px;
+}
+.seat-room.presentation.seat-position-reveal .seat-card-panel-head{margin-bottom:4px}
+.seat-room.presentation.seat-position-reveal .seat-card-hint{margin:0 0 10px}
+.seat-room.presentation.seat-position-reveal .seat-card-list{
+  align-content:start;
+  gap:8px;
+}
+.seat-room.presentation.seat-position-reveal .seat-grid-wrap{
+  min-width:0;
+  min-height:0;
+  height:100%;
+  padding:2px 2px 4px;
+  align-items:stretch;
+}
+.seat-room.presentation.seat-position-reveal .seat-grid{
+  width:min(100%,1120px);
+  max-width:1120px;
+  height:100%;
+  min-height:clamp(460px,64dvh,760px);
+  gap:clamp(10px,1.3vw,16px);
+  align-content:stretch;
+  grid-auto-rows:minmax(0,1fr);
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied,
+.seat-room.presentation.seat-position-reveal .seat-slot.empty,
+.seat-room.presentation.seat-position-reveal .seat-slot.blocked{
+  min-height:0;
+  height:100%;
+}
+.seat-room.presentation.seat-position-reveal .seat-front{
+  flex:0 0 auto;
+  width:min(48%,420px);
+  margin:0 auto;
+  padding:9px 18px;
+}
+@media(max-width:1100px){
+  .seat-room.presentation.seat-position-reveal .seat-presentation-stage{grid-template-columns:minmax(210px,248px) minmax(0,1fr)}
+}
+@media(max-width:900px){
+  .seat-room.presentation.seat-position-reveal{gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px calc(12px + env(safe-area-inset-bottom))}
+  .seat-room.presentation.seat-position-reveal .seat-presentation-stage{grid-template-columns:minmax(0,1fr);row-gap:12px}
+  .seat-room.presentation.seat-position-reveal .seat-card-list{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .seat-room.presentation.seat-position-reveal .seat-grid{min-height:clamp(420px,56dvh,620px)}
+  .seat-room.presentation.seat-position-reveal .seat-front{width:min(62%,400px)}
+}
+@media(max-width:620px){
+  .seat-room.presentation.seat-position-reveal .seat-card-panel{padding:12px}
+  .seat-room.presentation.seat-position-reveal .seat-card-list{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+  .seat-room.presentation.seat-position-reveal .seat-grid{min-height:clamp(360px,50dvh,500px)}
+  .seat-room.presentation.seat-position-reveal .seat-front{width:min(78%,320px)}
+}
+
+
+/* v2.97 — Proportional seat-presentation polish. Styling only: no seat data mutation. */
+.seat-room.presentation.seat-position-reveal{
+  gap:clamp(10px,1.35vh,15px);
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+  grid-template-columns:minmax(226px,266px) minmax(0,1fr);
+  column-gap:clamp(14px,1.65vw,24px);
+}
+.seat-room.presentation.seat-position-reveal .seat-card-panel{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  min-height:0;
+  padding:clamp(12px,1.1vw,16px);
+}
+.seat-room.presentation.seat-position-reveal .seat-card-list{
+  display:grid;
+  flex:1 1 auto;
+  min-height:0;
+  grid-auto-rows:minmax(0,1fr);
+  align-content:stretch;
+  gap:clamp(8px,1.05vh,12px);
+}
+.seat-room.presentation.seat-position-reveal .seat-student-card{
+  min-height:0;
+  height:100%;
+}
+.seat-room.presentation.seat-position-reveal .seat-student-card-inner{
+  height:100%;
+  min-height:0;
+}
+.seat-room.presentation.seat-position-reveal .seat-student-card-front{
+  font-size:clamp(.83rem,1.05vw,1rem);
+  padding:6px;
+}
+.seat-room.presentation.seat-position-reveal .seat-grid{
+  gap:clamp(9px,1.05vw,15px);
+}
+.seat-room.presentation.seat-position-reveal .seat-front{
+  width:min(44%,420px);
+  padding:9px 16px;
+}
+@media(max-width:1100px) and (min-width:901px){
+  .seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+    grid-template-columns:minmax(210px,244px) minmax(0,1fr);
+  }
+}
+@media(max-width:900px){
+  /* Stacked layout must follow content height, not stretch name cards into the entire viewport. */
+  .seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+    grid-template-columns:minmax(0,1fr);
+    align-items:start;
+    flex:0 0 auto;
+  }
+  .seat-room.presentation.seat-position-reveal .seat-card-panel{
+    height:auto;
+    min-height:0;
+  }
+  .seat-room.presentation.seat-position-reveal .seat-card-list{
+    flex:none;
+    grid-auto-rows:minmax(58px,auto);
+    align-content:start;
+  }
+  .seat-room.presentation.seat-position-reveal .seat-student-card{min-height:58px;height:auto}
+  .seat-room.presentation.seat-position-reveal .seat-student-card-inner{min-height:58px;height:100%}
+  .seat-room.presentation.seat-position-reveal .seat-grid-wrap{height:auto;min-height:0}
+  .seat-room.presentation.seat-position-reveal .seat-grid{height:auto}
+}
+@media(max-width:620px){
+  .seat-room.presentation.seat-position-reveal .seat-card-list{grid-auto-rows:minmax(56px,auto)}
+  .seat-room.presentation.seat-position-reveal .seat-student-card{min-height:56px}
+  .seat-room.presentation.seat-position-reveal .seat-student-card-inner{min-height:56px}
+}
+
+
+/* v2.98 — Projection proportions: roomier seating, a more legible podium.
+   Scope intentionally limited to the full-screen seat reveal; does not affect saved seating. */
+.seat-room.presentation.seat-position-reveal{
+  gap:clamp(14px,1.8dvh,22px);
+  justify-content:flex-start;
+  padding:calc(12px + env(safe-area-inset-top,0px)) clamp(14px,2.25vw,32px)
+          calc(18px + env(safe-area-inset-bottom,0px));
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-toolbar{
+  padding-bottom:4px;
+}
+.seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+  flex:0 0 auto;
+  align-items:stretch;
+  grid-template-columns:minmax(222px,266px) minmax(0,1fr);
+  column-gap:clamp(18px,2vw,30px);
+  margin:0;
+  height:auto;
+}
+.seat-room.presentation.seat-position-reveal .seat-card-panel{
+  height:100%;
+  min-height:0;
+  max-height:100%;
+  overflow-y:auto;
+}
+.seat-room.presentation.seat-position-reveal .seat-card-list{
+  flex:1 1 auto;
+  min-height:0;
+  align-content:stretch;
+  grid-auto-rows:minmax(50px,1fr);
+  gap:clamp(8px,1.15vh,13px);
+}
+.seat-room.presentation.seat-position-reveal .seat-grid-wrap{
+  flex:0 1 auto;
+  height:auto;
+  min-height:0;
+  overflow:visible;
+  padding:0;
+  align-items:stretch;
+  justify-content:center;
+}
+.seat-room.presentation.seat-position-reveal .seat-grid{
+  width:min(100%,960px);
+  max-width:960px;
+  min-height:0;
+  height:auto;
+  align-content:start;
+  grid-auto-rows:clamp(94px,12.8dvh,144px);
+  gap:clamp(13px,1.5vw,20px);
+}
+.seat-room.presentation.seat-position-reveal .seat-slot.occupied,
+.seat-room.presentation.seat-position-reveal .seat-slot.empty,
+.seat-room.presentation.seat-position-reveal .seat-slot.blocked{
+  height:100%;
+  min-height:0;
+}
+.seat-room.presentation.seat-position-reveal .seat-front{
+  flex:0 0 auto;
+  width:min(66%,690px);
+  max-width:calc(100% - 12px);
+  min-height:74px;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:15px 24px;
+  margin:0 auto;
+  border:1px solid rgba(77,98,100,.20);
+  border-radius:13px;
+  background:linear-gradient(180deg,rgba(85,107,111,.19),rgba(85,107,111,.10));
+  box-shadow:inset 0 1px 2px rgba(255,255,255,.5),0 4px 12px rgba(42,63,90,.04);
+  font-size:clamp(1rem,1.25vw,1.2rem);
+  letter-spacing:.12em;
+}
+/* Normal teacher view puts the blackboard below the seats. */
+.seat-room.presentation.seat-position-reveal.student-view .seat-presentation-stage{
+  margin-top:clamp(8px,1.8vh,22px);
+}
+.seat-room.presentation.seat-position-reveal.student-view .seat-front{
+  margin-bottom:auto;
+}
+/* Opposite view places the board above the seats; keep the same breathing space. */
+.seat-room.presentation.seat-position-reveal:not(.student-view) .seat-front{
+  margin-top:clamp(8px,1.8vh,22px);
+}
+.seat-room.presentation.seat-position-reveal:not(.student-view) .seat-presentation-stage{
+  margin-bottom:auto;
+}
+/* On tall landscape projectors, distribute the recovered vertical space above and below the board. */
+@media(min-width:901px) and (min-height:880px){
+  .seat-room.presentation.seat-position-reveal.student-view .seat-presentation-stage{
+    margin-top:clamp(28px,5.8dvh,72px);
+  }
+  .seat-room.presentation.seat-position-reveal:not(.student-view) .seat-front{
+    margin-top:clamp(28px,5.8dvh,72px);
+  }
+}
+@media(max-width:900px){
+  .seat-room.presentation.seat-position-reveal .seat-presentation-stage{
+    grid-template-columns:minmax(0,1fr);
+    row-gap:clamp(12px,2vh,20px);
+    height:auto;
+    flex:0 0 auto;
+  }
+  .seat-room.presentation.seat-position-reveal .seat-card-panel{
+    max-height:none;
+    height:auto;
+    overflow:visible;
+  }
+  .seat-room.presentation.seat-position-reveal .seat-card-list{
+    flex:none;
+    grid-auto-rows:minmax(58px,auto);
+  }
+  .seat-room.presentation.seat-position-reveal .seat-grid-wrap{height:auto;min-height:0;overflow:visible}
+  .seat-room.presentation.seat-position-reveal .seat-grid{
+    width:100%;height:auto;min-height:0;
+    grid-auto-rows:clamp(90px,11.8dvh,126px);
+    gap:clamp(10px,1.5vw,15px);
+  }
+  .seat-room.presentation.seat-position-reveal .seat-front{
+    width:min(80%,600px);
+    min-height:62px;
+    font-size:1.02rem;
+  }
+}
+@media(max-width:620px){
+  .seat-room.presentation.seat-position-reveal .seat-grid{grid-auto-rows:clamp(78px,10.5dvh,108px);gap:9px}
+  .seat-room.presentation.seat-position-reveal .seat-front{width:min(94%,440px);min-height:58px;padding:12px 16px}
+  .seat-room.presentation.seat-position-reveal .seat-card-list{grid-auto-rows:minmax(56px,auto)}
+}
