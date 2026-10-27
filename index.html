@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6C63FF" />
   <title>Classroom Manager</title>
-  <link rel="stylesheet" href="style.css?v=2.98" />
+  <link rel="stylesheet" href="style.css?v=2.99" />
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <div class="class-home-inner">
       <div class="class-home-head">
         <div>
-          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.98</span></div>
+          <div class="eyebrow">CLASSROOM HUB <span class="version-badge">v2.99</span></div>
           <h1>班級管理</h1>
           <p class="muted">選擇班級進入作業管理，或建立新的班級。</p>
         </div>
@@ -26,7 +26,7 @@
   <div id="workspace" class="workspace hidden">
 <header class="topbar">
     <div>
-      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.98</span></div>
+      <div class="eyebrow">CLASSROOM MANAGER <span class="version-badge">v2.99</span></div>
       <h1 id="headerClassName">Classroom Manager</h1>
     </div>
     <div class="top-actions"><button class="secondary back-home-btn" id="backToClassHome">← 班級首頁</button>
@@ -211,8 +211,15 @@
         <div class="grade-subject-tools">
           <select id="gradeSubjectFilter" aria-label="科目篩選"></select>
           <button type="button" class="secondary" id="manageSubjectsBtn">科目管理</button>
+          <button type="button" class="secondary" id="gradeTermSettingsBtn">期中／期末設定</button>
         </div>
       </div>
+      <div id="gradeOverviewTermTabs" class="grade-overview-term-tabs" role="group" aria-label="成績總覽區段" hidden>
+        <button type="button" class="grade-term-tab active" data-grade-term-view="all" aria-pressed="true">全部</button>
+        <button type="button" class="grade-term-tab" data-grade-term-view="midterm" aria-pressed="false">期中</button>
+        <button type="button" class="grade-term-tab" data-grade-term-view="final" aria-pressed="false">期末</button>
+      </div>
+      <div id="gradeOverviewTermHint" class="grade-overview-term-hint" hidden></div>
       <div id="gradebookSummary" class="gradebook-summary"></div>
       <div id="gradebookOverview"></div>
       <div id="gradebookList" class="stack"></div>
@@ -492,6 +499,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="creator-credit">Created by 小宇老師</footer>
-  <script src="app.js?v=2.98"></script>
+  <script src="app.js?v=2.99"></script>
 </body>
 </html>

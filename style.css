@@ -3361,3 +3361,45 @@ body.reminder-fullscreen-active{overflow:hidden!important}
   .seat-room.presentation.seat-position-reveal .seat-front{width:min(94%,440px);min-height:58px;padding:12px 16px}
   .seat-room.presentation.seat-position-reveal .seat-card-list{grid-auto-rows:minmax(56px,auto)}
 }
+
+
+/* v2.99 — Optional midterm/final gradebook sections; grade values stay unchanged. */
+.gradebook-toolbar .grade-subject-tools{flex-wrap:wrap;justify-content:flex-end}
+.gradebook-toolbar #gradeTermSettingsBtn{white-space:nowrap;min-height:42px}
+.grade-overview-term-tabs{display:flex;gap:5px;width:max-content;max-width:100%;padding:5px;background:#e9eeff;border:1px solid #dce4fa;border-radius:14px;margin:2px 0 9px;box-sizing:border-box}
+.grade-overview-term-tabs[hidden],.grade-overview-term-hint[hidden]{display:none!important}
+.grade-term-tab{border:0;border-radius:10px;background:transparent;color:#69778f;padding:10px 23px;min-height:42px;font-weight:800;cursor:pointer}
+.grade-term-tab.active{background:#fff;color:#6257d7;box-shadow:0 2px 8px rgba(64,69,130,.1)}
+.grade-overview-term-hint{font-size:.86rem;color:#69778f;margin:0 0 14px;line-height:1.5}
+.grade-term-badge{display:inline-block;vertical-align:middle;padding:3px 8px;margin-left:6px;background:#e8eafc;border-radius:999px;font-size:.73rem;color:#5e5dc5;font-weight:800;white-space:nowrap}
+.grade-term-badge.final{background:#e5f3f4;color:#267c82}
+.grade-term-badge.unassigned{background:#f0f2f6;color:#8791a4}
+.grade-term-settings-form{display:flex;flex-direction:column;gap:14px;min-width:0}
+.grade-term-enable-option{display:flex;gap:12px;align-items:flex-start;background:#f5f7ff;border:1px solid #dee5fa;padding:16px;border-radius:14px;cursor:pointer}
+.grade-term-enable-option>input{flex:0 0 19px;width:19px;height:19px;margin:3px 0 0;accent-color:#6861e6}
+.grade-term-enable-option>span{display:flex;flex-direction:column;gap:5px;min-width:0}
+.grade-term-enable-option strong{font-size:1rem}
+.grade-term-enable-option small{font-size:.82rem;line-height:1.5;color:#738096}
+.grade-term-notice{margin:0;color:#66768f;font-size:.86rem;line-height:1.6}
+.grade-term-item-list{margin:0;padding:12px;border:1px solid #e0e7f4;border-radius:14px;min-width:0;display:flex;flex-direction:column;gap:9px;max-height:min(48dvh,480px);overflow-y:auto;overflow-x:hidden}
+.grade-term-item-list:disabled{opacity:.54}
+.grade-term-item-list legend{font-size:.85rem;color:#64748b;font-weight:800;padding:0 7px}
+.grade-term-item-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;border:1px solid #e1e8f5;border-radius:12px;padding:12px;background:#fff}
+.grade-term-item-info{display:flex;flex-direction:column;gap:4px;min-width:0;overflow-wrap:anywhere}
+.grade-term-item-info strong{font-size:.94rem;color:#28364c}
+.grade-term-item-info small{color:#7a8aa0;font-size:.78rem}
+.grade-term-radio-set{display:flex;flex-wrap:wrap;gap:5px;background:#f0f3fc;border-radius:11px;padding:4px}
+.grade-term-choice{position:relative;display:block;cursor:pointer}
+.grade-term-choice input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.grade-term-choice span{display:block;padding:9px 11px;min-width:48px;border-radius:9px;text-align:center;font-size:.84rem;color:#71809b;font-weight:750}
+.grade-term-choice input:checked+span{background:#fff;color:#615ad1;box-shadow:0 2px 7px rgba(76,83,135,.12)}
+.grade-term-choice input:focus-visible+span{outline:2px solid #6963e6;outline-offset:1px}
+@media(max-width:760px){
+ .gradebook-toolbar .grade-subject-tools{width:100%;justify-content:flex-start}
+ .gradebook-toolbar #gradeTermSettingsBtn{flex:0 1 auto}
+ .grade-term-item-row{grid-template-columns:minmax(0,1fr);gap:9px}
+ .grade-term-radio-set{width:max-content;max-width:100%}
+ .grade-term-tab{padding:10px 18px;flex:1}
+ .grade-overview-term-tabs{width:100%}
+}
+@media(max-width:410px){.gradebook-toolbar #gradeTermSettingsBtn{width:100%}.grade-term-choice span{padding:10px 9px}}

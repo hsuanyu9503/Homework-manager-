@@ -1,4 +1,4 @@
-const APP_VERSION = "2.98";
+const APP_VERSION = "2.99";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -48,7 +48,7 @@ function defaultData(){
     groups:[],
     groupScores:{},
     assignmentGroups:[],
-    settings:{overdueDays:2,attendancePassword:"1234",missingReviewTime:"12:00",reminderLimit:3,reminderHideClear:true,reminderShowStatus:true}
+    settings:{overdueDays:2,attendancePassword:"1234",missingReviewTime:"12:00",reminderLimit:3,reminderHideClear:true,reminderShowStatus:true,gradeTermsEnabled:false}
   };
 }
 
@@ -125,6 +125,8 @@ function normalizeData(input){
     gradeItems:Array.isArray(input?.gradeItems) ? input.gradeItems.map(g=>({
       ...g,
       subjectId:g?.subjectId||"",
+      // 一筆評量只能歸入單一區段；舊資料預設不分配，絕不自動重算成績。
+      gradeTerm:g?.gradeTerm==="midterm"||g?.gradeTerm==="final"?g.gradeTerm:"",
       trackCorrection:Boolean(g?.trackCorrection),
       correctionAssignmentId:g?.correctionAssignmentId||null,
       scores:(g?.scores&&typeof g.scores==="object")?g.scores:{}
@@ -149,6 +151,7 @@ function normalizeData(input){
       reminderLimit:Math.max(1,Math.min(6,Number(input?.settings?.reminderLimit)||3)),
       reminderHideClear:input?.settings?.reminderHideClear!==false,
       reminderShowStatus:input?.settings?.reminderShowStatus!==false,
+      gradeTermsEnabled:input?.settings?.gradeTermsEnabled===true,
       pageLocks:Object.fromEntries(["assignments","contactbook","students","gradebook","scores","seats"].map(page=>{
         const lock=input?.settings?.pageLocks?.[page];
         return [page,{enabled:Boolean(lock?.enabled),password:String(lock?.password||"").slice(0,12)}];
@@ -3908,6 +3911,17 @@ function formatGradeNumber(n){
 }
 let gradebookView="overview";
 let gradeSubjectFilter="all";
+// 成績區段只改變總覽的檢視範圍，不改動學生原始成績。
+let gradeOverviewTerm="all";
+const GRADE_TERM_LABELS={"":"未分配",midterm:"期中",final:"期末"};
+function gradeTermOf(item){return item?.gradeTerm==="midterm"||item?.gradeTerm==="final"?item.gradeTerm:""}
+function gradeTermsEnabled(){return data.settings?.gradeTermsEnabled===true}
+function gradeTermBadge(item){const term=gradeTermOf(item);return gradeTermsEnabled()?`<span class="grade-term-badge ${term||"unassigned"}">${GRADE_TERM_LABELS[term]}</span>`:""}
+function changeGradeOverviewTerm(term){
+  if(!["all","midterm","final"].includes(term))return;
+  gradeOverviewTerm=term;
+  renderGradebook();
+}
 function gradeSubjectName(id){return data.subjects?.find(s=>s.id===id)?.name||"未分類"}
 function gradeFilteredItems(){
   const all=[...(data.gradeItems||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||"").localeCompare(a.createdAt||""));
@@ -3925,10 +3939,31 @@ function renderGradebook(){
   if(!["all","",...data.subjects.map(s=>s.id)].includes(gradeSubjectFilter))gradeSubjectFilter="all";
   filter.value=gradeSubjectFilter;
   document.querySelectorAll("[data-grade-view]").forEach(b=>b.classList.toggle("active",b.dataset.gradeView===gradebookView));
-  const items=gradeFilteredItems();
+  const allItems=gradeFilteredItems();
   const isOverview=gradebookView==="overview";
+  const enabled=gradeTermsEnabled();
+  const selectedTerm=enabled?gradeOverviewTerm:"all";
+  // 成績登記仍完整列出項目；僅總覽受到期中／期末篩選影響。
+  const items=isOverview&&selectedTerm!=="all"
+    ?allItems.filter(item=>gradeTermOf(item)===selectedTerm)
+    :allItems;
+  const termTabs=document.getElementById("gradeOverviewTermTabs");
+  const termHint=document.getElementById("gradeOverviewTermHint");
+  if(termTabs){
+    termTabs.hidden=!(enabled&&isOverview);
+    termTabs.querySelectorAll("[data-grade-term-view]").forEach(btn=>{
+      const active=btn.dataset.gradeTermView===selectedTerm;
+      btn.classList.toggle("active",active);btn.setAttribute("aria-pressed",String(active));
+    });
+  }
+  if(termHint){
+    termHint.hidden=!(enabled&&isOverview);
+    termHint.textContent=selectedTerm==="all"
+      ?"完整總覽：所有項目各顯示一次。未分配的項目不會計入期中或期末。"
+      :`${GRADE_TERM_LABELS[selectedTerm]}總覽：只統計指定給「${GRADE_TERM_LABELS[selectedTerm]}」的評量項目，與另一區段不重複。`;
+  }
   summary.classList.add("register-only");
-  summary.innerHTML=`<article class="grade-summary-card"><span>成績項目</span><strong>${items.length}</strong><small>${gradeSubjectFilter==="all"?"全部科目":escapeHtml(gradeSubjectName(gradeSubjectFilter))}</small></article>`;
+  summary.innerHTML=`<article class="grade-summary-card"><span>${isOverview&&selectedTerm!=="all"?GRADE_TERM_LABELS[selectedTerm]+"項目":"成績項目"}</span><strong>${items.length}</strong><small>${gradeSubjectFilter==="all"?"全部科目":escapeHtml(gradeSubjectName(gradeSubjectFilter))}</small></article>`;
   overview.hidden=!isOverview;list.hidden=isOverview;
   if(isOverview){
     list.innerHTML="";
@@ -3941,7 +3976,7 @@ function renderGradebook(){
 function renderGradeRegister(items){
   const list=document.getElementById("gradebookList");
   list.innerHTML=items.length?items.map(item=>{const st=gradeStats(item),total=data.students.length;return `<div class="item-card grade-item-card clickable" onclick="openGradeItem('${item.id}')">
-    <div class="item-main"><div class="item-title"><span class="grade-subject-badge">${escapeHtml(gradeSubjectName(item.subjectId||""))}</span>${escapeHtml(item.title)}</div>
+    <div class="item-main"><div class="item-title"><span class="grade-subject-badge">${escapeHtml(gradeSubjectName(item.subjectId||""))}</span>${escapeHtml(item.title)} ${gradeTermBadge(item)}</div>
       <div class="item-sub">${formatDate(item.date)}｜滿分 ${formatGradeNumber(item.maxScore)}｜已登記 ${st.count} / ${total}</div></div>
     <div class="grade-item-stats"><span>平均 <b>${formatGradeNumber(st.avg)}</b></span><span>最高 <b>${formatGradeNumber(st.max)}</b></span><span>最低 <b>${formatGradeNumber(st.min)}</b></span></div>
   </div>`}).join(""):`<div class="empty">這個科目目前沒有成績項目。</div>`;
@@ -3953,9 +3988,54 @@ function renderGradeOverview(items){
     const at=Date.parse(a.createdAt||a.date||"")||0,bt=Date.parse(b.createdAt||b.date||"")||0;
     return at-bt||(a.date||"").localeCompare(b.date||"")||String(a.id||"").localeCompare(String(b.id||""));
   });
-  if(!items.length){box.innerHTML=`<div class="empty">這個科目目前沒有可顯示的成績。</div>`;return}
+  if(!items.length){
+    const selection=gradeTermsEnabled()&&gradeOverviewTerm!=="all"?GRADE_TERM_LABELS[gradeOverviewTerm]:"此科目";
+    box.innerHTML=`<div class="empty">${selection}目前沒有可顯示的成績項目。${gradeTermsEnabled()?"可在「期中／期末設定」指定評量項目。":""}</div>`;return;
+  }
   box.innerHTML=`<div class="grade-overview-scroll"><table class="grade-overview-table"><thead><tr><th class="grade-sticky-name">座號／姓名</th>${items.map(i=>`<th><span>${escapeHtml(i.title)}</span><small>${escapeHtml(gradeSubjectName(i.subjectId||""))}<br>${formatGradeNumber(i.maxScore)} 分</small></th>`).join("")}<th>平均<small>百分制</small></th></tr></thead>
     <tbody>${students.map(s=>`<tr><th class="grade-sticky-name">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</th>${items.map(i=>{const v=i.scores?.[s.id];return `<td>${v===null||v===undefined||v===""?"—":formatGradeNumber(v)}</td>`}).join("")}<td class="grade-average-cell">${formatGradeNumber(gradeStudentAverage(s.id,items))}</td></tr>`).join("")}</tbody></table></div>`;
+}
+// 區段設定集中管理所有成績項目：每列三選一，資料模型單值，無法同時計入兩區。
+function openGradeTermSettings(){
+  const items=[...(data.gradeItems||[])].sort((a,b)=>(a.date||"").localeCompare(b.date||"")||String(a.title||"").localeCompare(String(b.title||""),"zh-Hant",{numeric:true}));
+  const rows=items.length?items.map((item,index)=>{
+    const selected=gradeTermOf(item);
+    const options=[["","不計入"],["midterm","期中"],["final","期末"]];
+    return `<div class="grade-term-item-row">
+      <div class="grade-term-item-info"><strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(gradeSubjectName(item.subjectId||""))} · ${escapeHtml(formatDate(item.date))} · 滿分 ${formatGradeNumber(item.maxScore)}</small></div>
+      <div class="grade-term-radio-set" role="radiogroup" aria-label="${escapeAttr(item.title)} 計入區段">
+        ${options.map(([term,label])=>`<label class="grade-term-choice"><input type="radio" name="grade-term-${index}" value="${term}" ${selected===term?"checked":""}><span>${label}</span></label>`).join("")}
+      </div>
+    </div>`;
+  }).join(""):`<div class="empty">還沒有成績項目。建立項目後就可以在這裡指定期中或期末。</div>`;
+  showModal("期中／期末成績設定",`<form id="gradeTermSettingsForm" class="grade-term-settings-form">
+    <label class="grade-term-enable-option"><input type="checkbox" id="gradeTermsEnabledInput" ${gradeTermsEnabled()?"checked":""}>
+      <span><strong>啟用期中／期末區段</strong><small>啟用後，成績總覽可切換「全部／期中／期末」。停用只會隱藏區段切換，不會清除原始成績或已設定的歸屬。</small></span>
+    </label>
+    <p class="grade-term-notice">每筆評量只能選擇一個區段，也可以選擇「不計入」。期中與期末不會重複計算同一項目。</p>
+    <fieldset class="grade-term-item-list" id="gradeTermItemList" ${gradeTermsEnabled()?"":"disabled"}>
+      <legend>評量項目歸屬（${items.length} 項）</legend>
+      ${rows}
+    </fieldset>
+    <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button type="submit" class="primary">儲存設定</button></div>
+  </form>`);
+  const enabledInput=document.getElementById("gradeTermsEnabledInput");
+  const fieldset=document.getElementById("gradeTermItemList");
+  enabledInput.addEventListener("change",()=>{fieldset.disabled=!enabledInput.checked});
+  document.getElementById("gradeTermSettingsForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const enabled=enabledInput.checked;
+    if(!data.settings)data.settings={};
+    data.settings.gradeTermsEnabled=enabled;
+    if(enabled){
+      items.forEach((item,index)=>{
+        const selected=document.querySelector(`input[name="grade-term-${index}"]:checked`);
+        item.gradeTerm=selected&&(selected.value==="midterm"||selected.value==="final")?selected.value:"";
+      });
+    }
+    saveData();closeModal();renderGradebook();toast("期中／期末設定已儲存");
+  });
 }
 function openSubjectManager(){
   showModal("科目管理",`<div class="subject-manager"><div id="subjectManagerList">${data.subjects.map((s,i)=>`<div class="subject-row"><input value="${escapeAttr(s.name)}" data-subject-name="${s.id}"><button type="button" class="danger-btn compact" onclick="deleteSubject('${s.id}')">刪除</button></div>`).join("")||'<div class="empty">尚無科目</div>'}</div>
@@ -4012,6 +4092,7 @@ function openNewGradeItem(){
       <label><span>項目名稱</span><input id="gradeItemTitle" placeholder="例如：第一次小考" required></label>
       <label><span>日期</span><input type="date" id="gradeItemDate" value="${localDateString()}" required></label>
       <label><span>滿分</span><input type="number" id="gradeItemMax" min="0.1" step="0.1" value="100" required></label>
+      ${gradeTermsEnabled()?`<label><span>計入區段</span><select id="newGradeTerm"><option value="">不計入</option><option value="midterm">期中</option><option value="final">期末</option></select></label>`:""}
       <label class="grade-assignment-option"><input type="checkbox" id="gradeTrackCorrection"><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為完成</small></span></label>
       <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal()">取消</button><button class="primary" type="submit">建立</button></div>
     </form>`);
@@ -4019,7 +4100,9 @@ function openNewGradeItem(){
     e.preventDefault();
     const subjectId=document.getElementById("gradeItemSubject").value,title=document.getElementById("gradeItemTitle").value.trim(),date=document.getElementById("gradeItemDate").value,maxScore=Number(document.getElementById("gradeItemMax").value),trackCorrection=document.getElementById("gradeTrackCorrection").checked;
     if(!subjectId||!title||!date||!Number.isFinite(maxScore)||maxScore<=0){toast("請完整填寫成績項目");return}
-    const gradeItem={id:uid("g"),subjectId,title,date,maxScore,scores:{},createdAt:new Date().toISOString(),trackCorrection,correctionAssignmentId:null};
+    const rawTerm=document.getElementById("newGradeTerm")?.value||"";
+    const gradeTerm=rawTerm==="midterm"||rawTerm==="final"?rawTerm:"";
+    const gradeItem={id:uid("g"),subjectId,title,date,maxScore,scores:{},createdAt:new Date().toISOString(),trackCorrection,correctionAssignmentId:null,gradeTerm};
     data.gradeItems.push(gradeItem);
     if(trackCorrection)ensureGradeCorrectionAssignment(gradeItem);
     saveData();closeModal();setPage("gradebook");toast(trackCorrection?"已建立成績項目與訂正作業":"已建立成績項目");
@@ -4030,7 +4113,7 @@ function openGradeItem(id){
   const students=[...data.students].sort((a,b)=>a.number-b.number),st=gradeStats(item);
   showModal(escapeHtml(item.title),`
     <div class="grade-editor-head">
-      <div><strong>${escapeHtml(gradeSubjectName(item.subjectId||""))}｜${formatDate(item.date)}</strong><span>滿分 ${formatGradeNumber(item.maxScore)}</span></div>
+      <div><strong>${escapeHtml(gradeSubjectName(item.subjectId||""))}｜${formatDate(item.date)}</strong><span>滿分 ${formatGradeNumber(item.maxScore)} ${gradeTermBadge(item)}</span></div>
       <div class="grade-editor-stats"><span>已登記 <b id="gradeEnteredCount">${st.count}</b> / ${students.length}</span><span>平均 <b id="gradeAvg">${formatGradeNumber(st.avg)}</b></span><span>最高 <b id="gradeMax">${formatGradeNumber(st.max)}</b></span><span>最低 <b id="gradeMin">${formatGradeNumber(st.min)}</b></span></div>
     </div>
     <div class="grade-entry-list">${students.map(s=>{
@@ -4062,6 +4145,7 @@ function editGradeItem(id){
     <label><span>項目名稱</span><input id="editGradeTitle" value="${escapeAttr(item.title)}" required></label>
     <label><span>日期</span><input type="date" id="editGradeDate" value="${escapeAttr(item.date)}" required></label>
     <label><span>滿分</span><input type="number" id="editGradeMaxScore" min="0.1" step="0.1" value="${item.maxScore}" required></label>
+    ${gradeTermsEnabled()?`<label><span>計入區段</span><select id="editGradeTerm"><option value="" ${gradeTermOf(item)===""?"selected":""}>不計入</option><option value="midterm" ${gradeTermOf(item)==="midterm"?"selected":""}>期中</option><option value="final" ${gradeTermOf(item)==="final"?"selected":""}>期末</option></select></label>`:""}
     <label class="grade-assignment-option"><input type="checkbox" id="editGradeTrackCorrection" ${item.trackCorrection?"checked":""}><span><b>新增到作業</b><small>建立「成績項目＋訂正」作業；滿分學生會自動標示為完成</small></span></label>
     <div class="modal-actions"><button type="button" class="secondary" onclick="openGradeItem('${id}')">取消</button><button class="primary" type="submit">儲存</button></div></form>`);
   document.getElementById("editGradeItemForm").addEventListener("submit",e=>{
@@ -4077,6 +4161,8 @@ function editGradeItem(id){
       removeGradeCorrectionAssignment(item);
     }
     item.subjectId=subjectId;item.title=title;item.date=date;item.maxScore=maxScore;item.trackCorrection=trackCorrection;
+    const chosenTerm=document.getElementById("editGradeTerm")?.value;
+    if(chosenTerm!==undefined)item.gradeTerm=chosenTerm==="midterm"||chosenTerm==="final"?chosenTerm:"";
     if(trackCorrection)ensureGradeCorrectionAssignment(item);
     saveData();openGradeItem(id);toast("項目已更新");
   });
@@ -4430,6 +4516,8 @@ document.getElementById("addGradeItemBtn")?.addEventListener("click",openNewGrad
 document.querySelectorAll("[data-grade-view]").forEach(btn=>btn.addEventListener("click",()=>{gradebookView=btn.dataset.gradeView;renderGradebook()}));
 document.getElementById("gradeSubjectFilter")?.addEventListener("change",e=>{gradeSubjectFilter=e.target.value;renderGradebook()});
 document.getElementById("manageSubjectsBtn")?.addEventListener("click",openSubjectManager);
+document.getElementById("gradeTermSettingsBtn")?.addEventListener("click",openGradeTermSettings);
+document.querySelectorAll("[data-grade-term-view]").forEach(btn=>btn.addEventListener("click",()=>changeGradeOverviewTerm(btn.dataset.gradeTermView)));
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
 document.getElementById("backToClassHome").addEventListener("click",leaveClass);
