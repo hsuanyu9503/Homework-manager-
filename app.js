@@ -1,4 +1,4 @@
-const APP_VERSION = "2.99";
+const APP_VERSION = "2.100";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -3909,6 +3909,161 @@ function formatGradeNumber(n){
   if(n===null||n===undefined||!Number.isFinite(Number(n)))return "—";
   return Number.isInteger(Number(n))?String(Number(n)):Number(n).toFixed(1).replace(/\.0$/,"");
 }
+// v2.100 — 離線 Excel（XLSX）匯出，不依賴 CDN 或第三方套件；純讀取，不更動班級資料。
+function openGradeExcelExport(){
+  const subject = gradeSubjectFilter==="all"?"全部科目":gradeSubjectName(gradeSubjectFilter);
+  const selectedTerm=gradeTermsEnabled()&&gradebookView==="overview"?gradeOverviewTerm:"all";
+  const term=selectedTerm==="all"?"全部區段":GRADE_TERM_LABELS[selectedTerm];
+  showModal("匯出成績 Excel",`<div class="grade-excel-export">
+    <p>可下載真正的 <strong>.xlsx Excel 活頁簿</strong>。匯出只讀取目前班級資料，不會修改學生分數，也不會覆蓋 JSON 備份。</p>
+    <div class="grade-excel-choice">
+      <strong>完整班級成績</strong>
+      <small>所有科目與評量。啟用期中／期末時，另含期中、期末工作表；並附評量項目及逐筆原始成績。</small>
+      <button type="button" class="primary" onclick="exportGradeExcel('all')">下載完整 Excel</button>
+    </div>
+    <div class="grade-excel-choice">
+      <strong>目前畫面範圍</strong>
+      <small>目前科目：${escapeHtml(subject)}；區段：${escapeHtml(term)}。只匯出這個範圍，方便列印或交付。</small>
+      <button type="button" class="secondary" onclick="exportGradeExcel('current')">下載目前畫面 Excel</button>
+    </div>
+    <p class="muted">各項評量以原始分數呈現，平均欄以「已登記分數轉成百分制後等權平均」計算；未登記分數保留空白，不當成 0 分。</p>
+  </div>`);
+}
+function gradeExcelXmlText(value){
+  return String(value??"").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,"")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+}
+function gradeExcelColumn(index){
+  let n=index+1,result="";
+  while(n>0){n--;result=String.fromCharCode(65+n%26)+result;n=Math.floor(n/26)}
+  return result;
+}
+function gradeExcelNumber(raw){
+  if(raw===null||raw===undefined||raw==="")return null;
+  const n=Number(raw);return Number.isFinite(n)?n:null;
+}
+function gradeExcelCell(value,col,row,style=0){
+  if(value===null||value===undefined||value==="")return "";
+  const ref=`${gradeExcelColumn(col)}${row}`,s=` s="${style}"`;
+  if(typeof value==="object"&&value.formula){
+    const cached=gradeExcelNumber(value.cached);
+    return `<c r="${ref}"${s}${cached===null?' t="str"':''}><f>${gradeExcelXmlText(value.formula)}</f><v>${cached===null?"":cached}</v></c>`;
+  }
+  if(typeof value==="number"&&Number.isFinite(value))return `<c r="${ref}"${s}><v>${value}</v></c>`;
+  const str=String(value);
+  return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${gradeExcelXmlText(str)}</t></is></c>`;
+}
+function gradeExcelSheetXml(sheet){
+  const headers=sheet.headers||[],rows=sheet.rows||[],count=Math.max(2,headers.length),last=gradeExcelColumn(count-1);
+  const renderRow=(values,rowIndex,style=0)=>`<row r="${rowIndex}"${rowIndex===1?' ht="28" customHeight="1"':rowIndex===4?' ht="38" customHeight="1"':''}>${values.map((v,i)=>gradeExcelCell(v,i,rowIndex,rowIndex===1?1:rowIndex===2?4:rowIndex===4?2:i===count-1&&sheet.avgCol?3:style)).join("")}</row>`;
+  const rowXml= [renderRow([sheet.title],1),renderRow([sheet.subtitle],2),renderRow([],3),renderRow(headers,4),
+    ...rows.map((r,i)=>renderRow(r,i+5))].join("");
+  const columns=Array.from({length:count},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?11:i===1?21:i===count-1&&sheet.avgCol?16:23}" customWidth="1"/>`).join("");
+  const pane=sheet.avgCol?'xSplit="2" ySplit="4" topLeftCell="C5" activePane="bottomRight"':'ySplit="4" topLeftCell="A5" activePane="bottomLeft"';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ${pane} state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="21"/><cols>${columns}</cols><sheetData>${rowXml}</sheetData><mergeCells count="2"><mergeCell ref="A1:${last}1"/><mergeCell ref="A2:${last}2"/></mergeCells><autoFilter ref="A4:${last}${Math.max(4,rows.length+4)}"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>`;
+}
+function gradeExcelStylesXml(){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    <fonts count="3"><font><sz val="11"/><name val="Microsoft JhengHei"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Microsoft JhengHei"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Microsoft JhengHei"/></font></fonts>
+    <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF363F77"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF6C63D8"/><bgColor indexed="64"/></patternFill></fill></fills>
+    <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+    <cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf></cellXfs>
+    <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+}
+function gradeExcelZip(entries){
+  // ZIP method 0 (STORE) is supported by Excel and iPadOS; avoids unavailable compression libraries.
+  const enc=new TextEncoder();
+  const crcTable=new Uint32Array(256);
+  for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);crcTable[n]=c>>>0}
+  const crc32=bytes=>{let crc=0xFFFFFFFF;for(const b of bytes)crc=crcTable[(crc^b)&255]^(crc>>>8);return (crc^0xFFFFFFFF)>>>0};
+  const local=[],central=[];let offset=0;
+  for(const [name,text] of entries){
+    const fileName=enc.encode(name),bytes=enc.encode(text),crc=crc32(bytes);
+    const head=new Uint8Array(30+fileName.length);let v=new DataView(head.buffer);
+    v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x0800,true);v.setUint16(8,0,true);
+    v.setUint32(14,crc,true);v.setUint32(18,bytes.length,true);v.setUint32(22,bytes.length,true);v.setUint16(26,fileName.length,true);head.set(fileName,30);
+    local.push(head,bytes);
+    const ch=new Uint8Array(46+fileName.length);v=new DataView(ch.buffer);
+    v.setUint32(0,0x02014b50,true);v.setUint16(4,20,true);v.setUint16(6,20,true);v.setUint16(8,0x0800,true);
+    v.setUint32(16,crc,true);v.setUint32(20,bytes.length,true);v.setUint32(24,bytes.length,true);
+    v.setUint16(28,fileName.length,true);v.setUint32(42,offset,true);ch.set(fileName,46);
+    central.push(ch);offset+=head.length+bytes.length;
+  }
+  const total=central.reduce((n,b)=>n+b.length,0),end=new Uint8Array(22),dv=new DataView(end.buffer);
+  dv.setUint32(0,0x06054b50,true);dv.setUint16(8,entries.length,true);dv.setUint16(10,entries.length,true);
+  dv.setUint32(12,total,true);dv.setUint32(16,offset,true);
+  return new Blob([...local,...central,end],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+function gradeExcelWorkbook(sheets){
+  const entries=[
+    ["[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`],
+    ["_rels/.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ["xl/workbook.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${sheets.map((s,i)=>`<sheet name="${gradeExcelXmlText(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`],
+    ["xl/_rels/workbook.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml",gradeExcelStylesXml()],
+    ...sheets.map((s,i)=>[`xl/worksheets/sheet${i+1}.xml`,gradeExcelSheetXml(s)])
+  ];
+  return gradeExcelZip(entries);
+}
+function gradeExcelSortItems(items){
+  return [...items].sort((a,b)=>{
+    const at=Date.parse(a.createdAt||a.date||"")||0,bt=Date.parse(b.createdAt||b.date||"")||0;
+    return at-bt||(a.date||"").localeCompare(b.date||"")||String(a.id||"").localeCompare(String(b.id||""));
+  });
+}
+function gradeExcelOverviewSheet(name,items,students,scopeLabel){
+  const assessment=gradeExcelSortItems(items),headers=["座號","姓名",...assessment.map(i=>`${gradeSubjectName(i.subjectId||"")}｜${i.title}（滿分 ${formatGradeNumber(i.maxScore)}）`),"平均（百分制）"];
+  if(headers.length>16384)throw new Error("評量項目超過 Excel 欄數上限，請先依科目分批匯出。");
+  const rows=students.map((s,idx)=>{
+    const entries=assessment.map(i=>gradeExcelNumber(i.scores?.[s.id]));
+    const valid=[];
+    assessment.forEach((i,j)=>{const max=Number(i.maxScore);if(Number.isFinite(max)&&max>0){const cell=gradeExcelColumn(j+2)+(idx+5);valid.push({cell,max})}});
+    const terms=valid.map(x=>`IF(ISNUMBER(${x.cell}),${x.cell}/${x.max}*100,0)`);
+    const counts=valid.map(x=>`IF(ISNUMBER(${x.cell}),1,0)`);
+    const formula=terms.length?`IF((${counts.join("+")})=0,"",ROUND((${terms.join("+")})/(${counts.join("+")}),1))`:null;
+    const cached=gradeStudentAverage(s.id,assessment);
+    return [(gradeExcelNumber(s.number)??String(s.number??"")),String(s.name||""),...entries,formula?{formula,cached:cached===null?null:Math.round(cached*10)/10}:null];
+  });
+  return {name,title:`${data.class.name||"班級"}｜${name}`,subtitle:`${scopeLabel} · ${assessment.length} 項評量 · 平均以已登記成績換算百分制後等權計算（空白不計）`,headers,rows,avgCol:true};
+}
+function gradeExcelBuildSheets(mode){
+  const allItems=Array.isArray(data.gradeItems)?data.gradeItems:[],students=[...(data.students||[])].sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+  const subjectId=mode==="current"?gradeSubjectFilter:"all";
+  const inSubject=allItems.filter(i=>subjectId==="all"||(i.subjectId||"")===subjectId);
+  const term=mode==="current"&&gradeTermsEnabled()&&gradebookView==="overview"?gradeOverviewTerm:"all";
+  const items=inSubject.filter(i=>term==="all"||gradeTermOf(i)===term);
+  const subjectLabel=subjectId==="all"?"全部科目":gradeSubjectName(subjectId);
+  const sheets=[gradeExcelOverviewSheet(mode==="current"?"目前畫面":"全部成績",items,students,`${subjectLabel} · ${term==="all"?"全部區段":GRADE_TERM_LABELS[term]}`)];
+  if(mode==="all"&&gradeTermsEnabled()){
+    sheets.push(gradeExcelOverviewSheet("期中成績",inSubject.filter(i=>gradeTermOf(i)==="midterm"),students,"期中 · 全部科目"));
+    sheets.push(gradeExcelOverviewSheet("期末成績",inSubject.filter(i=>gradeTermOf(i)==="final"),students,"期末 · 全部科目"));
+  }
+  const sorted=gradeExcelSortItems(items);
+  sheets.push({name:"評量項目",title:`${data.class.name||"班級"}｜評量項目`,subtitle:"每項評量僅有一個期中／期末歸屬；停用區段仍保留原設定",headers:["科目","評量名稱","日期","滿分","區段歸屬","已登記人數","平均原始分數"],rows:sorted.map(i=>{
+    const stats=gradeStats(i);
+    return [gradeSubjectName(i.subjectId||""),i.title,i.date||"",gradeExcelNumber(i.maxScore),GRADE_TERM_LABELS[gradeTermOf(i)],stats.count,stats.avg===null?null:Math.round(stats.avg*10)/10];
+  })});
+  const raw=[];
+  for(const s of students)for(const i of sorted){
+    const score=gradeExcelNumber(i.scores?.[s.id]),max=Number(i.maxScore);
+    raw.push([(gradeExcelNumber(s.number)??String(s.number??"")),s.name,gradeSubjectName(i.subjectId||""),i.title,i.date||"",Number.isFinite(max)?max:null,score,score!==null&&max>0?Math.round(score/max*1000)/10:null,GRADE_TERM_LABELS[gradeTermOf(i)]]);
+  }
+  sheets.push({name:"逐筆分數",title:`${data.class.name||"班級"}｜逐筆成績紀錄`,subtitle:"每位學生 × 每項評量；未登記保留空白，便於 Excel 篩選及樞紐分析",headers:["座號","姓名","科目","評量名稱","日期","滿分","分數","換算百分制","區段歸屬"],rows:raw});
+  return sheets;
+}
+function exportGradeExcel(mode="all"){
+  try{
+    if(!activeClassId)throw new Error("請先進入班級再匯出成績。");
+    const sheets=gradeExcelBuildSheets(mode);
+    const blob=gradeExcelWorkbook(sheets);
+    const filename=`${String(data.class.name||"班級").replace(/[\\/:*?"<>|\u0000-\u001f]/g,"_").slice(0,40)}_成績_${mode==="current"?"目前畫面_":""}${localDateString()}.xlsx`;
+    const url=URL.createObjectURL(blob),a=document.createElement("a");
+    a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    closeModal();toast("Excel 檔案已產生，請確認下載項目");
+  }catch(error){console.error("Excel 匯出失敗",error);alert(`Excel 匯出失敗：${error.message||error}`)}
+}
+
 let gradebookView="overview";
 let gradeSubjectFilter="all";
 // 成績區段只改變總覽的檢視範圍，不改動學生原始成績。
@@ -4517,6 +4672,7 @@ document.querySelectorAll("[data-grade-view]").forEach(btn=>btn.addEventListener
 document.getElementById("gradeSubjectFilter")?.addEventListener("change",e=>{gradeSubjectFilter=e.target.value;renderGradebook()});
 document.getElementById("manageSubjectsBtn")?.addEventListener("click",openSubjectManager);
 document.getElementById("gradeTermSettingsBtn")?.addEventListener("click",openGradeTermSettings);
+document.getElementById("exportGradeExcelBtn")?.addEventListener("click",openGradeExcelExport);
 document.querySelectorAll("[data-grade-term-view]").forEach(btn=>btn.addEventListener("click",()=>changeGradeOverviewTerm(btn.dataset.gradeTermView)));
 document.getElementById("addClassBtn").addEventListener("click",openAddClass);
 document.getElementById("classDataBtn").addEventListener("click",openClassDataPanel);
