@@ -137,6 +137,12 @@ async function settle(page, timeout=10000){
   }
   await page.waitForTimeout(100);
 }
+// Chromium 跨分頁的 localStorage 同步是非同步的：另一分頁剛寫入的值，可能要稍後才讀得到。
+// 驗收情境是「新分頁較早已儲存」，因此先等舊分頁讀得到新分頁的寫入，再操作舊分頁。
+// （兩分頁在毫秒內先後寫入時，既有防覆寫機制偵測不到；基準 2ab11a3 即如此，另案處理。）
+async function waitUntilVisible(page, raw){
+  await page.waitForFunction(([k,v])=>localStorage.getItem(k)===v, [STORAGE_KEY, raw]);
+}
 async function importVia(page, entry, fileKey){
   page.__dialogs.length = 0;
   await page.evaluate(()=>{ window.__toasts.length = 0; });
@@ -228,6 +234,7 @@ async function run(){
       const newPage = await openPage(context, base);
       await newPage.evaluate(()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; data.students[0].name="新分頁修改學生"; data.students[1].name="新分頁修改學生乙"; saveData(); });
       const newSaved = await readStore(newPage);
+      await waitUntilVisible(oldPage, JSON.stringify(newSaved));
       check(`${label}：新分頁已寫入`, clsOf(newSaved,"cA").name==="A班（新分頁修改）");
       await importVia(oldPage, entry, "envelope");
       const t = await toasts(oldPage);
@@ -324,6 +331,7 @@ async function run(){
       await oldPage.evaluate(()=>enterClass("cA"));
       const newPage = await openPage(context, base);
       await newPage.evaluate(()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; saveData(); });
+      await waitUntilVisible(oldPage, JSON.stringify(await readStore(newPage)));
       const saved = await oldPage.evaluate(()=>{ data.class.name="A班（舊分頁修改）"; return saveData(); });
       const st = await readStore(oldPage);
       check("[5] 舊分頁一般儲存仍被擋下，saveData() 回傳 false", saved===false && clsOf(st,"cA").name==="A班（新分頁修改）", {saved, name:clsOf(st,"cA").name});
