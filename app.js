@@ -12,6 +12,25 @@ let __storageWarningShown = false;
 // v2.101: Why the most recent persistStoreSafely() call refused or failed to write
 // ("unsafe" | "conflict" | "write"); "" after a successful write.
 let __lastPersistFailure = "";
+// v2.101: Cross-tab write coordination.
+// localStorage reads in one tab may lag another tab's write, so "compare then write" alone can let a
+// stale tab overwrite newer data. Every write therefore carries a revision number inside the stored
+// value (syncRevision), and the latest revision is kept in IndexedDB, whose readwrite transactions run
+// one at a time across tabs and always read committed data. A write is allowed only inside such a
+// transaction, and only if no newer revision than the one this tab holds has been recorded.
+const SYNC_DB_NAME = "homeworkTrackerSync";
+const SYNC_STORE_NAME = "meta";
+// Failure detection only: some Safari builds never answer indexedDB.open(). Without a limit every
+// save would stay queued forever; after it, writes fall back explicitly to the pre-v2.101 check.
+const SYNC_DB_OPEN_LIMIT_MS = 2000;
+let __heldRevision = 0;          // revision of the data this tab loaded or last wrote
+let __knownStoreContent = null;  // __knownStoreRaw without syncRevision; unchanged saves are skipped
+                                 // so that merely opening a class does not bump the revision
+let __heldRevisionLegacy = true; // loaded data had no syncRevision (written by v2.100 or earlier)
+let __syncDbPromise = null;
+let __syncUnavailable = false;   // IndexedDB cannot be used: only the pre-v2.101 protection applies
+let __pendingCommit = null;      // queued, not yet started commit (shared by callers)
+let __commitTail = Promise.resolve();
 
 const STATUS_ORDER = ["pending","submitted","correction","completed","missing"];
 const STATUS_LABEL = {
@@ -62,6 +81,12 @@ function loadStore(){
     if(raw){
       const parsed = JSON.parse(raw);
       if(parsed && Array.isArray(parsed.classes)){
+        const {syncRevision, ...content}=parsed;
+        __knownStoreContent=JSON.stringify(content);
+        if(Number.isInteger(syncRevision) && syncRevision>0){
+          __heldRevision=syncRevision;
+          __heldRevisionLegacy=false;
+        }
         return {
           version:2,
           classes:parsed.classes.map(c=>({
@@ -93,6 +118,7 @@ function loadStore(){
       const migratedRaw=JSON.stringify(migrated);
       localStorage.setItem(STORAGE_KEY, migratedRaw);
       __knownStoreRaw=migratedRaw;
+      __knownStoreContent=migratedRaw;
       return migrated;
     }
   }catch(e){
@@ -211,33 +237,149 @@ function downloadCurrentTabDataBackup(){
     setTimeout(()=>URL.revokeObjectURL(url),3000);
   }catch(e){console.error("備份下載失敗",e);alert("備份無法下載，請保留此分頁並勿清除瀏覽器資料。");}
 }
-function persistStoreSafely(){
-  // A parsing error is not permission to replace the stored record with empty defaults.
+function storeRawForRevision(content, revision){
+  // syncRevision is an extra top-level field; older versions ignore it (and drop it when they save).
+  return `${content.slice(0,-1)},"syncRevision":${revision}}`;
+}
+function recordPersistFailure(reason, error){
+  __storageWriteBlocked=true;
+  __lastPersistFailure=reason;
+  if(reason==="conflict")console.warn("資料寫入已停止：偵測到另一分頁在本頁載入後修改原始班級資料");
+  else console.error("班級資料寫入失敗，已啟動防覆寫保護",error);
+  showDataStorageWarning();
+  return false;
+}
+function showSyncUnavailableNotice(){
+  if(typeof document==="undefined"||!document.body||document.getElementById("cmSyncUnavailableNotice"))return;
+  const panel=document.createElement("aside");
+  panel.id="cmSyncUnavailableNotice";
+  panel.className="cm-data-safety-warning";
+  panel.setAttribute("role","status");
+  const message=document.createElement("div");
+  message.className="cm-data-safety-message";
+  message.textContent="提醒：此瀏覽器無法提供跨分頁寫入協調（IndexedDB 無法使用），只能沿用基本的防覆寫檢查。請只在一個分頁開啟本網站，避免兩個分頁同時儲存時互相覆蓋。";
+  const actions=document.createElement("div");
+  actions.className="cm-data-safety-actions";
+  const close=document.createElement("button");
+  close.type="button";close.textContent="知道了";
+  close.addEventListener("click",()=>panel.remove());
+  actions.append(close);panel.append(message,actions);
+  document.body.appendChild(panel);
+}
+function markSyncUnavailable(error){
+  if(!__syncUnavailable)console.warn("IndexedDB 無法使用，跨分頁寫入協調停用",error);
+  __syncUnavailable=true;
+  showSyncUnavailableNotice();
+  return null;
+}
+function readSyncMeta(db){
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(SYNC_STORE_NAME,"readonly");
+    const req=tx.objectStore(SYNC_STORE_NAME).get(STORAGE_KEY);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error);
+  });
+}
+function openSyncDb(){
+  if(__syncDbPromise)return __syncDbPromise;
+  __syncDbPromise=new Promise(resolve=>{
+    let req, settled=false;
+    const done=db=>{if(settled){if(db)db.close();return;}settled=true;resolve(db);};
+    try{
+      if(typeof indexedDB==="undefined"||!indexedDB)return done(null);
+      req=indexedDB.open(SYNC_DB_NAME,1);
+    }catch(e){return done(null);}
+    setTimeout(()=>done(null),SYNC_DB_OPEN_LIMIT_MS);
+    req.onupgradeneeded=()=>{req.result.createObjectStore(SYNC_STORE_NAME);};
+    req.onsuccess=()=>{const db=req.result;db.onversionchange=()=>db.close();done(db);};
+    req.onerror=()=>done(null);
+    req.onblocked=()=>done(null);
+  }).then(async db=>{
+    if(!db)return markSyncUnavailable();
+    try{
+      // Data written by an older version has no revision: take the latest recorded one as its base.
+      if(__heldRevisionLegacy){
+        const meta=await readSyncMeta(db);
+        __heldRevision=Math.max(__heldRevision,Number(meta?.rev)||0);
+        __heldRevisionLegacy=false;
+      }
+      return db;
+    }catch(e){return markSyncUnavailable(e);}
+  });
+  return __syncDbPromise;
+}
+// Pre-v2.101 protection, used only when IndexedDB is unavailable.
+function commitStoreWithoutCoordination(content){
+  try{
+    if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw)return recordPersistFailure("conflict");
+    const nextRevision=__heldRevision+1;
+    const nextRaw=storeRawForRevision(content,nextRevision);
+    localStorage.setItem(STORAGE_KEY,nextRaw);
+    __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=nextRevision;__lastPersistFailure="";
+    return true;
+  }catch(e){return recordPersistFailure("write",e);}
+}
+async function commitStoreOnce(){
   if(__storageLoadUnsafe||__storageWriteBlocked){
     __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
     showDataStorageWarning();return false;
   }
-  try{
-    const currentRaw=localStorage.getItem(STORAGE_KEY);
-    if(currentRaw!==__knownStoreRaw){
-      __storageWriteBlocked=true;
-      __lastPersistFailure="conflict";
-      showDataStorageWarning();
-      console.warn("資料寫入已停止：偵測到另一分頁在本頁載入後修改原始班級資料");
-      return false;
-    }
-    const nextRaw=JSON.stringify(store);
-    localStorage.setItem(STORAGE_KEY,nextRaw);
-    __knownStoreRaw=nextRaw;
-    __lastPersistFailure="";
-    return true;
-  }catch(e){
-    __storageWriteBlocked=true;
-    __lastPersistFailure="write";
-    console.error("班級資料寫入失敗，已啟動防覆寫保護",e);
-    showDataStorageWarning();
-    return false;
+  const db=await openSyncDb();
+  let content;
+  try{content=JSON.stringify(store);}catch(e){return recordPersistFailure("write",e);}
+  if(content===__knownStoreContent)return true; // nothing changed since this tab's last read/write
+  if(!db)return commitStoreWithoutCoordination(content);
+  let tx;
+  try{tx=db.transaction(SYNC_STORE_NAME,"readwrite");}
+  catch(e){markSyncUnavailable(e);return commitStoreWithoutCoordination(content);}
+  return new Promise(resolve=>{
+    let written=false, failed=false;
+    const fail=(reason,error)=>{failed=true;recordPersistFailure(reason,error);try{tx.abort();}catch(e){}};
+    const meta=tx.objectStore(SYNC_STORE_NAME);
+    const req=meta.get(STORAGE_KEY);
+    req.onsuccess=()=>{
+      // Re-check inside the transaction: no other tab can commit between this check and the write.
+      if(__storageLoadUnsafe)return fail("unsafe");
+      if(__storageWriteBlocked){failed=true;__lastPersistFailure=__lastPersistFailure||"conflict";showDataStorageWarning();try{tx.abort();}catch(e){}return;}
+      const latestRevision=Number(req.result?.rev)||0;
+      if(latestRevision>__heldRevision)return fail("conflict");
+      try{
+        if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw)return fail("conflict");
+        const nextRevision=Math.max(latestRevision,__heldRevision)+1;
+        const nextRaw=storeRawForRevision(content,nextRevision);
+        localStorage.setItem(STORAGE_KEY,nextRaw);
+        __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=nextRevision;__lastPersistFailure="";
+        written=true;
+        meta.put({rev:nextRevision,updatedAt:new Date().toISOString()},STORAGE_KEY);
+      }catch(e){fail("write",e);}
+    };
+    tx.oncomplete=()=>resolve(written);
+    tx.onabort=tx.onerror=()=>{
+      // The data itself was saved; only the revision record failed. Stay safe from now on.
+      if(written&&!failed){markSyncUnavailable(tx.error);resolve(true);return;}
+      resolve(false);
+    };
+  });
+}
+// All writes of STORAGE_KEY go through here. Returns a Promise<boolean>; callers that do not need
+// the result may ignore it. Calls made while a commit is queued share it (it writes the latest store).
+function persistStoreSafely(){
+  // A parsing error is not permission to replace the stored record with empty defaults.
+  if(__storageLoadUnsafe||__storageWriteBlocked){
+    __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
+    showDataStorageWarning();return Promise.resolve(false);
   }
+  if(__pendingCommit)return __pendingCommit;
+  const commit=__commitTail.then(()=>{
+    if(__pendingCommit===commit)__pendingCommit=null;
+    return commitStoreOnce();
+  });
+  __pendingCommit=commit;
+  __commitTail=commit.then(()=>{},()=>{});
+  return commit;
+}
+function isCrossTabCoordinationAvailable(){
+  return openSyncDb().then(db=>Boolean(db));
 }
 
 function saveData(){
@@ -255,10 +397,11 @@ function saveData(){
 }
 
 // v2.101: Single-class backup import must only report success after the browser write succeeds.
+// saveData()/persistStoreSafely() now resolve asynchronously (see commitStoreOnce).
 // The candidate is swapped in, persisted through the existing stale-tab guard, and rolled back
 // in memory if the write is refused, so the screen, class name and rescue download keep
 // showing this tab's own data rather than the unsaved candidate.
-function commitClassImport(cls, candidate, nextName){
+async function commitClassImport(cls, candidate, nextName){
   const isActive=cls.id===activeClassId;
   const previous={data:cls.data,name:cls.name,active:isActive?data:null};
   // Home card name (cls.name) and in-class name (data.class.name) must agree after import.
@@ -266,7 +409,7 @@ function commitClassImport(cls, candidate, nextName){
   cls.data=candidate;
   cls.name=nextName;
   if(isActive)data=candidate;
-  if(persistStoreSafely())return true;
+  if(await persistStoreSafely())return true;
   cls.data=previous.data;
   cls.name=previous.name;
   if(isActive)data=previous.active;
@@ -297,6 +440,7 @@ function finishClassImport(saved, render, successMessage){
   if(!rendered){alert("備份已匯入，但更新畫面時發生錯誤。\n\n資料已儲存，請重新載入以更新畫面。");return;}
   toast(successMessage);
 }
+const NO_COORDINATION_IMPORT_MESSAGE="此瀏覽器無法提供跨分頁寫入協調（IndexedDB 無法使用），無法保證其他分頁不會同時寫入。\n\n請先關閉本網站的其他分頁，再按「確定」繼續匯入；按「取消」則不匯入，資料不會變更。";
 const MULTI_CLASS_RESCUE_MESSAGE="這是多班救援檔（內含多個班級），目前入口僅支援單班還原；為保護原有資料，已取消匯入，所有班級資料均未變更。";
 
 function uid(prefix="id"){
@@ -802,7 +946,7 @@ function importClassBackup(classId, file){
   // being read cancels the import instead of applying it in a different context.
   const startedActiveClassId = activeClassId;
   const reader = new FileReader();
-  reader.onload = ()=>{
+  reader.onload = async ()=>{
     let parsed;
     try{
       parsed = JSON.parse(reader.result);
@@ -834,11 +978,16 @@ function importClassBackup(classId, file){
     }
     const backupName = parsed.className || incoming.class.name;
     if(!confirm(classImportConfirmMessage(cls.name, backupName))) return;
+    if(!(await isCrossTabCoordinationAvailable()) && !confirm(NO_COORDINATION_IMPORT_MESSAGE)) return;
+    if(activeClassId!==startedActiveClassId || !store.classes.includes(cls)){
+      alert(CLASS_SWITCHED_DURING_IMPORT_MESSAGE);
+      return;
+    }
     let nextName=cls.name;
     if(parsed.className){
       nextName = parsed.className;
     }
-    const saved = commitClassImport(cls, incoming, nextName);
+    const saved = await commitClassImport(cls, incoming, nextName);
     finishClassImport(saved, ()=>{ if(saved) closeModal(); renderClassHome(); }, "班級備份已匯入");
   };
   reader.readAsText(file);
@@ -4676,13 +4825,14 @@ async function importBackup(file){
   }
   const detail = `學生：${candidate.students.length} 人\n作業：${candidate.assignments.length} 項\n紀錄：${candidate.records.length} 筆`;
   if(!confirm(classImportConfirmMessage(data.class.name || cls.name, candidate.class.name, detail))) return;
+  if(!(await isCrossTabCoordinationAvailable()) && !confirm(NO_COORDINATION_IMPORT_MESSAGE)) return;
   if(activeClassId!==targetClassId){
     alert(CLASS_SWITCHED_DURING_IMPORT_MESSAGE);
     return;
   }
   // Same naming rule saveData() applied before v2.101.
   const nextName = candidate.class.name || cls.name || "未命名班級";
-  const saved = commitClassImport(cls, candidate, nextName);
+  const saved = await commitClassImport(cls, candidate, nextName);
   finishClassImport(saved, ()=>renderPage(currentPage), "備份匯入完成");
 }
 
@@ -4847,6 +4997,7 @@ noiseEl("noiseCalibrateBtn")?.addEventListener("click",startNoiseCalibration);
 noiseEl("noiseThreshold")?.addEventListener("input",()=>{noiseStandard="custom";renderNoiseTool()});
 
 
+openSyncDb();
 updateAllClassesForDate();
 __lastRenderedReviewSlot=currentReviewSlot();
 renderClassHome();

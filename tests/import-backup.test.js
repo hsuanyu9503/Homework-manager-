@@ -8,6 +8,9 @@
  * - 以 127.0.0.1 隨機埠啟動獨立靜態伺服器（與正式 GitHub Pages 不同來源，localStorage 不共用）。
  * - 每個案例使用新的、無痕的 Playwright browser context（臨時設定檔），測完即丟棄。
  * - 全部資料皆為虛構。容量不足以攔截 Storage.prototype.setItem 拋出 QuotaExceededError 模擬，不會填滿真實裝置。
+ * - 跨分頁競爭：[9] 不等待儲存同步、新分頁剛寫入就從舊分頁匯入（真實競爭，重複多次）；
+ *   [10] 以測試掛勾讓舊分頁讀到「尚未同步的舊值」並收不到 storage 事件（決定性重現）；
+ *   [11] 兩個分頁同時通過寫入前檢查。STRESS 環境變數可調整重複次數（預設 12）。
  * - 需要可 require('playwright') 的環境（Chromium）。
  */
 "use strict";
@@ -80,7 +83,20 @@ function startServer(){
 }
 
 /* ---------------- 頁面工具 ---------------- */
-const INIT = () => {
+const STRESS = Math.max(1, Number(process.env.STRESS)||12);
+const INIT = (opts) => {
+  if(opts && opts.noIdb) Object.defineProperty(window, "indexedDB", {value:undefined, configurable:true});
+  // 模擬 indexedDB.open() 永不回應（部分 Safari 版本的已知問題）
+  if(opts && opts.idbHang) Object.defineProperty(window, "indexedDB", {value:{open(){ return {}; }}, configurable:true});
+  // 模擬「另一分頁的寫入尚未同步到本分頁」：設定 window.__staleView 後，getItem 回傳凍結的舊值，
+  // 且本分頁收不到 storage 事件。只在測試中使用，用來決定性重現跨分頁讀取延遲。
+  const origGet = Storage.prototype.getItem;
+  window.__realGetItem = k => origGet.call(localStorage,k);
+  Storage.prototype.getItem = function(k){
+    if(window.__staleView && Object.prototype.hasOwnProperty.call(window.__staleView,k)) return window.__staleView[k];
+    return origGet.call(this,k);
+  };
+  window.addEventListener("storage", e=>{ if(window.__staleView) e.stopImmediatePropagation(); }, true);
   // 模擬容量不足：僅在測試設定旗標時讓寫入失敗。
   const orig = Storage.prototype.setItem;
   Storage.prototype.setItem = function(k,v){
@@ -108,22 +124,25 @@ async function openPage(context, base, dialogPolicy){
   page.__dialogs = [];
   page.__policy = dialogPolicy || {confirm:true};
   page.on("dialog", async d=>{
-    page.__dialogs.push({type:d.type(),message:d.message()});
-    if(d.type()==="confirm") return page.__policy.confirm ? d.accept() : d.dismiss();
-    return d.accept();
+    const c = page.__policy.confirm;
+    const accepted = d.type()!=="confirm" || (typeof c==="function" ? c(d.message()) : c);
+    page.__dialogs.push({type:d.type(),message:d.message(),accepted});
+    return accepted ? d.accept() : d.dismiss();
   });
   await page.goto(base);
   return page;
 }
-async function newContext(browser, base){
+async function newContext(browser, base, opts={}){
   const context = await browser.newContext({acceptDownloads:true});
-  await context.addInitScript(INIT);
+  await context.addInitScript(INIT, opts);
   const page = await openPage(context, base);
   await page.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
   await page.reload();
   return {context,page};
 }
-const readStore = page => page.evaluate(k=>JSON.parse(localStorage.getItem(k)),STORAGE_KEY);
+// 先等本分頁排隊中的寫入完成（v2.101 起寫入為非同步），再讀實際儲存內容。
+const flush = page => page.evaluate(async()=>{ try{ await __commitTail; }catch(e){} });
+const readStore = async page => { await flush(page); return page.evaluate(k=>JSON.parse(window.__realGetItem(k)),STORAGE_KEY); };
 const clsOf = (st,id) => st.classes.find(c=>c.id===id);
 const toasts = page => page.evaluate(()=>window.__toasts.slice());
 
@@ -132,7 +151,7 @@ async function settle(page, timeout=10000){
   const start = Date.now();
   while(Date.now()-start < timeout){
     const t = await page.evaluate(()=>window.__toasts.length);
-    if(t || page.__dialogs.some(d=>d.type==="alert" || (d.type==="confirm" && !page.__policy.confirm))) break;
+    if(t || page.__dialogs.some(d=>d.type==="alert" || (d.type==="confirm" && !d.accepted))) break;
     await page.waitForTimeout(25);
   }
   await page.waitForTimeout(100);
@@ -232,7 +251,7 @@ async function run(){
       if(entry==="settings") await oldPage.evaluate(()=>setPage("settings"));
       else await oldPage.evaluate(()=>leaveClass());
       const newPage = await openPage(context, base);
-      await newPage.evaluate(()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; data.students[0].name="新分頁修改學生"; data.students[1].name="新分頁修改學生乙"; saveData(); });
+      await newPage.evaluate(async()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; data.students[0].name="新分頁修改學生"; data.students[1].name="新分頁修改學生乙"; await saveData(); });
       const newSaved = await readStore(newPage);
       await waitUntilVisible(oldPage, JSON.stringify(newSaved));
       check(`${label}：新分頁已寫入`, clsOf(newSaved,"cA").name==="A班（新分頁修改）");
@@ -330,7 +349,7 @@ async function run(){
     { const {context,page:oldPage} = await newContext(browser,base);
       await oldPage.evaluate(()=>enterClass("cA"));
       const newPage = await openPage(context, base);
-      await newPage.evaluate(()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; saveData(); });
+      await newPage.evaluate(async()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; await saveData(); });
       await waitUntilVisible(oldPage, JSON.stringify(await readStore(newPage)));
       const saved = await oldPage.evaluate(()=>{ data.class.name="A班（舊分頁修改）"; return saveData(); });
       const st = await readStore(oldPage);
@@ -421,6 +440,186 @@ async function run(){
       st = await readStore(page);
       check(`${label}：一般儲存並重新載入後兩處仍為目標班名`, saved===true && clsOf(st,"cA").name==="A班（原值）" && clsOf(st,"cA").data.class.name==="A班（原值）", {saved, name:clsOf(st,"cA").name, inner:clsOf(st,"cA").data.class.name});
       assertImportedA(st, label, "A班（原值）");
+      await context.close(); }
+
+    /* ---------------- 跨分頁寫入競爭 ---------------- */
+    // 標記：舊分頁「舊分頁標記乙」、新分頁「A班（新分頁標記）／新分頁標記甲／新分頁標記乙」、候選備份「A班（匯入檔）／匯入學生」。
+    const NEW_MARK = st => clsOf(st,"cA").name==="A班（新分頁標記）" && clsOf(st,"cA").data.students[0].name==="新分頁標記甲" && clsOf(st,"cA").data.students[1].name==="新分頁標記乙";
+    const IMPORT_MARK = st => clsOf(st,"cA").name==="A班（匯入檔）" || clsOf(st,"cA").data.students[0].name==="匯入學生甲";
+    const OLD_GENERAL_MARK = st => clsOf(st,"cA").data.students[0].name==="舊分頁一般儲存標記";
+    async function setupOldTab(context, base, entry){
+      const {page:oldPage} = {page: await openPage(context, base)};
+      await oldPage.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await oldPage.reload();
+      await oldPage.evaluate(async()=>{ enterClass("cA"); data.students[1].name="舊分頁標記乙"; await saveData(); });
+      if(entry==="home") await oldPage.evaluate(()=>leaveClass());
+      else await oldPage.evaluate(()=>setPage("settings"));
+      await flush(oldPage);
+      return oldPage;
+    }
+    const newTabWrite = page => page.evaluate(async()=>{
+      if(activeClassId!=="cA") enterClass("cA");
+      data.class.name="A班（新分頁標記）"; data.students[0].name="新分頁標記甲"; data.students[1].name="新分頁標記乙";
+      return await saveData();
+    });
+    async function startImport(page, entry){
+      page.__dialogs.length = 0;
+      await page.evaluate(()=>{ window.__toasts.length = 0; });
+      if(entry==="home"){
+        await page.evaluate(()=>openClassSettings("cA"));
+        await page.setInputFiles('#modalBody input[type=file]', FILE_PATHS.envelope);
+      }else{
+        await page.setInputFiles('#importInput', FILE_PATHS.envelope);
+      }
+    }
+    async function oldTabOutcome(page){
+      await settle(page);
+      const t = await toasts(page);
+      return {success:t.some(x=>SUCCESS_RE.test(x)), alerts:page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message)};
+    }
+
+    // [9] 不等待儲存同步：新分頁剛完成寫入，舊分頁立刻從實際入口匯入（真實瀏覽器競爭，重複 STRESS 次）
+    for(const entry of ["home","settings"]){
+      const label = `[9] ${entry==="home"?"班級首頁":"班內設定"} 新分頁剛寫入即從舊分頁匯入 ×${STRESS}`;
+      let overwritten=0, falseSuccess=0, kept=0; const bad=[];
+      for(let i=0;i<STRESS;i++){
+        const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+        const oldPage = await setupOldTab(context, base, entry);
+        const newPage = await openPage(context, base);
+        await newTabWrite(newPage);
+        await startImport(oldPage, entry);            // 不等待舊分頁讀到新值
+        const r = await oldTabOutcome(oldPage);
+        await oldPage.reload();
+        const st = await readStore(oldPage);
+        if(IMPORT_MARK(st)) overwritten++;
+        if(NEW_MARK(st)) kept++;
+        if(r.success && !IMPORT_MARK(st)) falseSuccess++;
+        if(!NEW_MARK(st) || r.success) bad.push({i, success:r.success, name:clsOf(st,"cA").name});
+        await context.close();
+      }
+      check(`${label}：重新載入後皆為新分頁版本（候選備份未覆寫）`, kept===STRESS && overwritten===0, {kept, overwritten, bad:bad.slice(0,3)});
+      check(`${label}：舊分頁皆未顯示匯入完成`, bad.every(b=>!b.success) && falseSuccess===0, {falseSuccess, bad:bad.slice(0,3)});
+    }
+
+    // [10] 決定性重現：舊分頁讀到尚未同步的舊值、且收不到 storage 事件，再匯入或一般儲存
+    for(const action of ["home","settings","save"]){
+      const label = `[10] 舊分頁讀到未同步舊值後${action==="save"?"一般儲存":`從${action==="home"?"班級首頁":"班內設定"}匯入`}`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const oldPage = await setupOldTab(context, base, action==="save" ? "settings" : action);
+      await oldPage.evaluate(k=>{ window.__staleView = {[k]: window.__realGetItem(k)}; }, STORAGE_KEY);
+      const newPage = await openPage(context, base);
+      check(`${label}：新分頁寫入成功`, await newTabWrite(newPage)===true);
+      let r;
+      if(action==="save"){
+        const saved = await oldPage.evaluate(async()=>{ data.students[0].name="舊分頁一般儲存標記"; return await saveData(); });
+        r = {success:saved===true, alerts:[]};
+        check(`${label}：saveData() 回傳 false`, saved===false, saved);
+      }else{
+        await startImport(oldPage, action);
+        r = await oldTabOutcome(oldPage);
+        check(`${label}：提示衝突、未顯示匯入完成`, !r.success && r.alerts.some(m=>/其他分頁/.test(m) && /匯入未完成/.test(m)), r);
+      }
+      const warned = await oldPage.locator("#cmDataSafetyWarning").isVisible();
+      check(`${label}：資料安全警告顯示`, warned);
+      let rescueA = null;
+      if(warned){
+        const [dl] = await Promise.all([ oldPage.waitForEvent("download"),
+          oldPage.locator("#cmDataSafetyWarning button", {hasText:"下載本頁資料備份"}).click() ]);
+        const dlPath = path.join(TMP, `rescue-10-${action}.json`); await dl.saveAs(dlPath);
+        const rescue = JSON.parse(fs.readFileSync(dlPath,"utf8"));
+        rescueA = rescue.data ? {name:rescue.className,data:rescue.data} : clsOf(rescue,"cA");
+      }
+      check(`${label}：救援檔為本頁資料（含舊分頁標記，不含候選備份與新分頁標記）`,
+        rescueA && rescueA.data.students[1].name==="舊分頁標記乙" && !/匯入/.test(JSON.stringify(rescueA)) && !/新分頁標記/.test(JSON.stringify(rescueA)),
+        rescueA && {name:rescueA.name, students:rescueA.data.students.map(x=>x.name)});
+      await oldPage.evaluate(()=>{ window.__staleView = null; });
+      await oldPage.reload();
+      const st = await readStore(oldPage);
+      check(`${label}：重新載入後為新分頁版本`, NEW_MARK(st) && !IMPORT_MARK(st) && !OLD_GENERAL_MARK(st), clsOf(st,"cA").data.students.map(x=>x.name));
+      await context.close();
+    }
+
+    // [11] 兩個分頁接近同時通過寫入前檢查：同一時間送出（stale＝兩分頁都看不到對方的寫入；real＝真實並行）
+    for(const mode of ["stale","real"]){
+      for(const action of ["home","settings","save"]){
+        const runs = mode==="stale" ? 1 : STRESS;
+        const label = `[11] 同時寫入（${mode==="stale"?"兩分頁皆讀到未同步舊值":`真實並行 ×${runs}`}）舊分頁${action==="save"?"一般儲存":`${action==="home"?"班級首頁":"班內設定"}匯入`} vs 新分頁一般儲存`;
+        let bothOk=0, lost=0, noneOk=0; const bad=[];
+        for(let i=0;i<runs;i++){
+          const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+          const oldPage = await setupOldTab(context, base, action==="save" ? "settings" : action);
+          const newPage = await openPage(context, base);
+          await newPage.evaluate(()=>enterClass("cA")); await flush(newPage);
+          if(mode==="stale") for(const p of [oldPage,newPage]) await p.evaluate(k=>{ window.__staleView = {[k]: window.__realGetItem(k)}; }, STORAGE_KEY);
+          if(action!=="save"){ // 先備妥檔案選擇器，讓兩邊的寫入幾乎同時發生
+            oldPage.__dialogs.length = 0; await oldPage.evaluate(()=>{ window.__toasts.length = 0; });
+            if(action==="home") await oldPage.evaluate(()=>openClassSettings("cA"));
+          }
+          const oldAct = action==="save"
+            ? oldPage.evaluate(async()=>{ data.students[0].name="舊分頁一般儲存標記"; return await saveData(); })
+            : oldPage.setInputFiles(action==="home" ? '#modalBody input[type=file]' : '#importInput', FILE_PATHS.envelope).then(()=>oldTabOutcome(oldPage)).then(r=>r.success);
+          const [oldOk, newOk] = await Promise.all([oldAct, newTabWrite(newPage)]);
+          for(const p of [oldPage,newPage]) await p.evaluate(()=>{ window.__staleView = null; });
+          await oldPage.reload();
+          const st = await readStore(oldPage);
+          const oldWon = action==="save" ? OLD_GENERAL_MARK(st) : IMPORT_MARK(st);
+          const newWon = NEW_MARK(st);
+          if(oldOk && newOk) bothOk++;
+          if(!oldOk && !newOk) noneOk++;
+          // 回報成功的一方，其內容必須是重新載入後保留的內容
+          if((oldOk && !oldWon) || (newOk && !newWon) || (oldWon===newWon)) lost++;
+          if((oldOk && newOk) || lost) bad.push({i, oldOk, newOk, oldWon, newWon});
+          await context.close();
+        }
+        check(`${label}：不會兩邊都回報成功`, bothOk===0, {bothOk, bad:bad.slice(0,3)});
+        check(`${label}：回報成功的一方即為重新載入後保留的內容`, lost===0 && noneOk===0, {lost, noneOk, bad:bad.slice(0,3)});
+      }
+    }
+
+    // [12] 瀏覽器無法提供協調（IndexedDB 不可用）：明確提示，匯入需再次確認
+    for(const [kind,accept] of [["noIdb",false],["noIdb",true],["idbHang",true]]){
+      const label = `[12] ${kind==="noIdb"?"IndexedDB 不可用":"IndexedDB 開啟無回應"} × ${accept?"確認繼續":"取消"}`;
+      const {context,page} = await newContext(browser,base,{[kind]:true});
+      if(kind==="idbHang") await page.waitForSelector("#cmSyncUnavailableNotice", {timeout:10000}).catch(()=>{});
+      await page.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+      const before = await readStore(page);
+      check(`${label}：顯示無法協調的提醒`, await page.locator("#cmSyncUnavailableNotice").isVisible() && /無法提供跨分頁寫入協調/.test(await page.locator("#cmSyncUnavailableNotice").innerText()));
+      page.__policy.confirm = msg => /無法提供跨分頁寫入協調/.test(msg) ? accept : true;
+      await importVia(page, "settings", "envelope");
+      const confirms = page.__dialogs.filter(d=>d.type==="confirm").map(d=>d.message);
+      check(`${label}：匯入前另外確認（請先關閉其他分頁）`, confirms.some(m=>/無法提供跨分頁寫入協調/.test(m) && /關閉本網站的其他分頁/.test(m)), confirms);
+      const t = await toasts(page);
+      check(`${label}：${accept?"顯示匯入完成":"未顯示匯入完成"}`, accept ? t.some(x=>SUCCESS_RE.test(x)) : !t.some(x=>SUCCESS_RE.test(x)), t);
+      await page.reload();
+      const st = await readStore(page);
+      if(accept) assertImportedA(st, label, "A班（匯入檔）");
+      else check(`${label}：重新載入後資料未變`, JSON.stringify(st)===JSON.stringify(before));
+      await context.close();
+    }
+
+    // [13] 與舊版共存：v2.101 寫入後，舊版（無 syncRevision）再寫入；新版分頁重新載入後仍可正常儲存
+    { const label = "[13] 舊版寫入（無修訂號）後新版仍可儲存";
+      const {context,page} = await newContext(browser,base);
+      const first = await page.evaluate(async()=>{ enterClass("cA"); data.students[0].name="新版寫入"; return await saveData(); });
+      const st1 = await readStore(page);
+      check(`${label}：新版寫入帶修訂號`, first===true && Number.isInteger(st1.syncRevision) && st1.syncRevision>0, st1.syncRevision);
+      await page.evaluate(k=>{ const o=JSON.parse(window.__realGetItem(k)); delete o.syncRevision; o.classes[0].data.students[0].name="舊版寫入"; localStorage.setItem(k, JSON.stringify(o)); }, STORAGE_KEY);
+      await page.reload();
+      const saved = await page.evaluate(async()=>{ enterClass("cA"); const seen=data.students[0].name; data.students[1].name="舊版之後新版寫入"; return {seen, ok:await saveData()}; });
+      await page.reload();
+      const st2 = await readStore(page);
+      check(`${label}：讀得到舊版資料並可儲存，未被誤擋`, saved.seen==="舊版寫入" && saved.ok===true && clsOf(st2,"cA").data.students[1].name==="舊版之後新版寫入" && st2.syncRevision>st1.syncRevision, {saved, rev:st2.syncRevision});
+      await context.close(); }
+
+    // [14] 不誤擋：兩分頁只是開啟同一班（沒有修改），第一個分頁之後的一般儲存仍應成功
+    { const label = "[14] 兩分頁僅開啟同一班不造成衝突";
+      const {context,page:tab1} = await newContext(browser,base);
+      await tab1.evaluate(()=>enterClass("cA")); await flush(tab1);
+      const tab2 = await openPage(context, base);
+      await tab2.evaluate(()=>enterClass("cA")); await flush(tab2);
+      const ok = await tab1.evaluate(async()=>{ data.students[0].name="分頁一修改"; return await saveData(); });
+      const st = await readStore(tab1);
+      check(`${label}：分頁一儲存成功且已寫入`, ok===true && clsOf(st,"cA").data.students[0].name==="分頁一修改" && !(await tab1.locator("#cmDataSafetyWarning").isVisible()), {ok, name:clsOf(st,"cA").data.students[0].name});
       await context.close(); }
   }finally{
     await browser.close();
