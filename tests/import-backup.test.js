@@ -383,7 +383,7 @@ async function run(){
       await page.evaluate(v=>{ localStorage.clear(); localStorage.setItem("homeworkTrackerDataV1", v); }, JSON.stringify(classData("V1舊班","舊")));
       await page.reload();
       const st = await readStore(page);
-      check("[5] 舊鍵 V1 資料遷移後可讀取", st && st.classes.length===1 && st.classes[0].name==="V1舊班（紅燈演練）" && st.classes[0].data.gradeItems.find(g=>g.id==="g1-舊").gradeTerm==="midterm", st && st.classes.map(c=>c.name));
+      check("[5] 舊鍵 V1 資料遷移後可讀取", st && st.classes.length===1 && st.classes[0].name==="V1舊班" && st.classes[0].data.gradeItems.find(g=>g.id==="g1-舊").gradeTerm==="midterm", st && st.classes.map(c=>c.name));
       await context.close(); }
     { const {context,page:oldPage} = await newContext(browser,base);
       await oldPage.evaluate(()=>enterClass("cA"));
