@@ -759,9 +759,13 @@ async function run(){
       await context.close();
     }
 
-    // [18] 預約記錄留下但寫入分頁已不存在（關閉於預約與寫入之間）／仍存在
+    // [18] 預約記錄留下但從未寫入 localStorage（寫入分頁在預約與寫入之間關閉）／寫入分頁仍開啟。
+    // 無法從其他分頁可靠分辨「尚未寫入」與「已寫入未標記完成」，因此一律先停止寫入；
+    // 只有在本分頁看過提示並重新載入、且讀到的仍是預約前的版本時，才提供需老師確認的「從本頁資料繼續」。
+    const RECOVER_BTN = "#cmDataSafetyWarning button.cm-data-safety-recover";
+    const panelText = page => page.evaluate(()=>document.getElementById("cmDataSafetyWarning")?.innerText || "");
     for(const alive of [false,true]){
-      const label = `[18] 未完成的預約，寫入分頁${alive?"仍開啟":"已關閉"}`;
+      const label = `[18] 未寫入的預約，寫入分頁${alive?"仍開啟":"已關閉"}`;
       const {context,page} = await newContext(browser,base);
       await page.evaluate(()=>enterClass("cA")); await flush(page);
       const st0 = await readStore(page);
@@ -771,9 +775,89 @@ async function run(){
         tx.objectStore("meta").put({rev:rev+1, baseRev:rev, state:"writing", writer:"tab-fake", at:new Date().toISOString()}, "homeworkTrackerDataV2"); tx.oncomplete=()=>{r.result.close();res();}; tx.onerror=()=>rej(tx.error); }; r.onerror=()=>rej(r.error); }), st0.syncRevision);
       const ok = await page.evaluate(async()=>{ data.students[0].name="預約後一般儲存"; return await saveData(); });
       const st1 = await readStore(page);
-      const savedIt = clsOf(st1,"cA").data.students[0].name==="預約後一般儲存";
-      if(alive) check(`${label}：視為其他分頁寫入中，儲存被擋下`, ok===false && !savedIt, {ok});
-      else check(`${label}：回收預約，儲存成功`, ok===true && savedIt, {ok, rev:st1.syncRevision});
+      check(`${label}：儲存被擋下、未寫入`, ok===false && clsOf(st1,"cA").data.students[0].name!=="預約後一般儲存", {ok});
+      check(`${label}：提示說明恢復方式（下載備份後重新載入）`, /尚未確認完成/.test(await panelText(page)) && /重新載入/.test(await panelText(page)));
+      check(`${label}：重新載入前不提供「從本頁資料繼續」`, !(await page.locator(RECOVER_BTN).isVisible()));
+      await page.reload();
+      const ok2 = await page.evaluate(async()=>{ enterClass("cA"); data.students[0].name="重新載入後一般儲存"; return await saveData(); });
+      check(`${label}：重新載入後仍讀到預約前版本，仍停止寫入`, ok2===false);
+      const offered = await page.locator(RECOVER_BTN).isVisible();
+      if(alive){
+        check(`${label}：寫入分頁仍開啟時不提供「從本頁資料繼續」`, !offered);
+      }else{
+        check(`${label}：寫入分頁已關閉、且已重新載入後，才提供「從本頁資料繼續」`, offered);
+        if(!offered){ check(`${label}：恢復流程`, false, "未提供恢復按鈕"); await context.close(); continue; }
+        page.__dialogs.length = 0; page.__policy.confirm = true;
+        await page.locator(RECOVER_BTN).click();
+        await page.waitForFunction(()=>!document.getElementById("cmDataSafetyWarning") || document.getElementById("cmDataSafetyWarning").hidden || !__storageWriteBlocked, null, {timeout:10000}).catch(()=>{});
+        await flush(page);
+        const confirms = page.__dialogs.filter(d=>d.type==="confirm").map(d=>d.message);
+        check(`${label}：繼續前需老師確認並說明風險`, confirms.length>=1 && confirms.some(m=>/下載/.test(m) && /取代/.test(m)), confirms);
+        const reader = await openPage(context, base);
+        const st2 = await readStore(reader);
+        check(`${label}：確認後以新修訂號寫入（不重用預約的修訂號）`, clsOf(st2,"cA").data.students[0].name==="重新載入後一般儲存" && st2.syncRevision===st0.syncRevision+2, {rev0:st0.syncRevision, rev2:st2.syncRevision});
+        const ok3 = await page.evaluate(async()=>{ data.students[1].name="恢復後再次儲存"; return await saveData(); });
+        check(`${label}：之後一般儲存恢復正常`, ok3===true && clsOf(await readStore(reader),"cA").data.students[1].name==="恢復後再次儲存");
+      }
+      await context.close();
+    }
+
+    // [19] 結合 [17]+[18]：A 寫入新版成功 → 標記 done 失敗 → 關閉 A → 持有舊快照、看不到新版的 B 嘗試寫入
+    for(const action of ["save","import"]){
+      const label = `[19] A 已寫入但未標記完成、A 已關閉 → B（舊快照）${action==="save"?"一般儲存":"班內設定匯入"}`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const B = await openPage(context, base);
+      await B.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await B.reload();
+      await B.evaluate(()=>{ enterClass("cA"); setPage("settings"); }); await flush(B);
+      const stB = await readStore(B);
+      const A = await openPage(context, base);
+      await A.evaluate(()=>enterClass("cA")); await flush(A);
+      await B.evaluate(k=>{ window.__staleView = {[k]: window.__realGetItem(k)}; }, STORAGE_KEY);
+      await A.evaluate(()=>{ window.__metaPutFault = {when:"afterSetItem", how:"abort", armedAt: window.__setItemCount}; window.__metaPutFaultHits = 0; });
+      const aOk = await A.evaluate(async()=>{ data.class.name="A班（A分頁新版）"; data.students[0].name="A分頁新版甲"; data.students[1].name="A分頁新版乙"; return await saveData(); });
+      const aHits = await A.evaluate(()=>window.__metaPutFaultHits);
+      const aSaved = await readStore(A);
+      check(`${label}：A 寫入成功、done 標記確實失敗`, aOk===true && aHits>=1 && clsOf(aSaved,"cA").data.students[0].name==="A分頁新版甲" && aSaved.syncRevision===stB.syncRevision+1, {aOk, aHits, rev:aSaved.syncRevision});
+      const aTabLock = await A.evaluate(()=>"homeworkTrackerTab:"+(typeof TAB_ID!=="undefined"?TAB_ID:""));
+      await A.close();
+      // 測試前提「A 已關閉」：等 A 的分頁鎖確實釋放（瀏覽器關閉分頁後非同步釋放）
+      await B.waitForFunction(async name=>!(await navigator.locks.query()).held.some(l=>l.name===name), aTabLock, {timeout:10000});
+      // B 嘗試寫入
+      B.__dialogs.length = 0; await B.evaluate(()=>{ window.__toasts.length = 0; });
+      let bOk;
+      if(action==="save"){
+        bOk = await B.evaluate(async()=>{ data.students[0].name="B舊快照修改"; return await saveData(); });
+      }else{
+        await B.setInputFiles('#importInput', FILE_PATHS.envelope);
+        bOk = (await oldTabOutcome(B)).success;
+      }
+      const bAlerts = B.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      const bToasts = await toasts(B);
+      check(`${label}：B 沒有收到成功提示`, bOk===false && !bToasts.some(x=>SUCCESS_RE.test(x)), {bOk, bToasts});
+      if(action==="import") check(`${label}：B 的匯入提示「匯入未完成」並說明恢復方式`, bAlerts.some(m=>/匯入未完成/.test(m) && /尚未確認完成/.test(m) && /重新載入/.test(m)), bAlerts);
+      check(`${label}：B 顯示停止寫入與恢復方式`, /尚未確認完成/.test(await panelText(B)) && !(await B.locator(RECOVER_BTN).isVisible()));
+      // 全新分頁確認 A 的資料完整保留
+      const C = await openPage(context, base);
+      const stC = await readStore(C);
+      const a = clsOf(stC,"cA");
+      check(`${label}：全新分頁讀到 A 寫入的班級資料完整保留`, a.name==="A班（A分頁新版）" && a.data.class.name==="A班（A分頁新版）" && a.data.students[0].name==="A分頁新版甲" && a.data.students[1].name==="A分頁新版乙" && !/B舊快照修改|匯入/.test(JSON.stringify(a)) && JSON.stringify(clsOf(stC,"cB"))===JSON.stringify(clsOf(aSaved,"cB")), {name:a.name, s:a.data.students.map(x=>x.name)});
+      await C.close();
+      // 老師依提示：下載本頁備份 → 重新載入 → 從正確資料繼續
+      if(await B.locator("#cmDataSafetyWarning").isVisible()){
+        const [dl] = await Promise.all([ B.waitForEvent("download"), B.locator("#cmDataSafetyWarning button", {hasText:"下載本頁資料備份"}).click() ]);
+        const dlPath = path.join(TMP, `rescue-19-${action}.json`); await dl.saveAs(dlPath);
+        const rescue = JSON.parse(fs.readFileSync(dlPath,"utf8"));
+        check(`${label}：救援檔為 B 本頁資料（不是 A 的新版）`, !/A分頁新版/.test(JSON.stringify(rescue)), rescue.className);
+      }else check(`${label}：救援檔為 B 本頁資料（不是 A 的新版）`, false, "沒有資料安全警告，無法下載");
+      await B.evaluate(()=>{ window.__staleView = null; });
+      await B.reload();
+      const after = await B.evaluate(async()=>{ enterClass("cA"); const seen={name:data.class.name, s0:data.students[0].name};
+        data.memos.push({id:"memo-19",text:"B重新載入後繼續"}); return {seen, ok:await saveData(), recover:!!document.querySelector("#cmDataSafetyWarning button.cm-data-safety-recover:not([hidden])")}; });
+      check(`${label}：重新載入後 B 讀到 A 的新版並可繼續儲存`, after.seen.name==="A班（A分頁新版）" && after.seen.s0==="A分頁新版甲" && after.ok===true && !after.recover, after);
+      const D = await openPage(context, base);
+      const stD = await readStore(D);
+      check(`${label}：最後全新分頁讀到 A 的新版加上 B 重新載入後的修改`, clsOf(stD,"cA").data.students[0].name==="A分頁新版甲" && JSON.stringify(clsOf(stD,"cA").data.memos).includes("B重新載入後繼續") && stD.syncRevision===aSaved.syncRevision+1, {rev:stD.syncRevision});
       await context.close();
     }
 

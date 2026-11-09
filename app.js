@@ -35,6 +35,18 @@ let __commitTail = Promise.resolve();
 // Each tab holds a Web Lock named after its id for its whole lifetime, so another tab can tell
 // whether the writer of an unfinished reservation (see commitStoreOnce) is still open.
 const TAB_LOCK_PREFIX = "homeworkTrackerTab:";
+// An unfinished reservation by another tab ("writing", never marked "done") cannot be told apart
+// from here: the writer may have closed before writing localStorage, or after writing it but before
+// marking it done; and this tab's own localStorage view may be stale. It is therefore always treated
+// as a real, newer revision: this tab stops writing and asks the teacher to download a backup and
+// reload. Only after this tab has shown that notice, been reloaded, and still holds the revision the
+// reservation was based on (and the writer tab is gone) is a manual "continue from this page" offered;
+// it writes a new revision and never reuses the reserved one.
+const UNFINISHED_NOTICE_KEY = "homeworkTrackerUnfinishedWrite";
+let __unfinishedNoticeAtLoad = null;
+try{ __unfinishedNoticeAtLoad = JSON.parse(sessionStorage.getItem(UNFINISHED_NOTICE_KEY)||"null"); }catch(e){}
+let __unfinishedRecovery = null;   // reservation the teacher may explicitly continue past
+let __supersedeReservation = null; // set only by that explicit action, for one commit
 const TAB_ID = uid("tab");
 const __tabLockReady = (typeof navigator!=="undefined" && navigator.locks && typeof navigator.locks.request==="function")
   ? new Promise(resolve=>{
@@ -219,13 +231,23 @@ function showDataStorageWarning(){
     const reload=document.createElement("button");
     reload.type="button";reload.textContent="重新載入最新資料";
     reload.addEventListener("click",()=>location.reload());
-    actions.append(backup,reload);panel.append(message,actions);
+    const recover=document.createElement("button");
+    recover.type="button";recover.className="cm-data-safety-recover";recover.textContent="確認從本頁資料繼續";
+    recover.hidden=true;
+    recover.addEventListener("click",continueFromThisPageAfterUnfinishedWrite);
+    actions.append(backup,reload,recover);panel.append(message,actions);
     document.body.appendChild(panel);
   }
   const message=panel.querySelector(".cm-data-safety-message");
   if(message)message.textContent=__storageLoadUnsafe
     ? "資料安全保護：原始班級資料無法正確讀取，已暫停儲存，避免清空現有紀錄。請保留原分頁並先備份資料。"
+    : __lastPersistFailure==="unfinished"
+    ? (__unfinishedRecovery
+        ? "資料安全保護：先前另一個分頁的一次儲存尚未確認完成，該分頁已關閉；重新載入後讀到的仍是那次儲存之前的資料，表示那次儲存很可能沒有寫入。若已確認沒有其他分頁開著本網站，可先下載本頁資料備份，再按「確認從本頁資料繼續」。"
+        : "資料安全保護：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後會讀到最新已儲存的資料，即可繼續操作。")
     : "資料安全保護：偵測到其他分頁修改了班級資料，或儲存失敗。本頁已暫停寫入，避免將較新的資料覆蓋成舊版本。請先下載本頁備份，再重新載入。";
+  const recover=panel.querySelector(".cm-data-safety-recover");
+  if(recover)recover.hidden=!(__lastPersistFailure==="unfinished"&&__unfinishedRecovery);
   __storageWarningShown=true;
 }
 function downloadCurrentTabDataBackup(){
@@ -348,7 +370,7 @@ function syncMetaTransaction(db, work){
   });
 }
 async function isWriterTabClosed(writer){
-  // Without Web Locks the writer's state is unknown: never treat its reservation as abandoned.
+  // Without Web Locks the writer tab's state is unknown (callers decide how to treat that).
   if(!writer||typeof navigator==="undefined"||!navigator.locks||typeof navigator.locks.query!=="function")return false;
   try{
     const state=await navigator.locks.query();
@@ -375,22 +397,21 @@ async function commitStoreOnce(force=false){
   if(!force&&content===__knownStoreContent)return true;
   if(!db)return commitStoreWithoutCoordination(content);
   await __tabLockReady;
-  // A reservation whose writer tab has closed before writing localStorage is abandoned.
-  let abandoned=null;
-  try{
-    const pre=await readSyncMeta(db);
-    if(pre&&pre.state==="writing"&&pre.writer!==TAB_ID&&(Number(pre.rev)||0)>__heldRevision&&
-       (Number(pre.baseRev)||0)===__heldRevision&&await isWriterTabClosed(pre.writer))abandoned=pre;
-  }catch(e){return recordPersistFailure("coordination",e);}
+  const supersede=__supersedeReservation;__supersedeReservation=null;
 
-  let failure=null;
+  let failure=null, unfinished=null;
   const reservation=await syncMetaTransaction(db,(meta,latest)=>{
     if(__storageLoadUnsafe){failure="unsafe";throw new Error("unsafe");}
     if(__storageWriteBlocked){failure="blocked";throw new Error("blocked");}
-    let latestRevision=Number(latest?.rev)||0;
-    if(abandoned&&latest&&latest.state==="writing"&&latest.writer===abandoned.writer&&latest.at===abandoned.at&&latest.rev===abandoned.rev)
-      latestRevision=Number(latest.baseRev)||0;
-    if(latestRevision>__heldRevision){failure="conflict";throw new Error("conflict");}
+    const latestRevision=Number(latest?.rev)||0;
+    const explicitlySuperseded=Boolean(supersede&&latest&&latest.state==="writing"&&latest.writer===supersede.writer&&
+      latest.at===supersede.at&&latest.rev===supersede.rev&&(Number(latest.baseRev)||0)===__heldRevision);
+    if(latestRevision>__heldRevision&&!explicitlySuperseded){
+      // Never reuse or roll back a revision: an unfinished reservation may already have written data.
+      if(latest.state==="writing"&&latest.writer!==TAB_ID){failure="unfinished";unfinished=latest;}
+      else failure="conflict";
+      throw new Error(failure);
+    }
     if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw){failure="conflict";throw new Error("conflict");}
     const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,at:new Date().toISOString()};
     meta.put(record,STORAGE_KEY);
@@ -398,6 +419,7 @@ async function commitStoreOnce(force=false){
   });
   if(!reservation.ok){
     if(failure==="blocked"){__lastPersistFailure=__lastPersistFailure||"conflict";showDataStorageWarning();return false;}
+    if(failure==="unfinished")return handleUnfinishedReservation(unfinished);
     // Nothing has been written to localStorage.
     return recordPersistFailure(failure||"coordination",reservation.error||reservation.value?.error);
   }
@@ -415,6 +437,8 @@ async function commitStoreOnce(force=false){
     return recordPersistFailure("write",e);
   }
   __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=record.rev;__lastPersistFailure="";
+  __unfinishedRecovery=null;
+  try{sessionStorage.removeItem(UNFINISHED_NOTICE_KEY);}catch(e){}
   const done=await syncMetaTransaction(db,(meta,latest)=>{
     if(latest&&latest.writer===TAB_ID&&latest.at===record.at&&latest.rev===record.rev)meta.put({...record,state:"done"},STORAGE_KEY);
   });
@@ -422,6 +446,37 @@ async function commitStoreOnce(force=false){
   if(!done.ok)console.warn("協調記錄未能標記完成；資料已儲存，修訂號仍有效",done.error);
   return true;
 }
+function sameReservation(a,b){
+  return Boolean(a&&b&&a.writer===b.writer&&a.at===b.at&&a.rev===b.rev);
+}
+async function handleUnfinishedReservation(reservation){
+  // Offer the manual continue only on a reload after this tab already showed the notice for this
+  // very reservation, while still holding its base revision, and with the writer tab gone.
+  let offer=false;
+  if(sameReservation(__unfinishedNoticeAtLoad,reservation)&&(Number(reservation.baseRev)||0)===__heldRevision){
+    const locksAvailable=typeof navigator!=="undefined"&&navigator.locks&&typeof navigator.locks.query==="function";
+    offer=locksAvailable?await isWriterTabClosed(reservation.writer):true;
+  }
+  __unfinishedRecovery=offer?{writer:reservation.writer,at:reservation.at,rev:reservation.rev}:null;
+  try{sessionStorage.setItem(UNFINISHED_NOTICE_KEY,JSON.stringify({writer:reservation.writer,at:reservation.at,rev:reservation.rev}));}catch(e){}
+  return recordPersistFailure("unfinished");
+}
+async function continueFromThisPageAfterUnfinishedWrite(){
+  const target=__unfinishedRecovery;
+  if(!target)return;
+  const ok=confirm("確認從本頁資料繼續？\n\n將以本頁目前顯示的資料作為最新版本儲存。若先前那次未確認完成的儲存其實已寫入，那筆資料會被本頁資料取代。\n\n按「確定」後會先下載本頁資料備份，再繼續儲存；按「取消」則維持停止寫入。");
+  if(!ok)return;
+  downloadCurrentTabDataBackup();
+  __supersedeReservation=target;
+  __storageWriteBlocked=false;__lastPersistFailure="";
+  const saved=await persistStoreSafely({force:true});
+  if(saved){
+    document.getElementById("cmDataSafetyWarning")?.remove();
+    __storageWarningShown=false;
+    toast("已從本頁資料繼續儲存");
+  }
+}
+
 // All writes of STORAGE_KEY go through here. Returns a Promise<boolean>; callers that do not need
 // the result may ignore it. Calls made while a commit is queued share it (it writes the latest store).
 function persistStoreSafely(options={}){
@@ -486,6 +541,8 @@ async function commitClassImport(cls, candidate, nextName){
 function classImportFailureMessage(){
   if(__lastPersistFailure==="write")
     return "匯入未完成：瀏覽器儲存空間不足或無法寫入，這次匯入沒有儲存。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，清出空間後重新載入再匯入。";
+  if(__lastPersistFailure==="unfinished")
+    return "匯入未完成：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，這次匯入沒有寫入。\n\n請先下載本頁資料備份，再重新載入本頁；重新載入後會讀到最新已儲存的資料，再重新匯入。";
   if(__lastPersistFailure==="coordination")
     return "匯入未完成：無法寫入跨分頁協調記錄（IndexedDB），為避免與其他分頁互相覆蓋，這次匯入沒有寫入。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，再重新載入。";
   if(__lastPersistFailure==="unsafe")
