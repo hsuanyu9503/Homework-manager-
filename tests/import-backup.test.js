@@ -87,6 +87,14 @@ const INIT = () => {
     if(window.__simulateQuota) throw new DOMException("模擬容量不足","QuotaExceededError");
     return orig.call(this,k,v);
   };
+  // 模擬讀檔延遲：測試設定 window.__readGate（Promise）時，讀檔要等它 resolve 才完成。
+  const origText = Blob.prototype.text;
+  Blob.prototype.text = function(){ const go=()=>origText.call(this); return window.__readGate ? window.__readGate.then(go) : go(); };
+  const origReadAsText = FileReader.prototype.readAsText;
+  FileReader.prototype.readAsText = function(...args){
+    if(window.__readGate){ window.__readGate.then(()=>origReadAsText.apply(this,args)); return; }
+    return origReadAsText.apply(this,args);
+  };
   window.__toasts = [];
   document.addEventListener("DOMContentLoaded",()=>{
     const el = document.getElementById("toast");
@@ -185,6 +193,8 @@ async function run(){
         await importVia(page, entry, fmt);
         const t = await toasts(page);
         check(`${label}：顯示成功`, t.some(x=>SUCCESS_RE.test(x)), {toasts:t,dialogs:page.__dialogs});
+        const conf = page.__dialogs.filter(d=>d.type==="confirm").map(d=>d.message).join("\n");
+        check(`${label}：確認訊息分列目標班級與備份班級`, /目標班級：A班（原值）/.test(conf) && /備份班級：A班（匯入檔）/.test(conf), conf);
         await page.reload();
         const st = await readStore(page);
         // 首頁入口沿用 className；班內設定沿用備份內 class.name（既有行為）；攤平格式於首頁入口不改班名（既有行為）
@@ -301,6 +311,69 @@ async function run(){
       const st = await readStore(oldPage);
       check("[5] 舊分頁一般儲存仍被擋下，saveData() 回傳 false", saved===false && clsOf(st,"cA").name==="A班（新分頁修改）", {saved, name:clsOf(st,"cA").name});
       await context.close(); }
+
+    // 審查 P1：讀檔期間切換班級，不得把備份寫到另一個班級
+    for(const entry of ["home","settings"]){
+      const label = `[6] ${entry==="home"?"班級首頁":"班內設定"} 讀檔期間切到 B 班`;
+      const {context,page} = await newContext(browser,base);
+      await page.evaluate(()=>{ enterClass("cA"); leaveClass(); enterClass("cB"); leaveClass(); });
+      const before = await readStore(page);
+      page.__dialogs.length = 0;
+      await page.evaluate(()=>{ window.__toasts.length = 0; });
+      if(entry==="home"){
+        await page.evaluate(()=>openClassSettings("cA"));
+        await page.evaluate(()=>{ window.__readGate = new Promise(r=>window.__releaseRead=r); });
+        await page.setInputFiles('#modalBody input[type=file]', FILE_PATHS.envelope);
+      }else{
+        await page.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+        await page.evaluate(()=>{ window.__readGate = new Promise(r=>window.__releaseRead=r); });
+        await page.setInputFiles('#importInput', FILE_PATHS.envelope);
+      }
+      await page.waitForTimeout(200);
+      await page.evaluate(()=>{ if(activeClassId) leaveClass(); enterClass("cB"); setPage("settings"); });
+      await page.evaluate(()=>{ window.__releaseRead(); window.__readGate = null; });
+      await page.waitForTimeout(500);
+      const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      const confirms = page.__dialogs.filter(d=>d.type==="confirm");
+      check(`${label}：取消匯入並說明班級已切換`, alerts.some(m=>/切換/.test(m) && /取消匯入/.test(m)), alerts);
+      check(`${label}：未進到取代確認`, confirms.length===0, confirms.map(c=>c.message));
+      check(`${label}：未顯示匯入成功`, !(await toasts(page)).some(x=>SUCCESS_RE.test(x)));
+      const mem = await page.evaluate(()=>({active:activeClassId, name:data.class.name}));
+      check(`${label}：畫面仍為 B 班原資料`, mem.active==="cB" && mem.name==="B班（原值）", mem);
+      await page.reload();
+      check(`${label}：重新載入後 A、B 班維持原值`, JSON.stringify(await readStore(page))===JSON.stringify(before));
+      await context.close();
+    }
+
+    // 審查 P2：寫入成功後畫面更新拋錯，不得報成匯入失敗
+    for(const entry of ["home","settings"]){
+      const label = `[7] ${entry==="home"?"班級首頁":"班內設定"} 寫入成功後重繪失敗`;
+      const {context,page} = await newContext(browser,base);
+      await page.evaluate(()=>{ enterClass("cB"); leaveClass(); });
+      const bBefore = clsOf(await readStore(page),"cB");
+      if(entry==="settings") await page.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+      else await page.evaluate(()=>openClassSettings("cA"));
+      await page.evaluate(()=>{
+        for(const fn of ["renderPage","renderClassHome","closeModal"]){
+          const orig = window[fn];
+          window[fn] = function(){ if(window.__failRender) throw new Error("模擬重繪失敗"); return orig.apply(this, arguments); };
+        }
+        window.__failRender = true;
+      });
+      page.__dialogs.length = 0;
+      await page.evaluate(()=>{ window.__toasts.length = 0; });
+      await page.setInputFiles(entry==="home" ? '#modalBody input[type=file]' : '#importInput', FILE_PATHS.envelope);
+      await page.waitForTimeout(500);
+      const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      check(`${label}：提示資料已儲存、請重新載入`, alerts.some(m=>/資料已儲存/.test(m) && /重新載入/.test(m)), alerts);
+      check(`${label}：未誤報為讀檔或匯入失敗`, !alerts.some(m=>/無法匯入|格式不正確|匯入未完成/.test(m)), alerts);
+      await page.evaluate(()=>{ window.__failRender = false; });
+      await page.reload();
+      const st = await readStore(page);
+      assertImportedA(st, label, "A班（匯入檔）");
+      check(`${label}：B 班維持原值`, JSON.stringify(clsOf(st,"cB"))===JSON.stringify(bBefore));
+      await context.close();
+    }
   }finally{
     await browser.close();
     server.close();
