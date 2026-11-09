@@ -1,4 +1,4 @@
-const APP_VERSION = "2.100";
+const APP_VERSION = "2.101";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -9,6 +9,63 @@ let __knownStoreRaw = null;
 let __storageLoadUnsafe = false;
 let __storageWriteBlocked = false;
 let __storageWarningShown = false;
+// v2.101: Why the most recent persistStoreSafely() call refused or failed to write
+// ("unsafe" | "conflict" | "write"); "" after a successful write.
+let __lastPersistFailure = "";
+// v2.101: Cross-tab write coordination.
+// localStorage reads in one tab may lag another tab's write, so "compare then write" alone can let a
+// stale tab overwrite newer data. Every write therefore carries a revision number inside the stored
+// value (syncRevision), and the latest revision is kept in IndexedDB, whose readwrite transactions run
+// one at a time across tabs and always read committed data. A write is allowed only inside such a
+// transaction, and only if no newer revision than the one this tab holds has been recorded.
+const SYNC_DB_NAME = "homeworkTrackerSync";
+const SYNC_STORE_NAME = "meta";
+// Failure detection only: some Safari builds never answer indexedDB.open(). Without a limit every
+// save would stay queued forever; after it, writes fall back explicitly to the pre-v2.101 check.
+const SYNC_DB_OPEN_LIMIT_MS = 2000;
+let __heldRevision = 0;          // revision of the data this tab loaded or last wrote
+let __knownStoreContent = null;  // __knownStoreRaw without syncRevision; unchanged saves are skipped
+                                 // so that merely opening a class does not bump the revision
+let __heldRevisionLegacy = true; // loaded data had no syncRevision (written by v2.100 or earlier)
+let __syncDbPromise = null;
+let __syncUnavailable = false;   // IndexedDB cannot be used: only the pre-v2.101 protection applies
+let __pendingCommit = null;      // queued, not yet started commit (shared by callers)
+let __pendingCommitForce = false;// an explicit import is among the callers sharing that commit
+let __commitTail = Promise.resolve();
+// Each tab holds a Web Lock named after its id for its whole lifetime, so another tab can tell
+// whether the writer of an unfinished reservation (see commitStoreOnce) is still open.
+const TAB_LOCK_PREFIX = "homeworkTrackerTab:";
+// An unfinished reservation by another tab ("writing", never marked "done") cannot be told apart
+// from here: the writer may have closed before writing localStorage, or after writing it but before
+// marking it done; and this tab's own localStorage view may be stale. It is therefore always treated
+// as a real, newer revision: this tab stops writing and asks the teacher to download a backup and
+// reload. Only after this tab has shown that notice, been reloaded, and still holds the revision the
+// reservation was based on (and the writer tab is gone) is a manual "continue from this page" offered;
+// it writes a new revision and never reuses the reserved one.
+const UNFINISHED_NOTICE_KEY = "homeworkTrackerUnfinishedWrite";
+let __unfinishedNoticeAtLoad = null;
+try{ __unfinishedNoticeAtLoad = JSON.parse(sessionStorage.getItem(UNFINISHED_NOTICE_KEY)||"null"); }catch(e){}
+let __unfinishedRecovery = null;   // reservation the teacher may explicitly continue past
+let __unfinishedUnverifiable = false; // the writer tab's end cannot be confirmed (no Web Locks query,
+                                      // or its reservation carries no proof that it held its tab lock)
+// Data written by v2.100 has no syncRevision. A revision recorded in IndexedDB may only be adopted for
+// it when the record is completed ("done", not another tab's "writing" reservation) and its
+// contentDigest matches the content this tab actually loaded; otherwise another
+// tab may have written newer data between this tab's localStorage read and its IndexedDB read. Then
+// this tab stops writing and asks for a reload. If, after that reload, this tab loads the very same
+// unrevisioned content while the record is unchanged, that content is the latest saved data (for
+// example, a v2.100 tab wrote after a v2.101 one) and the revision is adopted.
+const LEGACY_NOTICE_KEY = "homeworkTrackerLegacyUnconfirmed";
+let __legacyNoticeAtLoad = null;
+try{ __legacyNoticeAtLoad = JSON.parse(sessionStorage.getItem(LEGACY_NOTICE_KEY)||"null"); }catch(e){}
+let __supersedeReservation = null; // set only by that explicit action, for one commit
+const TAB_ID = uid("tab");
+const __tabLockReady = (typeof navigator!=="undefined" && navigator.locks && typeof navigator.locks.request==="function")
+  ? new Promise(resolve=>{
+      navigator.locks.request(TAB_LOCK_PREFIX+TAB_ID, ()=>{ resolve(true); return new Promise(()=>{}); })
+        .catch(()=>resolve(false));
+    })
+  : Promise.resolve(false);
 
 const STATUS_ORDER = ["pending","submitted","correction","completed","missing"];
 const STATUS_LABEL = {
@@ -59,6 +116,12 @@ function loadStore(){
     if(raw){
       const parsed = JSON.parse(raw);
       if(parsed && Array.isArray(parsed.classes)){
+        const {syncRevision, ...content}=parsed;
+        __knownStoreContent=JSON.stringify(content);
+        if(Number.isInteger(syncRevision) && syncRevision>0){
+          __heldRevision=syncRevision;
+          __heldRevisionLegacy=false;
+        }
         return {
           version:2,
           classes:parsed.classes.map(c=>({
@@ -90,6 +153,7 @@ function loadStore(){
       const migratedRaw=JSON.stringify(migrated);
       localStorage.setItem(STORAGE_KEY, migratedRaw);
       __knownStoreRaw=migratedRaw;
+      __knownStoreContent=migratedRaw;
       return migrated;
     }
   }catch(e){
@@ -179,13 +243,27 @@ function showDataStorageWarning(){
     const reload=document.createElement("button");
     reload.type="button";reload.textContent="重新載入最新資料";
     reload.addEventListener("click",()=>location.reload());
-    actions.append(backup,reload);panel.append(message,actions);
+    const recover=document.createElement("button");
+    recover.type="button";recover.className="cm-data-safety-recover";recover.textContent="確認從本頁資料繼續";
+    recover.hidden=true;
+    recover.addEventListener("click",continueFromThisPageAfterUnfinishedWrite);
+    actions.append(backup,reload,recover);panel.append(message,actions);
     document.body.appendChild(panel);
   }
   const message=panel.querySelector(".cm-data-safety-message");
   if(message)message.textContent=__storageLoadUnsafe
     ? "資料安全保護：原始班級資料無法正確讀取，已暫停儲存，避免清空現有紀錄。請保留原分頁並先備份資料。"
+    : __lastPersistFailure==="legacyUnconfirmed"
+    ? "資料安全保護：本頁讀入的是尚未加上修訂號的舊版資料，但其他分頁已用新版儲存過，無法確認本頁內容是否為最新。為保留已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後即可繼續操作。"
+    : __lastPersistFailure==="unfinished"
+    ? (__unfinishedUnverifiable
+        ? "資料安全保護：另一個分頁有一次儲存尚未確認完成，目前無法確認原寫入分頁是否已結束，因此仍無法安全繼續寫入。請先下載本頁資料備份，關閉本網站的其他分頁後重新載入；重新載入後若讀到最新已儲存的資料即可繼續。若重新載入後仍出現此訊息，請改用較新版本的瀏覽器開啟本網站。"
+      : __unfinishedRecovery
+        ? "資料安全保護：先前另一個分頁的一次儲存尚未確認完成，該分頁已關閉；重新載入後讀到的仍是那次儲存之前的資料，表示那次儲存很可能沒有寫入。若已確認沒有其他分頁開著本網站，可先下載本頁資料備份，再按「確認從本頁資料繼續」。"
+        : "資料安全保護：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後會讀到最新已儲存的資料，即可繼續操作。")
     : "資料安全保護：偵測到其他分頁修改了班級資料，或儲存失敗。本頁已暫停寫入，避免將較新的資料覆蓋成舊版本。請先下載本頁備份，再重新載入。";
+  const recover=panel.querySelector(".cm-data-safety-recover");
+  if(recover)recover.hidden=!(__lastPersistFailure==="unfinished"&&__unfinishedRecovery);
   __storageWarningShown=true;
 }
 function downloadCurrentTabDataBackup(){
@@ -200,32 +278,287 @@ function downloadCurrentTabDataBackup(){
     const file=new Blob([backup],{type:"application/json"});
     const url=URL.createObjectURL(file);
     const a=document.createElement("a");a.href=url;
-    a.download=`ClassroomManager-資料安全備份-${new Date().toISOString().slice(0,19).replace(/[T:]/g,"-")}.json`;
+    // The name says the file holds THIS tab's in-memory data, and which class(es).
+    const scope=__storageLoadUnsafe?"原始儲存內容":(cls?(cls.name||"未命名班級"):"全部班級");
+    const safeScope=String(scope).replace(/[\\/:*?"<>|]/g,"-");
+    a.download=`ClassroomManager-資料安全備份-本頁-${safeScope}-${new Date().toISOString().slice(0,19).replace(/[T:]/g,"-")}.json`;
     document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
   }catch(e){console.error("備份下載失敗",e);alert("備份無法下載，請保留此分頁並勿清除瀏覽器資料。");}
 }
-function persistStoreSafely(){
-  // A parsing error is not permission to replace the stored record with empty defaults.
-  if(__storageLoadUnsafe||__storageWriteBlocked){showDataStorageWarning();return false;}
+function storeRawForRevision(content, revision){
+  // syncRevision is an extra top-level field; older versions ignore it (and drop it when they save).
+  return `${content.slice(0,-1)},"syncRevision":${revision}}`;
+}
+function recordPersistFailure(reason, error){
+  __storageWriteBlocked=true;
+  __lastPersistFailure=reason;
+  if(reason==="conflict"||reason==="unfinished"||reason==="legacyUnconfirmed")console.warn("資料寫入已停止：無法確認本頁持有最新的班級資料",reason);
+  else console.error("班級資料寫入失敗，已啟動防覆寫保護",error);
+  showDataStorageWarning();
+  return false;
+}
+function showSyncUnavailableNotice(){
+  if(typeof document==="undefined"||!document.body||document.getElementById("cmSyncUnavailableNotice"))return;
+  const panel=document.createElement("aside");
+  panel.id="cmSyncUnavailableNotice";
+  panel.className="cm-data-safety-warning";
+  panel.setAttribute("role","status");
+  const message=document.createElement("div");
+  message.className="cm-data-safety-message";
+  message.textContent="提醒：此瀏覽器無法提供跨分頁寫入協調（IndexedDB 無法使用），只能沿用基本的防覆寫檢查。請只在一個分頁開啟本網站，避免兩個分頁同時儲存時互相覆蓋。";
+  const actions=document.createElement("div");
+  actions.className="cm-data-safety-actions";
+  const close=document.createElement("button");
+  close.type="button";close.textContent="知道了";
+  close.addEventListener("click",()=>panel.remove());
+  actions.append(close);panel.append(message,actions);
+  document.body.appendChild(panel);
+}
+function markSyncUnavailable(error){
+  if(!__syncUnavailable)console.warn("IndexedDB 無法使用，跨分頁寫入協調停用",error);
+  __syncUnavailable=true;
+  showSyncUnavailableNotice();
+  return null;
+}
+async function contentDigest(text){
+  if(text==null)return null;
   try{
-    const currentRaw=localStorage.getItem(STORAGE_KEY);
-    if(currentRaw!==__knownStoreRaw){
-      __storageWriteBlocked=true;
-      showDataStorageWarning();
-      console.warn("資料寫入已停止：偵測到另一分頁在本頁載入後修改原始班級資料");
-      return false;
+    if(typeof crypto!=="undefined"&&crypto.subtle&&typeof TextEncoder!=="undefined"){
+      const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text));
+      return "sha256:"+Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,"0")).join("");
     }
-    const nextRaw=JSON.stringify(store);
-    localStorage.setItem(STORAGE_KEY,nextRaw);
-    __knownStoreRaw=nextRaw;
-    return true;
-  }catch(e){
-    __storageWriteBlocked=true;
-    console.error("班級資料寫入失敗，已啟動防覆寫保護",e);
-    showDataStorageWarning();
+  }catch(e){}
+  // Fallback where SubtleCrypto is unavailable (non-secure context): FNV-1a plus length.
+  let h=0x811c9dc5;
+  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
+  return `fnv1a:${h.toString(16)}:${text.length}`;
+}
+async function adoptRevisionForLegacyData(meta){
+  // A "writing" reservation belongs to the tab that made it and may not have reached localStorage
+  // yet: never adopt it (not after a reload, not on a matching notice or digest). Treat it like any
+  // other tab's unfinished reservation: stop writing, explain how to recover. Only a completed ("done")
+  // record can be the revision of content already saved. Records from before reservations existed
+  // have no state and were written in one step, so they count as completed.
+  if(meta.state==="writing"){
+    await handleUnfinishedReservation(meta);
     return false;
   }
+  const rev=Number(meta.rev)||0;
+  const loadedDigest=await contentDigest(__knownStoreContent);
+  const notice={rev, at:meta.at||null, digest:loadedDigest};
+  const sameAsNotice=__legacyNoticeAtLoad&&__legacyNoticeAtLoad.rev===notice.rev&&
+    __legacyNoticeAtLoad.at===notice.at&&__legacyNoticeAtLoad.digest===notice.digest;
+  if((meta.contentDigest&&meta.contentDigest===loadedDigest)||sameAsNotice){
+    __heldRevision=Math.max(__heldRevision,rev);
+    try{sessionStorage.removeItem(LEGACY_NOTICE_KEY);}catch(e){}
+    return true;
+  }
+  // Cannot confirm that this revision belongs to the content on this page: keep saved data safe.
+  try{sessionStorage.setItem(LEGACY_NOTICE_KEY,JSON.stringify(notice));}catch(e){}
+  recordPersistFailure("legacyUnconfirmed");
+  return false;
+}
+function readSyncMeta(db){
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(SYNC_STORE_NAME,"readonly");
+    const req=tx.objectStore(SYNC_STORE_NAME).get(STORAGE_KEY);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error);
+  });
+}
+function openSyncDb(){
+  if(__syncDbPromise)return __syncDbPromise;
+  __syncDbPromise=new Promise(resolve=>{
+    let req, settled=false;
+    const done=db=>{if(settled){if(db)db.close();return;}settled=true;resolve(db);};
+    try{
+      if(typeof indexedDB==="undefined"||!indexedDB)return done(null);
+      req=indexedDB.open(SYNC_DB_NAME,1);
+    }catch(e){return done(null);}
+    setTimeout(()=>done(null),SYNC_DB_OPEN_LIMIT_MS);
+    req.onupgradeneeded=()=>{req.result.createObjectStore(SYNC_STORE_NAME);};
+    req.onsuccess=()=>{const db=req.result;db.onversionchange=()=>db.close();done(db);};
+    req.onerror=()=>done(null);
+    req.onblocked=()=>done(null);
+  }).then(async db=>{
+    if(!db)return markSyncUnavailable();
+    try{
+      if(__heldRevisionLegacy){
+        const meta=await readSyncMeta(db);
+        __heldRevisionLegacy=false;
+        if(meta)await adoptRevisionForLegacyData(meta);
+        // No record yet: normal upgrade path, revisions start from this tab's first write.
+      }
+      return db;
+    }catch(e){return markSyncUnavailable(e);}
+  });
+  return __syncDbPromise;
+}
+// Pre-v2.101 protection, used only when IndexedDB is unavailable.
+function commitStoreWithoutCoordination(content){
+  try{
+    if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw)return recordPersistFailure("conflict");
+    const nextRevision=__heldRevision+1;
+    const nextRaw=storeRawForRevision(content,nextRevision);
+    localStorage.setItem(STORAGE_KEY,nextRaw);
+    __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=nextRevision;__lastPersistFailure="";
+    return true;
+  }catch(e){return recordPersistFailure("write",e);}
+}
+function syncMetaTransaction(db, work){
+  // Runs work(store, result) inside one readwrite transaction; resolves {ok, value} after commit.
+  return new Promise(resolve=>{
+    let tx, value;
+    try{tx=db.transaction(SYNC_STORE_NAME,"readwrite");}catch(e){return resolve({ok:false,error:e});}
+    const meta=tx.objectStore(SYNC_STORE_NAME);
+    try{
+      const req=meta.get(STORAGE_KEY);
+      req.onsuccess=()=>{
+        try{value=work(meta, req.result||null);}
+        catch(e){value={error:e};try{tx.abort();}catch(_){}}
+      };
+    }catch(e){return resolve({ok:false,error:e});}
+    tx.oncomplete=()=>resolve({ok:true,value});
+    tx.onabort=tx.onerror=()=>resolve({ok:false,value,error:tx.error});
+  });
+}
+async function isWriterTabClosed(writer){
+  // Without Web Locks the writer tab's state is unknown (callers decide how to treat that).
+  if(!writer||typeof navigator==="undefined"||!navigator.locks||typeof navigator.locks.query!=="function")return false;
+  try{
+    const state=await navigator.locks.query();
+    return !(state.held||[]).some(l=>l.name===TAB_LOCK_PREFIX+writer);
+  }catch(e){return false;}
+}
+// Two phases, so that localStorage is never ahead of the revision record:
+//  1. In one IndexedDB readwrite transaction: check that no newer revision exists, then record a
+//     reservation {rev:next, state:"writing", writer:this tab}. Other tabs' transactions run before
+//     or after this one, never interleaved, and from then on see the newer revision.
+//  2. Only after that transaction has committed: write localStorage; then mark the record "done".
+// A failed reservation means nothing was written. A failed localStorage write releases the
+// reservation. A failed "done" mark leaves a correct revision behind (data saved, others blocked).
+async function commitStoreOnce(force=false){
+  if(__storageLoadUnsafe||__storageWriteBlocked){
+    __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
+    showDataStorageWarning();return false;
+  }
+  const db=await openSyncDb();
+  let content;
+  try{content=JSON.stringify(store);}catch(e){return recordPersistFailure("write",e);}
+  // Unchanged content needs no write (opening a class must not bump the revision), except for an
+  // explicit import: its success must be confirmed against the current revision.
+  if(!force&&content===__knownStoreContent)return true;
+  if(!db)return commitStoreWithoutCoordination(content);
+  // Whether this tab really holds its tab lock. Only then can another tab later conclude, from the lock
+  // being gone, that this tab has ended; the reservation records this as writerLock.
+  const holdsTabLock=(await __tabLockReady)===true;
+  const supersede=__supersedeReservation;__supersedeReservation=null;
+  const digest=await contentDigest(content);
+
+  let failure=null, unfinished=null;
+  const reservation=await syncMetaTransaction(db,(meta,latest)=>{
+    if(__storageLoadUnsafe){failure="unsafe";throw new Error("unsafe");}
+    if(__storageWriteBlocked){failure="blocked";throw new Error("blocked");}
+    const latestRevision=Number(latest?.rev)||0;
+    const explicitlySuperseded=Boolean(supersede&&latest&&latest.state==="writing"&&latest.writerLock===true&&latest.writer===supersede.writer&&
+      latest.at===supersede.at&&latest.rev===supersede.rev&&(Number(latest.baseRev)||0)===__heldRevision);
+    if(latestRevision>__heldRevision&&!explicitlySuperseded){
+      // Never reuse or roll back a revision: an unfinished reservation may already have written data.
+      if(latest.state==="writing"&&latest.writer!==TAB_ID){failure="unfinished";unfinished=latest;}
+      else failure="conflict";
+      throw new Error(failure);
+    }
+    if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw){failure="conflict";throw new Error("conflict");}
+    const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,writerLock:holdsTabLock,at:new Date().toISOString(),contentDigest:digest};
+    meta.put(record,STORAGE_KEY);
+    return {record,previous:latest};
+  });
+  if(!reservation.ok){
+    if(failure==="blocked"){__lastPersistFailure=__lastPersistFailure||"conflict";showDataStorageWarning();return false;}
+    if(failure==="unfinished")return handleUnfinishedReservation(unfinished);
+    // Nothing has been written to localStorage.
+    return recordPersistFailure(failure||"coordination",reservation.error||reservation.value?.error);
+  }
+  const {record,previous}=reservation.value;
+  const nextRaw=storeRawForRevision(content,record.rev);
+  try{
+    localStorage.setItem(STORAGE_KEY,nextRaw);
+  }catch(e){
+    // Release our reservation (only if it is still ours) so the stored revision matches the data.
+    await syncMetaTransaction(db,(meta,latest)=>{
+      if(latest&&latest.writer===TAB_ID&&latest.at===record.at&&latest.rev===record.rev){
+        if(previous)meta.put(previous,STORAGE_KEY);else meta.delete(STORAGE_KEY);
+      }
+    });
+    return recordPersistFailure("write",e);
+  }
+  __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=record.rev;__lastPersistFailure="";
+  __unfinishedRecovery=null;
+  try{sessionStorage.removeItem(UNFINISHED_NOTICE_KEY);}catch(e){}
+  const done=await syncMetaTransaction(db,(meta,latest)=>{
+    if(latest&&latest.writer===TAB_ID&&latest.at===record.at&&latest.rev===record.rev)meta.put({...record,state:"done"},STORAGE_KEY);
+  });
+  // The data is saved and the reservation already carries its revision, so other tabs stay blocked.
+  if(!done.ok)console.warn("協調記錄未能標記完成；資料已儲存，修訂號仍有效",done.error);
+  return true;
+}
+function sameReservation(a,b){
+  return Boolean(a&&b&&a.writer===b.writer&&a.at===b.at&&a.rev===b.rev);
+}
+async function handleUnfinishedReservation(reservation){
+  // Offer the manual continue only on a reload after this tab already showed the notice for this
+  // very reservation, while still holding its base revision, and with the writer tab gone.
+  // Replacing another tab's reservation is allowed only when that tab is confirmed to have ended:
+  // the reservation must prove the writer held its tab lock (writerLock === true; reservations made
+  // before this field existed have no proof), and this tab must be able to see that the lock is gone.
+  let offer=false;
+  const locksQueryAvailable=typeof navigator!=="undefined"&&navigator.locks&&typeof navigator.locks.query==="function";
+  __unfinishedUnverifiable=!locksQueryAvailable||reservation.writerLock!==true;
+  if(!__unfinishedUnverifiable&&sameReservation(__unfinishedNoticeAtLoad,reservation)&&(Number(reservation.baseRev)||0)===__heldRevision){
+    offer=await isWriterTabClosed(reservation.writer);
+  }
+  __unfinishedRecovery=offer?{writer:reservation.writer,at:reservation.at,rev:reservation.rev}:null;
+  try{sessionStorage.setItem(UNFINISHED_NOTICE_KEY,JSON.stringify({writer:reservation.writer,at:reservation.at,rev:reservation.rev}));}catch(e){}
+  return recordPersistFailure("unfinished");
+}
+async function continueFromThisPageAfterUnfinishedWrite(){
+  const target=__unfinishedRecovery;
+  if(!target||__unfinishedUnverifiable)return;
+  const ok=confirm("確認從本頁資料繼續？\n\n將以本頁目前顯示的資料作為最新版本儲存。若先前那次未確認完成的儲存其實已寫入，那筆資料會被本頁資料取代。\n\n按「確定」後會先下載本頁資料備份，再繼續儲存；按「取消」則維持停止寫入。");
+  if(!ok)return;
+  downloadCurrentTabDataBackup();
+  __supersedeReservation=target;
+  __storageWriteBlocked=false;__lastPersistFailure="";
+  const saved=await persistStoreSafely({force:true});
+  if(saved){
+    document.getElementById("cmDataSafetyWarning")?.remove();
+    __storageWarningShown=false;
+    toast("已從本頁資料繼續儲存");
+  }
+}
+
+// All writes of STORAGE_KEY go through here. Returns a Promise<boolean>; callers that do not need
+// the result may ignore it. Calls made while a commit is queued share it (it writes the latest store).
+function persistStoreSafely(options={}){
+  // A parsing error is not permission to replace the stored record with empty defaults.
+  if(__storageLoadUnsafe||__storageWriteBlocked){
+    __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
+    showDataStorageWarning();return Promise.resolve(false);
+  }
+  if(options.force)__pendingCommitForce=true;
+  if(__pendingCommit)return __pendingCommit;
+  const commit=__commitTail.then(()=>{
+    let force=false;
+    if(__pendingCommit===commit){__pendingCommit=null;force=__pendingCommitForce;__pendingCommitForce=false;}
+    return commitStoreOnce(force);
+  });
+  __pendingCommit=commit;
+  __commitTail=commit.then(()=>{},()=>{});
+  return commit;
+}
+function isCrossTabCoordinationAvailable(){
+  return openSyncDb().then(db=>Boolean(db));
 }
 
 function saveData(){
@@ -236,10 +569,69 @@ function saveData(){
       cls.data = data;
     }
   }
-  persistStoreSafely();
+  const saved=persistStoreSafely();
   if(activeClassId) renderPage(currentPage);
   else renderClassHome();
+  return saved;
 }
+
+// v2.101: Single-class backup import must only report success after the browser write succeeds.
+// saveData()/persistStoreSafely() now resolve asynchronously (see commitStoreOnce).
+// The candidate is swapped in, persisted through the existing stale-tab guard, and rolled back
+// in memory if the write is refused, so the screen, class name and rescue download keep
+// showing this tab's own data rather than the unsaved candidate.
+async function commitClassImport(cls, candidate, nextName){
+  const previous={data:cls.data,name:cls.name,active:cls.id===activeClassId?data:null};
+  // Home card name (cls.name) and in-class name (data.class.name) must agree after import.
+  candidate.class.name=nextName;
+  cls.data=candidate;
+  cls.name=nextName;
+  if(cls.id===activeClassId)data=candidate;
+  if(await persistStoreSafely({force:true}))return true;
+  // Roll back the import target only. The teacher may have switched class while the write was
+  // pending: the class now on screen (and its `data`) must be left alone unless it is the target.
+  cls.data=previous.data;
+  cls.name=previous.name;
+  if(cls.id===activeClassId){
+    data=previous.active||normalizeData(previous.data);
+    data.class.name=cls.name||data.class.name;
+    cls.data=data;
+  }
+  return false;
+}
+function classImportFailureMessage(){
+  if(__lastPersistFailure==="write")
+    return "匯入未完成：瀏覽器儲存空間不足或無法寫入，這次匯入沒有儲存。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，清出空間後重新載入再匯入。";
+  if(__lastPersistFailure==="legacyUnconfirmed")
+    return "匯入未完成：本頁讀入的是尚未加上修訂號的舊版資料，但其他分頁已用新版儲存過，無法確認本頁內容是否為最新。為保留已儲存的資料，這次匯入沒有寫入。\n\n請先下載本頁資料備份，再重新載入本頁；重新載入後即可重新匯入。";
+  if(__lastPersistFailure==="unfinished")
+    return "匯入未完成：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，這次匯入沒有寫入。\n\n請先下載本頁資料備份，再重新載入本頁；重新載入後會讀到最新已儲存的資料，再重新匯入。";
+  if(__lastPersistFailure==="coordination")
+    return "匯入未完成：無法寫入跨分頁協調記錄（IndexedDB），為避免與其他分頁互相覆蓋，這次匯入沒有寫入。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，再重新載入。";
+  if(__lastPersistFailure==="unsafe")
+    return "匯入未完成：原始班級資料無法正確讀取，為避免覆蓋已暫停寫入，這次匯入沒有儲存。\n\n請保留此分頁並先下載備份。";
+  return "匯入未完成：偵測到其他分頁已修改班級資料。為避免把較新的資料覆蓋成舊版本，這次匯入沒有寫入。\n\n瀏覽器中保留的是其他分頁最後儲存的版本。「下載本頁資料備份」下載的是本次匯入前，本頁保留的資料（檔名含「本頁」），不含這次匯入的檔案；匯入檔仍保留在原位置。請重新載入後再匯入。";
+}
+// A multi-class rescue file has classes[] at the root; single-class entries must stop before any change.
+function isMultiClassRescueFile(obj){
+  return Boolean(obj && typeof obj==="object" && Array.isArray(obj.classes));
+}
+const CLASS_SWITCHED_DURING_IMPORT_MESSAGE="讀取備份檔期間已切換或離開班級。為避免把備份匯入錯誤的班級，已取消匯入，所有班級資料均未變更。請回到要還原的班級重新選擇檔案。";
+const INVALID_CLASS_BACKUP_MESSAGE="這不是有效的單班級備份檔；為保護原有資料，已取消匯入。";
+function classImportConfirmMessage(targetName, backupName, detail){
+  return `確定要匯入備份嗎？\n\n即將被取代的目標班級：${targetName||"未命名班級"}\n備份檔中的班級：${backupName||"未命名"}${detail?`\n${detail}`:""}\n\n目標班級的資料會被備份內容取代。`;
+}
+// Reading, saving and redrawing fail for different reasons; a redraw error after a successful
+// write must not be reported as "cannot import".
+function finishClassImport(saved, render, successMessage){
+  let rendered=true;
+  try{render();}catch(e){rendered=false;console.error("匯入後畫面更新失敗",e);}
+  if(!saved){alert(classImportFailureMessage());return;}
+  if(!rendered){alert("備份已匯入，但更新畫面時發生錯誤。\n\n資料已儲存，請重新載入以更新畫面。");return;}
+  toast(successMessage);
+}
+const NO_COORDINATION_IMPORT_MESSAGE="此瀏覽器無法提供跨分頁寫入協調（IndexedDB 無法使用），無法保證其他分頁不會同時寫入。\n\n請先關閉本網站的其他分頁，再按「確定」繼續匯入；按「取消」則不匯入，資料不會變更。";
+const MULTI_CLASS_RESCUE_MESSAGE="這是多班救援檔（內含多個班級），目前入口僅支援單班還原；為保護原有資料，已取消匯入，所有班級資料均未變更。";
 
 function uid(prefix="id"){
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
@@ -739,32 +1131,57 @@ function isClassBackupData(obj){
 }
 function importClassBackup(classId, file){
   if(!file) return;
-  const cls = store.classes.find(c=>c.id===classId);
-  if(!cls) return;
+  if(!store.classes.some(c=>c.id===classId)) return;
+  // The target is fixed when the file is chosen; leaving the class home while the file is
+  // being read cancels the import instead of applying it in a different context.
+  const startedActiveClassId = activeClassId;
   const reader = new FileReader();
-  reader.onload = ()=>{
+  reader.onload = async ()=>{
+    let parsed;
     try{
-      const parsed = JSON.parse(reader.result);
-      const source=parsed?.data||parsed;
-      if(!isClassBackupData(source)){
-        alert("這不是有效的單班級備份檔；為保護原有資料，已取消匯入。");
-        return;
-      }
-      const incoming = normalizeData(source);
-      const ok = confirm(`確定要匯入備份到「${cls.name}」嗎？\n\n目前班級資料會被備份內容取代。`);
-      if(!ok) return;
-      cls.data = incoming;
-      if(parsed.className){
-        cls.name = parsed.className;
-        cls.data.class.name = parsed.className;
-      }
-      persistStoreSafely();
-      closeModal();
-      renderClassHome();
-      toast("班級備份已匯入");
+      parsed = JSON.parse(reader.result);
     }catch(e){
       alert("匯入失敗：JSON 檔案格式不正確。");
+      return;
     }
+    if(activeClassId!==startedActiveClassId){
+      alert(CLASS_SWITCHED_DURING_IMPORT_MESSAGE);
+      return;
+    }
+    const cls = store.classes.find(c=>c.id===classId);
+    if(!cls){
+      alert("找不到要匯入的班級，已取消匯入；資料未變更。");
+      return;
+    }
+    if(isMultiClassRescueFile(parsed)){
+      alert(MULTI_CLASS_RESCUE_MESSAGE);
+      return;
+    }
+    const source=parsed?.data||parsed;
+    let incoming;
+    try{
+      if(!isClassBackupData(source)) throw new Error("not a class backup");
+      incoming = normalizeData(source);
+    }catch(e){
+      alert(INVALID_CLASS_BACKUP_MESSAGE);
+      return;
+    }
+    const backupName = parsed.className || incoming.class.name;
+    if(!confirm(classImportConfirmMessage(cls.name, backupName))) return;
+    if(!(await isCrossTabCoordinationAvailable()) && !confirm(NO_COORDINATION_IMPORT_MESSAGE)) return;
+    if(activeClassId!==startedActiveClassId || !store.classes.includes(cls)){
+      alert(CLASS_SWITCHED_DURING_IMPORT_MESSAGE);
+      return;
+    }
+    let nextName=cls.name;
+    if(parsed.className){
+      nextName = parsed.className;
+    }
+    const saved = await commitClassImport(cls, incoming, nextName);
+    finishClassImport(saved, ()=>{
+      if(saved && activeClassId===startedActiveClassId) closeModal();
+      if(activeClassId) renderPage(currentPage); else renderClassHome();
+    }, "班級備份已匯入");
   };
   reader.readAsText(file);
 }
@@ -4566,25 +4983,50 @@ function exportBackup(){
 
 async function importBackup(file){
   if(!file) return;
+  // Remember the class the file was chosen in, before the asynchronous read.
+  const targetClassId = activeClassId;
+  let parsed;
   try{
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    const source=parsed?.data||parsed;
-    if(!isClassBackupData(source)){
-      alert("這不是有效的單班級備份檔；為保護原有資料，已取消匯入。");
-      return;
-    }
-    const candidate = normalizeData(source);
-    const summary = `班級：${candidate.class.name || "未命名"}\n學生：${candidate.students.length} 人\n作業：${candidate.assignments.length} 項\n紀錄：${candidate.records.length} 筆\n\n匯入後會取代目前瀏覽器中的資料，確定繼續嗎？`;
-    if(!confirm(summary)) return;
-    data = candidate;
-    saveData();
-    toast("備份匯入完成");
+    parsed = JSON.parse(await file.text());
   }catch(e){
     alert("無法匯入這個檔案，請確認它是由本網站匯出的 JSON 備份。");
+    return;
   }finally{
     document.getElementById("importInput").value="";
   }
+  if(!targetClassId || activeClassId!==targetClassId){
+    alert(CLASS_SWITCHED_DURING_IMPORT_MESSAGE);
+    return;
+  }
+  const cls = store.classes.find(c=>c.id===targetClassId);
+  if(!cls){
+    alert("找不到目前班級，已取消匯入；資料未變更。");
+    return;
+  }
+  if(isMultiClassRescueFile(parsed)){
+    alert(MULTI_CLASS_RESCUE_MESSAGE);
+    return;
+  }
+  const source=parsed?.data||parsed;
+  let candidate;
+  try{
+    if(!isClassBackupData(source)) throw new Error("not a class backup");
+    candidate = normalizeData(source);
+  }catch(e){
+    alert(INVALID_CLASS_BACKUP_MESSAGE);
+    return;
+  }
+  const detail = `學生：${candidate.students.length} 人\n作業：${candidate.assignments.length} 項\n紀錄：${candidate.records.length} 筆`;
+  if(!confirm(classImportConfirmMessage(data.class.name || cls.name, candidate.class.name, detail))) return;
+  if(!(await isCrossTabCoordinationAvailable()) && !confirm(NO_COORDINATION_IMPORT_MESSAGE)) return;
+  if(activeClassId!==targetClassId){
+    alert(CLASS_SWITCHED_DURING_IMPORT_MESSAGE);
+    return;
+  }
+  // Same naming rule saveData() applied before v2.101.
+  const nextName = candidate.class.name || cls.name || "未命名班級";
+  const saved = await commitClassImport(cls, candidate, nextName);
+  finishClassImport(saved, ()=>{ if(activeClassId) renderPage(currentPage); else renderClassHome(); }, "備份匯入完成");
 }
 
 function clearAllData(){
@@ -4748,6 +5190,7 @@ noiseEl("noiseCalibrateBtn")?.addEventListener("click",startNoiseCalibration);
 noiseEl("noiseThreshold")?.addEventListener("input",()=>{noiseStandard="custom";renderNoiseTool()});
 
 
+openSyncDb();
 updateAllClassesForDate();
 __lastRenderedReviewSlot=currentReviewSlot();
 renderClassHome();

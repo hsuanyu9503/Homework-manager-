@@ -2954,6 +2954,8 @@ body.reminder-fullscreen-active{overflow:hidden!important}
  color:#633f0d;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:700}
 @media(max-width:620px){.cm-data-safety-warning{padding:12px;font-size:13px}
  .cm-data-safety-actions{width:100%}.cm-data-safety-actions button{flex:1 1 120px}}
+/* v2.101 — 無法跨分頁協調的提醒放在上方，不遮住底部的資料安全警告與救援下載 */
+#cmSyncUnavailableNotice{top:max(12px,env(safe-area-inset-top));bottom:auto}
 
 
 /* v2.94 — Seat-position reveal. No separate student-name cards. */
