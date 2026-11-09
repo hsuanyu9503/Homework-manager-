@@ -1,0 +1,87 @@
+# 單班級備份匯入回歸測試：PR 建立、重新開啟或推送新提交時自動執行。
+# 只供開發驗證；不部署、不改動 GitHub Pages 或 Release。
+name: PR backup import tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-backup-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  backup-import-tests:
+    name: Backup import tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      # 測試 PR 最新提交本身（不是 GitHub 產生的合併預覽提交），讓日誌中的兩個 SHA 可直接對照。
+      - name: Check out PR head commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js 22.23.4
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      # 依 tests/package-lock.json 安裝固定版本的 Playwright（1.63.0）。
+      - name: Install test dependencies
+        run: npm ci --prefix tests --no-audit --no-fund
+
+      # 安裝與該 Playwright 版本對應的 Chromium 及系統相依套件。
+      - name: Install Chromium for Playwright
+        run: npx --prefix tests playwright install --with-deps chromium
+
+      - name: Show commits and tool versions
+        shell: bash
+        run: |
+          echo "PR 最新提交 SHA：$PR_HEAD_SHA"
+          echo "實際測試的 SHA：$(git rev-parse HEAD)"
+          if [ "$(git rev-parse HEAD)" != "$PR_HEAD_SHA" ]; then
+            echo "::error::實際測試的提交與 PR 最新提交不一致"
+            exit 1
+          fi
+          echo "Node.js：$(node --version)"
+          echo "Playwright：$(node -p "require('./tests/node_modules/playwright/package.json').version")"
+
+      - name: Run node tests/import-backup.test.js
+        shell: bash   # bash -eo pipefail：測試失敗（非 0 結束）會讓此步驟與檢查失敗
+        run: |
+          set +e
+          node tests/import-backup.test.js 2>&1 | tee test-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          result="$(tail -n 1 test-output.log)"
+          failed="$(grep -c '^FAIL' test-output.log || true)"
+          echo "----"
+          echo "PR 最新提交 SHA：$PR_HEAD_SHA"
+          echo "實際測試的 SHA：$(git rev-parse HEAD)"
+          echo "測試結果：$result（失敗 $failed 項，結束代碼 $status）"
+          {
+            echo "### Backup import tests"
+            echo "- PR 最新提交 SHA：\`$PR_HEAD_SHA\`"
+            echo "- 實際測試的 SHA：\`$(git rev-parse HEAD)\`"
+            echo "- 測試結果：**$result**（失敗 $failed 項，結束代碼 $status）"
+            if [ "$failed" != "0" ]; then
+              echo ""
+              echo "失敗項目："
+              echo '```'
+              grep -A1 '^FAIL' test-output.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" != "0" ]; then
+            grep '^FAIL' test-output.log | while IFS= read -r line; do echo "::error title=測試失敗::$line"; done
+          fi
+          exit "$status"
