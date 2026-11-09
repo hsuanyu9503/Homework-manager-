@@ -86,6 +86,8 @@ function startServer(){
 const STRESS = Math.max(1, Number(process.env.STRESS)||12);
 const INIT = (opts) => {
   if(opts && opts.noIdb) Object.defineProperty(window, "indexedDB", {value:undefined, configurable:true});
+  // IndexedDB 正常，但無法查詢 Web Locks（navigator.locks.query 不存在）
+  if(opts && opts.noLocksQuery && typeof LockManager!=="undefined") Object.defineProperty(LockManager.prototype, "query", {value:undefined, configurable:true});
   // 模擬 indexedDB.open() 永不回應（部分 Safari 版本的已知問題）
   if(opts && opts.idbHang) Object.defineProperty(window, "indexedDB", {value:{open(){ return {}; }}, configurable:true});
   // 模擬「另一分頁的寫入尚未同步到本分頁」：設定 window.__staleView 後，getItem 回傳凍結的舊值，
@@ -1055,6 +1057,72 @@ async function run(){
       const st = await readStore(R); const meta = await readMeta(R);
       check(`${label}：確認後以新修訂號（2）寫入，記錄為 done`, clsOf(st,"cA").data.students[0].name==="舊資料恢復後修改" && st.syncRevision===2 && meta.rev===2 && meta.state==="done", {ls:st.syncRevision, meta});
       await context.close(); }
+
+    // [24] 沿用 [22] 的時序，但 IndexedDB 正常、沒有 navigator.locks.query：無法查證原寫入分頁是否已結束，
+    //      B 不得取得恢復資格；一般儲存與單班匯入都不能寫入或報成功；放行 A 後修訂號不倒退，B 重新載入可接續。
+    for(const action of ["save","import"]){
+      const label = `[24] 無法查詢 Web Locks：A 預約後暫停，B（舊資料、已重新載入）${action==="save"?"一般儲存":"單班匯入"}`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {noLocksQuery:true});
+      const A = await openPage(context, base);
+      await A.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await A.reload(); await A.evaluate(()=>openSyncDb());
+      check(`${label}：前提成立（IndexedDB 可用、navigator.locks.query 不存在）`, await A.evaluate(()=>!!indexedDB && typeof navigator.locks?.query!=="function" && !__syncUnavailable));
+      await A.evaluate(()=>{
+        const orig = syncMetaTransaction; let first = true;
+        window.__reserveGate = new Promise(r=>window.__releaseReserve=r);
+        syncMetaTransaction = async (...args)=>{ const r = await orig(...args); if(first){ first=false; window.__reservedHeld=true; await window.__reserveGate; } return r; };
+      });
+      await A.evaluate(m=>{ enterClass("cA"); data.class.name=m.name; data.students[0].name=m.s0; data.students[1].name=m.s1;
+        data.gradeItems.find(g=>g.id==="g1-原A").scores={"s1-原A":77,"s2-原A":0}; data.gradeItems.find(g=>g.id==="g2-原A").scores={"s2-原A":66};
+        window.__aSave = saveData(); }, A_MARK);
+      await A.waitForFunction(()=>window.__reservedHeld===true);
+      const metaHeld = await readMeta(A);
+      check(`${label}：A 已預約修訂 1（writing）`, metaHeld && metaHeld.state==="writing" && metaHeld.rev===1, metaHeld);
+      const B = await openPage(context, base);
+      const first = await B.evaluate(async()=>{ await openSyncDb(); return document.getElementById("cmDataSafetyWarning")?.innerText||""; });
+      check(`${label}：B 收到警告`, /尚未確認完成/.test(first), first);
+      await B.reload();
+      const panel = await B.evaluate(async()=>{ await openSyncDb();
+        const p=document.getElementById("cmDataSafetyWarning"); const btn=p?.querySelector("button.cm-data-safety-recover");
+        return {text:p?.innerText||"", recoverVisible:!!btn && !btn.hidden, offered:__unfinishedRecovery!==null,
+          backup:[...(p?.querySelectorAll("button")||[])].some(b=>!b.hidden && b.textContent==="下載本頁資料備份"),
+          reload:[...(p?.querySelectorAll("button")||[])].some(b=>!b.hidden && b.textContent==="重新載入最新資料")}; });
+      check(`${label}：重新載入後沒有可用的恢復按鈕`, !panel.recoverVisible && !panel.offered, panel);
+      check(`${label}：清楚提示無法查證、目前仍無法安全繼續寫入，並保留下載備份與重新載入`, /無法確認原寫入分頁是否已結束/.test(panel.text) && /無法安全繼續寫入/.test(panel.text) && panel.backup && panel.reload, panel);
+      // 直接呼叫恢復函式也不得取代預約
+      await B.evaluate(async()=>{ await continueFromThisPageAfterUnfinishedWrite(); });
+      B.__dialogs.length = 0; await B.evaluate(()=>{ window.__toasts.length = 0; });
+      let bOk;
+      if(action==="save"){
+        bOk = await B.evaluate(async()=>{ enterClass("cA"); data.students[0].name="B舊內容修改"; return await saveData(); });
+      }else{
+        await B.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+        await B.setInputFiles('#importInput', FILE_PATHS.envelope);
+        bOk = (await oldTabOutcome(B)).success;
+      }
+      check(`${label}：B 不能寫入也沒有報成功`, bOk===false && !(await toasts(B)).some(x=>SUCCESS_RE.test(x)), {bOk, toasts:await toasts(B)});
+      const lsMid = await B.evaluate(k=>JSON.parse(window.__realGetItem(k)), STORAGE_KEY);
+      const metaMid = await readMeta(B);
+      check(`${label}：B 嘗試後儲存仍未被改動、預約仍屬於 A`, !("syncRevision" in lsMid) && lsMid.classes[0].data.students[0].name==="原A學生甲" && metaMid.state==="writing" && metaMid.rev===1 && metaMid.writer===metaHeld.writer, {lsRev:lsMid.syncRevision, meta:metaMid});
+      // 放行 A
+      await A.evaluate(()=>window.__releaseReserve());
+      check(`${label}：A 完成寫入`, await A.evaluate(()=>window.__aSave)===true);
+      const C = await openPage(context, base);
+      const stC = await readStore(C);
+      assertAIntact(stC, label);
+      const metaDone = await readMeta(C);
+      check(`${label}：修訂號未倒退（localStorage 與記錄皆為 1，done）`, stC.syncRevision===1 && metaDone.rev===1 && metaDone.state==="done", {ls:stC.syncRevision, meta:metaDone});
+      await C.close();
+      await B.reload();
+      const after = await B.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); const seen={name:data.class.name, s0:data.students[0].name};
+        data.memos.push({id:"memo-24",text:"B在A完成後接續"}); return {seen, ok:await saveData()}; });
+      check(`${label}：B 重新載入後從 A 的資料接續儲存`, after.seen.name===A_MARK.name && after.seen.s0===A_MARK.s0 && after.ok===true, after);
+      const D = await openPage(context, base);
+      const stD = await readStore(D); const metaD = await readMeta(D);
+      assertAIntact(stD, `${label}（B 接續後）`);
+      check(`${label}：最後修訂號為 2、記錄為 done`, stD.syncRevision===2 && metaD.rev===2 && metaD.state==="done" && JSON.stringify(clsOf(stD,"cA").data.memos).includes("B在A完成後接續"), {ls:stD.syncRevision, meta:metaD});
+      await context.close();
+    }
 
     // [21] 正常升級路徑：只有一位老師開啟 v2.100 舊資料，可直接繼續使用（不需清空或重設）
     { const label = "[21] 單一分頁開啟 v2.100 舊資料";

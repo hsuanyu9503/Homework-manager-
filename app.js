@@ -46,6 +46,7 @@ const UNFINISHED_NOTICE_KEY = "homeworkTrackerUnfinishedWrite";
 let __unfinishedNoticeAtLoad = null;
 try{ __unfinishedNoticeAtLoad = JSON.parse(sessionStorage.getItem(UNFINISHED_NOTICE_KEY)||"null"); }catch(e){}
 let __unfinishedRecovery = null;   // reservation the teacher may explicitly continue past
+let __unfinishedUnverifiable = false; // the writer tab's state cannot be checked (no Web Locks query)
 // Data written by v2.100 has no syncRevision. A revision recorded in IndexedDB may only be adopted for
 // it when the record is completed ("done", not another tab's "writing" reservation) and its
 // contentDigest matches the content this tab actually loaded; otherwise another
@@ -254,7 +255,9 @@ function showDataStorageWarning(){
     : __lastPersistFailure==="legacyUnconfirmed"
     ? "資料安全保護：本頁讀入的是尚未加上修訂號的舊版資料，但其他分頁已用新版儲存過，無法確認本頁內容是否為最新。為保留已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後即可繼續操作。"
     : __lastPersistFailure==="unfinished"
-    ? (__unfinishedRecovery
+    ? (__unfinishedUnverifiable
+        ? "資料安全保護：另一個分頁有一次儲存尚未確認完成。此瀏覽器無法確認原寫入分頁是否已結束，因此目前仍無法安全繼續寫入。請先下載本頁資料備份，關閉本網站的其他分頁後重新載入；重新載入後若讀到最新已儲存的資料即可繼續。若重新載入後仍出現此訊息，請改用較新版本的瀏覽器開啟本網站。"
+      : __unfinishedRecovery
         ? "資料安全保護：先前另一個分頁的一次儲存尚未確認完成，該分頁已關閉；重新載入後讀到的仍是那次儲存之前的資料，表示那次儲存很可能沒有寫入。若已確認沒有其他分頁開著本網站，可先下載本頁資料備份，再按「確認從本頁資料繼續」。"
         : "資料安全保護：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後會讀到最新已儲存的資料，即可繼續操作。")
     : "資料安全保護：偵測到其他分頁修改了班級資料，或儲存失敗。本頁已暫停寫入，避免將較新的資料覆蓋成舊版本。請先下載本頁備份，再重新載入。";
@@ -503,10 +506,13 @@ function sameReservation(a,b){
 async function handleUnfinishedReservation(reservation){
   // Offer the manual continue only on a reload after this tab already showed the notice for this
   // very reservation, while still holding its base revision, and with the writer tab gone.
+  // Replacing another tab's reservation is allowed only when that tab is confirmed to have ended.
+  // Without a way to check (no navigator.locks.query), it is never offered.
   let offer=false;
-  if(sameReservation(__unfinishedNoticeAtLoad,reservation)&&(Number(reservation.baseRev)||0)===__heldRevision){
-    const locksAvailable=typeof navigator!=="undefined"&&navigator.locks&&typeof navigator.locks.query==="function";
-    offer=locksAvailable?await isWriterTabClosed(reservation.writer):true;
+  const locksQueryAvailable=typeof navigator!=="undefined"&&navigator.locks&&typeof navigator.locks.query==="function";
+  __unfinishedUnverifiable=!locksQueryAvailable;
+  if(locksQueryAvailable&&sameReservation(__unfinishedNoticeAtLoad,reservation)&&(Number(reservation.baseRev)||0)===__heldRevision){
+    offer=await isWriterTabClosed(reservation.writer);
   }
   __unfinishedRecovery=offer?{writer:reservation.writer,at:reservation.at,rev:reservation.rev}:null;
   try{sessionStorage.setItem(UNFINISHED_NOTICE_KEY,JSON.stringify({writer:reservation.writer,at:reservation.at,rev:reservation.rev}));}catch(e){}
@@ -514,7 +520,7 @@ async function handleUnfinishedReservation(reservation){
 }
 async function continueFromThisPageAfterUnfinishedWrite(){
   const target=__unfinishedRecovery;
-  if(!target)return;
+  if(!target||__unfinishedUnverifiable)return;
   const ok=confirm("確認從本頁資料繼續？\n\n將以本頁目前顯示的資料作為最新版本儲存。若先前那次未確認完成的儲存其實已寫入，那筆資料會被本頁資料取代。\n\n按「確定」後會先下載本頁資料備份，再繼續儲存；按「取消」則維持停止寫入。");
   if(!ok)return;
   downloadCurrentTabDataBackup();
