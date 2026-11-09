@@ -194,12 +194,13 @@ async function run(){
         const t = await toasts(page);
         check(`${label}：顯示成功`, t.some(x=>SUCCESS_RE.test(x)), {toasts:t,dialogs:page.__dialogs});
         const conf = page.__dialogs.filter(d=>d.type==="confirm").map(d=>d.message).join("\n");
-        check(`${label}：確認訊息分列目標班級與備份班級`, /目標班級：A班（原值）/.test(conf) && /備份班級：A班（匯入檔）/.test(conf), conf);
+        check(`${label}：確認訊息分列目標班級與備份班級`, /即將被取代的目標班級：A班（原值）/.test(conf) && /備份檔中的班級：A班（匯入檔）/.test(conf), conf);
         await page.reload();
         const st = await readStore(page);
         // 首頁入口沿用 className；班內設定沿用備份內 class.name（既有行為）；攤平格式於首頁入口不改班名（既有行為）
         const expectedName = (entry==="home" && fmt==="flat") ? "A班（原值）" : "A班（匯入檔）";
         assertImportedA(st, label, expectedName);
+        check(`${label}：首頁班名與班內名稱一致`, clsOf(st,"cA").data.class.name===clsOf(st,"cA").name, {name:clsOf(st,"cA").name, inner:clsOf(st,"cA").data.class.name});
         check(`${label}：B 班維持原值`, JSON.stringify(clsOf(st,"cB"))===JSON.stringify(bBefore));
         await context.close();
       }
@@ -209,15 +210,20 @@ async function run(){
     for(const entry of ["home","settings"]){
       const label = `[2] ${entry==="home"?"班級首頁":"班內設定"} 舊分頁匯入`;
       const {context,page:oldPage} = await newContext(browser,base);
-      if(entry==="settings") await oldPage.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+      // 舊分頁先有一筆可辨識的本頁修改（成功儲存），之後才由新分頁製造衝突
+      const oldSaved = await oldPage.evaluate(()=>{ enterClass("cA"); data.students[1].name="舊分頁修改學生乙"; return saveData(); });
+      check(`${label}：舊分頁本頁修改已儲存`, oldSaved===true);
+      if(entry==="settings") await oldPage.evaluate(()=>setPage("settings"));
+      else await oldPage.evaluate(()=>leaveClass());
       const newPage = await openPage(context, base);
-      await newPage.evaluate(()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; data.students[0].name="新分頁修改學生"; saveData(); });
+      await newPage.evaluate(()=>{ enterClass("cA"); data.class.name="A班（新分頁修改）"; data.students[0].name="新分頁修改學生"; data.students[1].name="新分頁修改學生乙"; saveData(); });
       const newSaved = await readStore(newPage);
       check(`${label}：新分頁已寫入`, clsOf(newSaved,"cA").name==="A班（新分頁修改）");
       await importVia(oldPage, entry, "envelope");
       const t = await toasts(oldPage);
       const alerts = oldPage.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
       check(`${label}：提示衝突`, alerts.some(m=>/其他分頁/.test(m)) && alerts.some(m=>/匯入未完成|沒有寫入|未寫入/.test(m)), alerts);
+      check(`${label}：提示說明救援檔為「本次匯入前，本頁保留的資料」`, alerts.some(m=>/本次匯入前，本頁保留的資料/.test(m)), alerts);
       check(`${label}：未顯示匯入完成`, !t.some(x=>SUCCESS_RE.test(x)), t);
       check(`${label}：資料安全警告顯示`, await oldPage.locator("#cmDataSafetyWarning").isVisible());
       const shown = await visibleText(oldPage, entry);
@@ -232,10 +238,11 @@ async function run(){
       const rescueA = rescue.data ? {name:rescue.className,data:rescue.data} : clsOf(rescue,"cA");
       const fn = dl.suggestedFilename();
       check(`${label}：救援檔為本頁資料（非匯入檔、非新分頁）`, rescueA && rescueA.name==="A班（原值）" && rescueA.data.students[0].name==="原A學生甲", {fn, name:rescueA&&rescueA.name, s:rescueA&&rescueA.data.students[0].name});
+      check(`${label}：救援檔包含舊分頁的本頁修改`, rescueA && rescueA.data.students[1].name==="舊分頁修改學生乙", rescueA && rescueA.data.students.map(x=>x.name));
       check(`${label}：救援檔名可辨識為本頁資料`, /本頁/.test(fn) && (entry==="home" ? /全部班級/.test(fn) : /A班（原值）/.test(fn)), fn);
       await oldPage.reload();
       const st = await readStore(oldPage);
-      check(`${label}：重新載入後為新分頁版本`, clsOf(st,"cA").name==="A班（新分頁修改）" && clsOf(st,"cA").data.students[0].name==="新分頁修改學生", clsOf(st,"cA").name);
+      check(`${label}：重新載入後為新分頁版本`, clsOf(st,"cA").name==="A班（新分頁修改）" && clsOf(st,"cA").data.students[0].name==="新分頁修改學生" && clsOf(st,"cA").data.students[1].name==="新分頁修改學生乙", clsOf(st,"cA").data.students.map(x=>x.name));
       check(`${label}：B 班維持原值`, JSON.stringify(clsOf(st,"cB"))===JSON.stringify(clsOf(newSaved,"cB")));
       await context.close();
     }
@@ -313,8 +320,8 @@ async function run(){
       await context.close(); }
 
     // 審查 P1：讀檔期間切換班級，不得把備份寫到另一個班級
-    for(const entry of ["home","settings"]){
-      const label = `[6] ${entry==="home"?"班級首頁":"班內設定"} 讀檔期間切到 B 班`;
+    for(const [entry,move] of [["home","switch"],["settings","switch"],["settings","leave"]]){
+      const label = `[6] ${entry==="home"?"班級首頁":"班內設定"} 讀檔期間${move==="leave"?"離開班級":"切到 B 班"}`;
       const {context,page} = await newContext(browser,base);
       await page.evaluate(()=>{ enterClass("cA"); leaveClass(); enterClass("cB"); leaveClass(); });
       const before = await readStore(page);
@@ -330,7 +337,8 @@ async function run(){
         await page.setInputFiles('#importInput', FILE_PATHS.envelope);
       }
       await page.waitForTimeout(200);
-      await page.evaluate(()=>{ if(activeClassId) leaveClass(); enterClass("cB"); setPage("settings"); });
+      if(move==="leave") await page.evaluate(()=>leaveClass());
+      else await page.evaluate(()=>{ if(activeClassId) leaveClass(); enterClass("cB"); setPage("settings"); });
       await page.evaluate(()=>{ window.__releaseRead(); window.__readGate = null; });
       await page.waitForTimeout(500);
       const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
@@ -338,8 +346,13 @@ async function run(){
       check(`${label}：取消匯入並說明班級已切換`, alerts.some(m=>/切換/.test(m) && /取消匯入/.test(m)), alerts);
       check(`${label}：未進到取代確認`, confirms.length===0, confirms.map(c=>c.message));
       check(`${label}：未顯示匯入成功`, !(await toasts(page)).some(x=>SUCCESS_RE.test(x)));
-      const mem = await page.evaluate(()=>({active:activeClassId, name:data.class.name}));
-      check(`${label}：畫面仍為 B 班原資料`, mem.active==="cB" && mem.name==="B班（原值）", mem);
+      if(move==="leave"){
+        const home = await page.evaluate(()=>({active:activeClassId, cards:document.getElementById("classCardList").innerText, a:store.classes.find(c=>c.id==="cA").name}));
+        check(`${label}：首頁仍為 A 班原資料`, home.active===null && /A班（原值）/.test(home.cards) && !/匯入/.test(home.cards) && home.a==="A班（原值）", home);
+      }else{
+        const mem = await page.evaluate(()=>({active:activeClassId, name:data.class.name}));
+        check(`${label}：畫面仍為 B 班原資料`, mem.active==="cB" && mem.name==="B班（原值）", mem);
+      }
       await page.reload();
       check(`${label}：重新載入後 A、B 班維持原值`, JSON.stringify(await readStore(page))===JSON.stringify(before));
       await context.close();
@@ -365,7 +378,7 @@ async function run(){
       await page.setInputFiles(entry==="home" ? '#modalBody input[type=file]' : '#importInput', FILE_PATHS.envelope);
       await page.waitForTimeout(500);
       const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
-      check(`${label}：提示資料已儲存、請重新載入`, alerts.some(m=>/資料已儲存/.test(m) && /重新載入/.test(m)), alerts);
+      check(`${label}：提示資料已儲存、請重新載入`, alerts.some(m=>m.includes("資料已儲存，請重新載入以更新畫面")), alerts);
       check(`${label}：未誤報為讀檔或匯入失敗`, !alerts.some(m=>/無法匯入|格式不正確|匯入未完成/.test(m)), alerts);
       await page.evaluate(()=>{ window.__failRender = false; });
       await page.reload();
@@ -374,6 +387,23 @@ async function run(){
       check(`${label}：B 班維持原值`, JSON.stringify(clsOf(st,"cB"))===JSON.stringify(bBefore));
       await context.close();
     }
+
+    // 項目 3：首頁匯入攤平備份（來源班名與目標不同）保留目標班名，首頁與班內一致
+    { const label = "[8] 班級首頁 × 攤平 班名一致";
+      const {context,page} = await newContext(browser,base);
+      await importVia(page, "home", "flat");
+      let st = await readStore(page);
+      check(`${label}：匯入後首頁與班內皆為目標班名`, clsOf(st,"cA").name==="A班（原值）" && clsOf(st,"cA").data.class.name==="A班（原值）", {name:clsOf(st,"cA").name, inner:clsOf(st,"cA").data.class.name});
+      await page.reload();
+      check(`${label}：重新載入後首頁卡片為目標班名`, await page.evaluate(()=>/A班（原值）/.test(document.getElementById("classCardList").innerText) && !/A班（匯入檔）/.test(document.getElementById("classCardList").innerText)));
+      const inside = await page.evaluate(()=>{ enterClass("cA"); setPage("settings"); return {mem:data.class.name, header:document.getElementById("headerClassName").textContent}; });
+      check(`${label}：進班後班內名稱與頁首皆為目標班名`, inside.mem==="A班（原值）" && inside.header==="A班（原值）", inside);
+      const saved = await page.evaluate(()=>saveData());
+      await page.reload();
+      st = await readStore(page);
+      check(`${label}：一般儲存並重新載入後兩處仍為目標班名`, saved===true && clsOf(st,"cA").name==="A班（原值）" && clsOf(st,"cA").data.class.name==="A班（原值）", {saved, name:clsOf(st,"cA").name, inner:clsOf(st,"cA").data.class.name});
+      assertImportedA(st, label, "A班（原值）");
+      await context.close(); }
   }finally{
     await browser.close();
     server.close();

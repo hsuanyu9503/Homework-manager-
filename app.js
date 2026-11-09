@@ -261,6 +261,8 @@ function saveData(){
 function commitClassImport(cls, candidate, nextName){
   const isActive=cls.id===activeClassId;
   const previous={data:cls.data,name:cls.name,active:isActive?data:null};
+  // Home card name (cls.name) and in-class name (data.class.name) must agree after import.
+  candidate.class.name=nextName;
   cls.data=candidate;
   cls.name=nextName;
   if(isActive)data=candidate;
@@ -275,16 +277,16 @@ function classImportFailureMessage(){
     return "匯入未完成：瀏覽器儲存空間不足或無法寫入，這次匯入沒有儲存。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，清出空間後重新載入再匯入。";
   if(__lastPersistFailure==="unsafe")
     return "匯入未完成：原始班級資料無法正確讀取，為避免覆蓋已暫停寫入，這次匯入沒有儲存。\n\n請保留此分頁並先下載備份。";
-  return "匯入未完成：偵測到其他分頁已修改班級資料。為避免把較新的資料覆蓋成舊版本，這次匯入沒有寫入。\n\n瀏覽器中保留的是其他分頁最後儲存的版本。「下載本頁資料備份」下載的是本頁開啟時的資料（檔名含「本頁」），不含這次匯入的檔案；匯入檔仍保留在原位置。請重新載入後再匯入。";
+  return "匯入未完成：偵測到其他分頁已修改班級資料。為避免把較新的資料覆蓋成舊版本，這次匯入沒有寫入。\n\n瀏覽器中保留的是其他分頁最後儲存的版本。「下載本頁資料備份」下載的是本次匯入前，本頁保留的資料（檔名含「本頁」），不含這次匯入的檔案；匯入檔仍保留在原位置。請重新載入後再匯入。";
 }
 // A multi-class rescue file has classes[] at the root; single-class entries must stop before any change.
 function isMultiClassRescueFile(obj){
   return Boolean(obj && typeof obj==="object" && Array.isArray(obj.classes));
 }
-const CLASS_SWITCHED_DURING_IMPORT_MESSAGE="讀取備份檔期間已切換班級。為避免把備份匯入錯誤的班級，已取消匯入，所有班級資料均未變更。請回到要還原的班級重新選擇檔案。";
+const CLASS_SWITCHED_DURING_IMPORT_MESSAGE="讀取備份檔期間已切換或離開班級。為避免把備份匯入錯誤的班級，已取消匯入，所有班級資料均未變更。請回到要還原的班級重新選擇檔案。";
 const INVALID_CLASS_BACKUP_MESSAGE="這不是有效的單班級備份檔；為保護原有資料，已取消匯入。";
 function classImportConfirmMessage(targetName, backupName, detail){
-  return `確定要匯入備份嗎？\n\n目標班級：${targetName||"未命名班級"}\n備份班級：${backupName||"未命名"}${detail?`\n${detail}`:""}\n\n目標班級的資料會被備份內容取代。`;
+  return `確定要匯入備份嗎？\n\n即將被取代的目標班級：${targetName||"未命名班級"}\n備份檔中的班級：${backupName||"未命名"}${detail?`\n${detail}`:""}\n\n目標班級的資料會被備份內容取代。`;
 }
 // Reading, saving and redrawing fail for different reasons; a redraw error after a successful
 // write must not be reported as "cannot import".
@@ -292,7 +294,7 @@ function finishClassImport(saved, render, successMessage){
   let rendered=true;
   try{render();}catch(e){rendered=false;console.error("匯入後畫面更新失敗",e);}
   if(!saved){alert(classImportFailureMessage());return;}
-  if(!rendered){alert("備份已匯入，資料已儲存，但畫面更新失敗。請重新載入以更新畫面。");return;}
+  if(!rendered){alert("備份已匯入，但更新畫面時發生錯誤。\n\n資料已儲存，請重新載入以更新畫面。");return;}
   toast(successMessage);
 }
 const MULTI_CLASS_RESCUE_MESSAGE="這是多班救援檔（內含多個班級），目前入口僅支援單班還原；為保護原有資料，已取消匯入，所有班級資料均未變更。";
@@ -835,7 +837,6 @@ function importClassBackup(classId, file){
     let nextName=cls.name;
     if(parsed.className){
       nextName = parsed.className;
-      incoming.class.name = parsed.className;
     }
     const saved = commitClassImport(cls, incoming, nextName);
     finishClassImport(saved, ()=>{ if(saved) closeModal(); renderClassHome(); }, "班級備份已匯入");
