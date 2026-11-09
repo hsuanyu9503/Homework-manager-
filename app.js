@@ -1,4 +1,4 @@
-const APP_VERSION = "2.100";
+const APP_VERSION = "2.101";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -9,6 +9,9 @@ let __knownStoreRaw = null;
 let __storageLoadUnsafe = false;
 let __storageWriteBlocked = false;
 let __storageWarningShown = false;
+// v2.101: Why the most recent persistStoreSafely() call refused or failed to write
+// ("unsafe" | "conflict" | "write"); "" after a successful write.
+let __lastPersistFailure = "";
 
 const STATUS_ORDER = ["pending","submitted","correction","completed","missing"];
 const STATUS_LABEL = {
@@ -200,18 +203,25 @@ function downloadCurrentTabDataBackup(){
     const file=new Blob([backup],{type:"application/json"});
     const url=URL.createObjectURL(file);
     const a=document.createElement("a");a.href=url;
-    a.download=`ClassroomManager-資料安全備份-${new Date().toISOString().slice(0,19).replace(/[T:]/g,"-")}.json`;
+    // The name says the file holds THIS tab's in-memory data, and which class(es).
+    const scope=__storageLoadUnsafe?"原始儲存內容":(cls?(cls.name||"未命名班級"):"全部班級");
+    const safeScope=String(scope).replace(/[\\/:*?"<>|]/g,"-");
+    a.download=`ClassroomManager-資料安全備份-本頁-${safeScope}-${new Date().toISOString().slice(0,19).replace(/[T:]/g,"-")}.json`;
     document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
   }catch(e){console.error("備份下載失敗",e);alert("備份無法下載，請保留此分頁並勿清除瀏覽器資料。");}
 }
 function persistStoreSafely(){
   // A parsing error is not permission to replace the stored record with empty defaults.
-  if(__storageLoadUnsafe||__storageWriteBlocked){showDataStorageWarning();return false;}
+  if(__storageLoadUnsafe||__storageWriteBlocked){
+    __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
+    showDataStorageWarning();return false;
+  }
   try{
     const currentRaw=localStorage.getItem(STORAGE_KEY);
     if(currentRaw!==__knownStoreRaw){
       __storageWriteBlocked=true;
+      __lastPersistFailure="conflict";
       showDataStorageWarning();
       console.warn("資料寫入已停止：偵測到另一分頁在本頁載入後修改原始班級資料");
       return false;
@@ -219,9 +229,11 @@ function persistStoreSafely(){
     const nextRaw=JSON.stringify(store);
     localStorage.setItem(STORAGE_KEY,nextRaw);
     __knownStoreRaw=nextRaw;
+    __lastPersistFailure="";
     return true;
   }catch(e){
     __storageWriteBlocked=true;
+    __lastPersistFailure="write";
     console.error("班級資料寫入失敗，已啟動防覆寫保護",e);
     showDataStorageWarning();
     return false;
@@ -236,10 +248,40 @@ function saveData(){
       cls.data = data;
     }
   }
-  persistStoreSafely();
+  const saved=persistStoreSafely();
   if(activeClassId) renderPage(currentPage);
   else renderClassHome();
+  return saved;
 }
+
+// v2.101: Single-class backup import must only report success after the browser write succeeds.
+// The candidate is swapped in, persisted through the existing stale-tab guard, and rolled back
+// in memory if the write is refused, so the screen, class name and rescue download keep
+// showing this tab's own data rather than the unsaved candidate.
+function commitClassImport(cls, candidate, nextName){
+  const isActive=cls.id===activeClassId;
+  const previous={data:cls.data,name:cls.name,active:isActive?data:null};
+  cls.data=candidate;
+  cls.name=nextName;
+  if(isActive)data=candidate;
+  if(persistStoreSafely())return true;
+  cls.data=previous.data;
+  cls.name=previous.name;
+  if(isActive)data=previous.active;
+  return false;
+}
+function classImportFailureMessage(){
+  if(__lastPersistFailure==="write")
+    return "匯入未完成：瀏覽器儲存空間不足或無法寫入，這次匯入沒有儲存。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，清出空間後重新載入再匯入。";
+  if(__lastPersistFailure==="unsafe")
+    return "匯入未完成：原始班級資料無法正確讀取，為避免覆蓋已暫停寫入，這次匯入沒有儲存。\n\n請保留此分頁並先下載備份。";
+  return "匯入未完成：偵測到其他分頁已修改班級資料。為避免把較新的資料覆蓋成舊版本，這次匯入沒有寫入。\n\n瀏覽器中保留的是其他分頁最後儲存的版本。「下載本頁資料備份」下載的是本頁開啟時的資料（檔名含「本頁」），不含這次匯入的檔案；匯入檔仍保留在原位置。請重新載入後再匯入。";
+}
+// A multi-class rescue file has classes[] at the root; single-class entries must stop before any change.
+function isMultiClassRescueFile(obj){
+  return Boolean(obj && typeof obj==="object" && Array.isArray(obj.classes));
+}
+const MULTI_CLASS_RESCUE_MESSAGE="這是多班救援檔（內含多個班級），目前入口僅支援單班還原；為保護原有資料，已取消匯入，所有班級資料均未變更。";
 
 function uid(prefix="id"){
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
@@ -745,6 +787,10 @@ function importClassBackup(classId, file){
   reader.onload = ()=>{
     try{
       const parsed = JSON.parse(reader.result);
+      if(isMultiClassRescueFile(parsed)){
+        alert(MULTI_CLASS_RESCUE_MESSAGE);
+        return;
+      }
       const source=parsed?.data||parsed;
       if(!isClassBackupData(source)){
         alert("這不是有效的單班級備份檔；為保護原有資料，已取消匯入。");
@@ -753,12 +799,16 @@ function importClassBackup(classId, file){
       const incoming = normalizeData(source);
       const ok = confirm(`確定要匯入備份到「${cls.name}」嗎？\n\n目前班級資料會被備份內容取代。`);
       if(!ok) return;
-      cls.data = incoming;
+      let nextName=cls.name;
       if(parsed.className){
-        cls.name = parsed.className;
-        cls.data.class.name = parsed.className;
+        nextName = parsed.className;
+        incoming.class.name = parsed.className;
       }
-      persistStoreSafely();
+      if(!commitClassImport(cls, incoming, nextName)){
+        renderClassHome();
+        alert(classImportFailureMessage());
+        return;
+      }
       closeModal();
       renderClassHome();
       toast("班級備份已匯入");
@@ -4569,6 +4619,10 @@ async function importBackup(file){
   try{
     const text = await file.text();
     const parsed = JSON.parse(text);
+    if(isMultiClassRescueFile(parsed)){
+      alert(MULTI_CLASS_RESCUE_MESSAGE);
+      return;
+    }
     const source=parsed?.data||parsed;
     if(!isClassBackupData(source)){
       alert("這不是有效的單班級備份檔；為保護原有資料，已取消匯入。");
@@ -4577,8 +4631,19 @@ async function importBackup(file){
     const candidate = normalizeData(source);
     const summary = `班級：${candidate.class.name || "未命名"}\n學生：${candidate.students.length} 人\n作業：${candidate.assignments.length} 項\n紀錄：${candidate.records.length} 筆\n\n匯入後會取代目前瀏覽器中的資料，確定繼續嗎？`;
     if(!confirm(summary)) return;
-    data = candidate;
-    saveData();
+    const cls = store.classes.find(c=>c.id===activeClassId);
+    if(!cls){
+      alert("找不到目前班級，已取消匯入；資料未變更。");
+      return;
+    }
+    // Same naming rule saveData() applied before v2.101.
+    const nextName = candidate.class.name || cls.name || "未命名班級";
+    const saved = commitClassImport(cls, candidate, nextName);
+    renderPage(currentPage);
+    if(!saved){
+      alert(classImportFailureMessage());
+      return;
+    }
     toast("備份匯入完成");
   }catch(e){
     alert("無法匯入這個檔案，請確認它是由本網站匯出的 JSON 備份。");
