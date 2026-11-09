@@ -46,6 +46,15 @@ const UNFINISHED_NOTICE_KEY = "homeworkTrackerUnfinishedWrite";
 let __unfinishedNoticeAtLoad = null;
 try{ __unfinishedNoticeAtLoad = JSON.parse(sessionStorage.getItem(UNFINISHED_NOTICE_KEY)||"null"); }catch(e){}
 let __unfinishedRecovery = null;   // reservation the teacher may explicitly continue past
+// Data written by v2.100 has no syncRevision. A revision recorded in IndexedDB may only be adopted for
+// it when the record's contentDigest matches the content this tab actually loaded; otherwise another
+// tab may have written newer data between this tab's localStorage read and its IndexedDB read. Then
+// this tab stops writing and asks for a reload. If, after that reload, this tab loads the very same
+// unrevisioned content while the record is unchanged, that content is the latest saved data (for
+// example, a v2.100 tab wrote after a v2.101 one) and the revision is adopted.
+const LEGACY_NOTICE_KEY = "homeworkTrackerLegacyUnconfirmed";
+let __legacyNoticeAtLoad = null;
+try{ __legacyNoticeAtLoad = JSON.parse(sessionStorage.getItem(LEGACY_NOTICE_KEY)||"null"); }catch(e){}
 let __supersedeReservation = null; // set only by that explicit action, for one commit
 const TAB_ID = uid("tab");
 const __tabLockReady = (typeof navigator!=="undefined" && navigator.locks && typeof navigator.locks.request==="function")
@@ -241,6 +250,8 @@ function showDataStorageWarning(){
   const message=panel.querySelector(".cm-data-safety-message");
   if(message)message.textContent=__storageLoadUnsafe
     ? "資料安全保護：原始班級資料無法正確讀取，已暫停儲存，避免清空現有紀錄。請保留原分頁並先備份資料。"
+    : __lastPersistFailure==="legacyUnconfirmed"
+    ? "資料安全保護：本頁讀入的是尚未加上修訂號的舊版資料，但其他分頁已用新版儲存過，無法確認本頁內容是否為最新。為保留已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後即可繼續操作。"
     : __lastPersistFailure==="unfinished"
     ? (__unfinishedRecovery
         ? "資料安全保護：先前另一個分頁的一次儲存尚未確認完成，該分頁已關閉；重新載入後讀到的仍是那次儲存之前的資料，表示那次儲存很可能沒有寫入。若已確認沒有其他分頁開著本網站，可先下載本頁資料備份，再按「確認從本頁資料繼續」。"
@@ -277,7 +288,7 @@ function storeRawForRevision(content, revision){
 function recordPersistFailure(reason, error){
   __storageWriteBlocked=true;
   __lastPersistFailure=reason;
-  if(reason==="conflict")console.warn("資料寫入已停止：偵測到另一分頁在本頁載入後修改原始班級資料");
+  if(reason==="conflict"||reason==="unfinished"||reason==="legacyUnconfirmed")console.warn("資料寫入已停止：無法確認本頁持有最新的班級資料",reason);
   else console.error("班級資料寫入失敗，已啟動防覆寫保護",error);
   showDataStorageWarning();
   return false;
@@ -305,6 +316,35 @@ function markSyncUnavailable(error){
   showSyncUnavailableNotice();
   return null;
 }
+async function contentDigest(text){
+  if(text==null)return null;
+  try{
+    if(typeof crypto!=="undefined"&&crypto.subtle&&typeof TextEncoder!=="undefined"){
+      const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text));
+      return "sha256:"+Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,"0")).join("");
+    }
+  }catch(e){}
+  // Fallback where SubtleCrypto is unavailable (non-secure context): FNV-1a plus length.
+  let h=0x811c9dc5;
+  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
+  return `fnv1a:${h.toString(16)}:${text.length}`;
+}
+async function adoptRevisionForLegacyData(meta){
+  const rev=Number(meta.rev)||0;
+  const loadedDigest=await contentDigest(__knownStoreContent);
+  const notice={rev, at:meta.at||null, digest:loadedDigest};
+  const sameAsNotice=__legacyNoticeAtLoad&&__legacyNoticeAtLoad.rev===notice.rev&&
+    __legacyNoticeAtLoad.at===notice.at&&__legacyNoticeAtLoad.digest===notice.digest;
+  if((meta.contentDigest&&meta.contentDigest===loadedDigest)||sameAsNotice){
+    __heldRevision=Math.max(__heldRevision,rev);
+    try{sessionStorage.removeItem(LEGACY_NOTICE_KEY);}catch(e){}
+    return true;
+  }
+  // Cannot confirm that this revision belongs to the content on this page: keep saved data safe.
+  try{sessionStorage.setItem(LEGACY_NOTICE_KEY,JSON.stringify(notice));}catch(e){}
+  recordPersistFailure("legacyUnconfirmed");
+  return false;
+}
 function readSyncMeta(db){
   return new Promise((resolve,reject)=>{
     const tx=db.transaction(SYNC_STORE_NAME,"readonly");
@@ -330,11 +370,11 @@ function openSyncDb(){
   }).then(async db=>{
     if(!db)return markSyncUnavailable();
     try{
-      // Data written by an older version has no revision: take the latest recorded one as its base.
       if(__heldRevisionLegacy){
         const meta=await readSyncMeta(db);
-        __heldRevision=Math.max(__heldRevision,Number(meta?.rev)||0);
         __heldRevisionLegacy=false;
+        if(meta)await adoptRevisionForLegacyData(meta);
+        // No record yet: normal upgrade path, revisions start from this tab's first write.
       }
       return db;
     }catch(e){return markSyncUnavailable(e);}
@@ -398,6 +438,7 @@ async function commitStoreOnce(force=false){
   if(!db)return commitStoreWithoutCoordination(content);
   await __tabLockReady;
   const supersede=__supersedeReservation;__supersedeReservation=null;
+  const digest=await contentDigest(content);
 
   let failure=null, unfinished=null;
   const reservation=await syncMetaTransaction(db,(meta,latest)=>{
@@ -413,7 +454,7 @@ async function commitStoreOnce(force=false){
       throw new Error(failure);
     }
     if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw){failure="conflict";throw new Error("conflict");}
-    const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,at:new Date().toISOString()};
+    const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,at:new Date().toISOString(),contentDigest:digest};
     meta.put(record,STORAGE_KEY);
     return {record,previous:latest};
   });
@@ -541,6 +582,8 @@ async function commitClassImport(cls, candidate, nextName){
 function classImportFailureMessage(){
   if(__lastPersistFailure==="write")
     return "匯入未完成：瀏覽器儲存空間不足或無法寫入，這次匯入沒有儲存。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，清出空間後重新載入再匯入。";
+  if(__lastPersistFailure==="legacyUnconfirmed")
+    return "匯入未完成：本頁讀入的是尚未加上修訂號的舊版資料，但其他分頁已用新版儲存過，無法確認本頁內容是否為最新。為保留已儲存的資料，這次匯入沒有寫入。\n\n請先下載本頁資料備份，再重新載入本頁；重新載入後即可重新匯入。";
   if(__lastPersistFailure==="unfinished")
     return "匯入未完成：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，這次匯入沒有寫入。\n\n請先下載本頁資料備份，再重新載入本頁；重新載入後會讀到最新已儲存的資料，再重新匯入。";
   if(__lastPersistFailure==="coordination")

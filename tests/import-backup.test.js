@@ -99,6 +99,20 @@ const INIT = (opts) => {
   window.addEventListener("storage", e=>{ if(window.__staleView) e.stopImmediatePropagation(); }, true);
   // 模擬 IndexedDB 協調記錄寫入失敗：window.__metaPutFault = {when:"afterSetItem"|"beforeSetItem", how:"throw"|"abort"}。
   // afterSetItem：本次設定後已有 localStorage.setItem 成功，才讓 meta.put 拋錯或中止交易。
+  // 網址含 #holdSyncOpen 時，暫停本頁開啟協調資料庫（停在取得 IndexedDB 修訂號之前），直到測試呼叫 __releaseSyncOpen()。
+  if(location.hash.includes("holdSyncOpen") && typeof IDBFactory!=="undefined"){
+    window.__syncOpenGate = new Promise(r=>window.__releaseSyncOpen=r);
+    const origOpen = IDBFactory.prototype.open;
+    IDBFactory.prototype.open = function(name, ...rest){
+      const req = origOpen.call(this, name, ...rest);
+      if(name==="homeworkTrackerSync"){
+        let handler = null; window.__syncOpenHeld = true;
+        Object.defineProperty(req, "onsuccess", {configurable:true, set(h){ handler=h; }, get(){ return handler; }});
+        req.addEventListener("success", ()=>{ window.__syncOpenGate.then(()=>handler && handler.call(req, {target:req})); });
+      }
+      return req;
+    };
+  }
   window.__setItemCount = 0;
   const origSetForCount = Storage.prototype.setItem;
   Storage.prototype.setItem = function(k,v){ const r = origSetForCount.call(this,k,v); window.__setItemCount++; return r; };
@@ -869,10 +883,94 @@ async function run(){
       check(`${label}：新版寫入帶修訂號`, first===true && Number.isInteger(st1.syncRevision) && st1.syncRevision>0, st1.syncRevision);
       await page.evaluate(k=>{ const o=JSON.parse(window.__realGetItem(k)); delete o.syncRevision; o.classes[0].data.students[0].name="舊版寫入"; localStorage.setItem(k, JSON.stringify(o)); }, STORAGE_KEY);
       await page.reload();
-      const saved = await page.evaluate(async()=>{ enterClass("cA"); const seen=data.students[0].name; data.students[1].name="舊版之後新版寫入"; return {seen, ok:await saveData()}; });
+      // 無法確認修訂號對應本頁讀入的舊版資料：先停止寫入並引導重新載入
+      const firstTry = await page.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); return {seen:data.students[0].name, ok:await saveData(), panel:document.getElementById("cmDataSafetyWarning")?.innerText||""}; });
+      check(`${label}：首次讀入時無法確認，停止寫入並引導重新載入`, firstTry.seen==="舊版寫入" && firstTry.ok===false && /舊版資料/.test(firstTry.panel) && /重新載入/.test(firstTry.panel), firstTry);
+      await page.reload();
+      const saved = await page.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); const seen=data.students[0].name; data.students[1].name="舊版之後新版寫入"; return {seen, ok:await saveData()}; });
       await page.reload();
       const st2 = await readStore(page);
-      check(`${label}：讀得到舊版資料並可儲存，未被誤擋`, saved.seen==="舊版寫入" && saved.ok===true && clsOf(st2,"cA").data.students[1].name==="舊版之後新版寫入" && st2.syncRevision>st1.syncRevision, {saved, rev:st2.syncRevision});
+      check(`${label}：重新載入後讀到同一份舊版資料，即可繼續儲存`, saved.seen==="舊版寫入" && saved.ok===true && clsOf(st2,"cA").data.students[0].name==="舊版寫入" && clsOf(st2,"cA").data.students[1].name==="舊版之後新版寫入" && st2.syncRevision>st1.syncRevision, {saved, rev:st2.syncRevision});
+      await context.close(); }
+
+    // [20] v2.100 舊資料首次取得修訂號的競爭：B 讀入無修訂號資料 → 暫停在取得修訂號之前 → A 寫入新版
+    //      → B 取得 A 的新修訂號，但本頁仍持有舊內容、也看不到 A 的 localStorage 更新 → B 一般儲存／單班匯入
+    const A_MARK = {name:"A班（A新版名冊）", s0:"A新版學生甲", s1:"A新版學生乙"};
+    const assertAIntact = (st, label) => {
+      const a = clsOf(st,"cA"), d = a.data;
+      const g1 = d.gradeItems.find(g=>g.id==="g1-原A"), g2 = d.gradeItems.find(g=>g.id==="g2-原A");
+      check(`${label}：全新分頁讀到 A 的名冊完整`, a.name===A_MARK.name && d.class.name===A_MARK.name && d.students.length===2 && d.students[0].name===A_MARK.s0 && d.students[1].name===A_MARK.s1, {name:a.name, s:d.students.map(x=>x.name)});
+      check(`${label}：全新分頁讀到 A 的成績完整（含零分與未登記）`, g1 && g1.scores["s1-原A"]===77 && g1.scores["s2-原A"]===0 && g2 && !("s1-原A" in g2.scores) && g2.scores["s2-原A"]===66 && d.scores["s1-原A"]===0 && !("s2-原A" in d.scores),
+        {g1:g1&&g1.scores, g2:g2&&g2.scores, scores:d.scores});
+      check(`${label}：沒有 B 的舊內容修改或匯入檔`, !/B舊內容修改|匯入/.test(JSON.stringify(a)), null);
+    };
+    for(const action of ["save","import"]){
+      const label = `[20] 舊資料首次取得修訂號時 A 已寫入 → B ${action==="save"?"一般儲存":"班內設定匯入"}`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const A = await openPage(context, base);
+      await A.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]); // v2.100 格式：沒有 syncRevision
+      await A.reload(); await A.evaluate(()=>openSyncDb());
+      // B：讀入舊資料，停在取得 IndexedDB 修訂號之前；並讓 B 看不到之後 A 的 localStorage 更新
+      const B = await context.newPage(); B.__dialogs=[]; B.__policy={confirm:true};
+      B.on("dialog", async d=>{ const accepted = d.type()!=="confirm" || B.__policy.confirm; B.__dialogs.push({type:d.type(),message:d.message(),accepted}); return accepted?d.accept():d.dismiss(); });
+      await B.goto(base+"#holdSyncOpen");
+      await B.waitForFunction(()=>window.__syncOpenHeld===true);
+      const bLoaded = await B.evaluate(k=>{ window.__staleView = {[k]: window.__realGetItem(k)}; return JSON.parse(window.__realGetItem(k)); }, STORAGE_KEY);
+      check(`${label}：B 讀入的是沒有修訂號的 v2.100 資料`, !("syncRevision" in bLoaded));
+      // A 寫入可辨識的新版名冊與成績
+      const aOk = await A.evaluate(async m=>{ enterClass("cA"); data.class.name=m.name; data.students[0].name=m.s0; data.students[1].name=m.s1;
+        data.gradeItems.find(g=>g.id==="g1-原A").scores={"s1-原A":77,"s2-原A":0}; data.gradeItems.find(g=>g.id==="g2-原A").scores={"s2-原A":66};
+        return await saveData(); }, A_MARK);
+      const aSt = await readStore(A);
+      check(`${label}：A 寫入成功並取得修訂號`, aOk===true && aSt.syncRevision>=1, aSt.syncRevision);
+      // B 取得修訂號（此時已是 A 的新修訂號）
+      await B.evaluate(()=>window.__releaseSyncOpen());
+      const bSync = await B.evaluate(async()=>{ const db=await openSyncDb(); return {db:!!db, unavailable:__syncUnavailable, sees:window.__staleView ? JSON.parse(localStorage.getItem("homeworkTrackerDataV2")).classes[0].name : null}; });
+      check(`${label}：前提成立（B 已取得協調資料庫，且仍看不到 A 的更新）`, bSync.db && !bSync.unavailable && bSync.sees==="A班（原值）", bSync);
+      B.__dialogs.length = 0; await B.evaluate(()=>{ window.__toasts.length = 0; });
+      let bOk;
+      if(action==="save"){
+        bOk = await B.evaluate(async()=>{ enterClass("cA"); data.students[0].name="B舊內容修改"; data.gradeItems[1].scores={"s1-原A":1}; return await saveData(); });
+      }else{
+        await B.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+        await B.setInputFiles('#importInput', FILE_PATHS.envelope);
+        bOk = (await oldTabOutcome(B)).success;
+      }
+      const bAlerts = B.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      check(`${label}：B 沒有收到成功提示`, bOk===false && !(await toasts(B)).some(x=>SUCCESS_RE.test(x)), {bOk, toasts:await toasts(B)});
+      if(action==="import") check(`${label}：B 的匯入提示「匯入未完成」並引導重新載入`, bAlerts.some(m=>/匯入未完成/.test(m) && /重新載入/.test(m)), bAlerts);
+      const panel = await B.evaluate(()=>document.getElementById("cmDataSafetyWarning")?.innerText||"");
+      check(`${label}：B 顯示停止寫入並引導重新載入`, /舊版資料/.test(panel) && /重新載入/.test(panel), panel);
+      // 全新分頁核對 A 的名冊與成績
+      const C = await openPage(context, base);
+      assertAIntact(await readStore(C), label);
+      await C.close();
+      // 老師依提示重新載入 B（移除測試用的暫停），從 A 的新版接續修改
+      await B.evaluate(()=>{ window.__staleView = null; });
+      await B.goto(base);
+      const after = await B.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); const seen={name:data.class.name, s0:data.students[0].name};
+        data.memos.push({id:"memo-20",text:"B重新載入後接續修改"}); return {seen, ok:await saveData()}; });
+      check(`${label}：B 重新載入後讀到 A 的新版並接續儲存`, after.seen.name===A_MARK.name && after.seen.s0===A_MARK.s0 && after.ok===true, after);
+      const D = await openPage(context, base);
+      const stD = await readStore(D);
+      assertAIntact(stD, `${label}（B 接續修改後）`);
+      check(`${label}：最後內容包含 B 重新載入後的修改，修訂號接續`, JSON.stringify(clsOf(stD,"cA").data.memos).includes("B重新載入後接續修改") && stD.syncRevision===aSt.syncRevision+1, {rev:stD.syncRevision});
+      await context.close();
+    }
+
+    // [21] 正常升級路徑：只有一位老師開啟 v2.100 舊資料，可直接繼續使用（不需清空或重設）
+    { const label = "[21] 單一分頁開啟 v2.100 舊資料";
+      const {context,page} = await newContext(browser,base);   // 種子資料沒有 syncRevision
+      const r = await page.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); data.students[0].name="升級後第一次修改"; const ok=await saveData();
+        return {ok, panel:!!document.getElementById("cmDataSafetyWarning")}; });
+      check(`${label}：可直接儲存，不出現資料安全警告`, r.ok===true && !r.panel, r);
+      await page.reload();
+      const st = await readStore(page);
+      check(`${label}：重新載入後保留修改並取得修訂號，其他資料未被清空`, clsOf(st,"cA").data.students[0].name==="升級後第一次修改" && st.syncRevision>=1 && clsOf(st,"cA").data.gradeItems.length===3
+        && JSON.stringify(clsOf(st,"cB").data.students.map(x=>[x.id,x.name]))===JSON.stringify(clsOf(SEED,"cB").data.students.map(x=>[x.id,x.name]))
+        && JSON.stringify(clsOf(st,"cB").data.gradeItems.map(g=>g.scores))===JSON.stringify(clsOf(SEED,"cB").data.gradeItems.map(g=>g.scores)), st.syncRevision);
+      const r2 = await page.evaluate(async()=>{ enterClass("cA"); data.students[1].name="升級後第二次修改"; return await saveData(); });
+      check(`${label}：之後的儲存照常成功`, r2===true && clsOf(await readStore(page),"cA").data.students[1].name==="升級後第二次修改");
       await context.close(); }
 
     // [14] 不誤擋：兩分頁只是開啟同一班（沒有修改），第一個分頁之後的一般儲存仍應成功
