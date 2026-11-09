@@ -86,6 +86,9 @@ function startServer(){
 const STRESS = Math.max(1, Number(process.env.STRESS)||12);
 const INIT = (opts) => {
   if(opts && opts.noIdb) Object.defineProperty(window, "indexedDB", {value:undefined, configurable:true});
+  // 網址含 #noTabLock：本頁的 navigator.locks.request() 一律拒絕（本頁無法取得分頁鎖；query 仍正常）
+  if(location.hash.includes("noTabLock") && typeof LockManager!=="undefined")
+    Object.defineProperty(LockManager.prototype, "request", {value:function(){ return Promise.reject(new DOMException("模擬無法取得鎖","NotAllowedError")); }, configurable:true});
   // IndexedDB 正常，但無法查詢 Web Locks（navigator.locks.query 不存在）
   if(opts && opts.noLocksQuery && typeof LockManager!=="undefined") Object.defineProperty(LockManager.prototype, "query", {value:undefined, configurable:true});
   // 模擬 indexedDB.open() 永不回應（部分 Safari 版本的已知問題）
@@ -780,15 +783,16 @@ async function run(){
     // 只有在本分頁看過提示並重新載入、且讀到的仍是預約前的版本時，才提供需老師確認的「從本頁資料繼續」。
     const RECOVER_BTN = "#cmDataSafetyWarning button.cm-data-safety-recover";
     const panelText = page => page.evaluate(()=>document.getElementById("cmDataSafetyWarning")?.innerText || "");
-    for(const alive of [false,true]){
-      const label = `[18] 未寫入的預約，寫入分頁${alive?"仍開啟":"已關閉"}`;
+    for(const [alive,proof] of [[false,true],[true,true],[false,false]]){
+      const label = `[18] 未寫入的預約，寫入分頁${alive?"仍開啟":"已關閉"}${proof?"":"（既有預約紀錄，沒有持鎖證據）"}`;
       const {context,page} = await newContext(browser,base);
       await page.evaluate(()=>enterClass("cA")); await flush(page);
       const st0 = await readStore(page);
       const holder = await openPage(context, base);
       if(alive) await holder.evaluate(()=>{ window.__held = new Promise(res=>navigator.locks.request("homeworkTrackerTab:tab-fake", ()=>{ res(); return new Promise(()=>{}); })); return window.__held; });
-      await holder.evaluate(rev=>new Promise((res,rej)=>{ const r=indexedDB.open("homeworkTrackerSync",1); r.onsuccess=()=>{ const tx=r.result.transaction("meta","readwrite");
-        tx.objectStore("meta").put({rev:rev+1, baseRev:rev, state:"writing", writer:"tab-fake", at:new Date().toISOString()}, "homeworkTrackerDataV2"); tx.oncomplete=()=>{r.result.close();res();}; tx.onerror=()=>rej(tx.error); }; r.onerror=()=>rej(r.error); }), st0.syncRevision);
+      await holder.evaluate(([rev,proof])=>new Promise((res,rej)=>{ const r=indexedDB.open("homeworkTrackerSync",1); r.onsuccess=()=>{ const tx=r.result.transaction("meta","readwrite");
+        const rec={rev:rev+1, baseRev:rev, state:"writing", writer:"tab-fake", at:new Date().toISOString()}; if(proof) rec.writerLock=true;
+        tx.objectStore("meta").put(rec, "homeworkTrackerDataV2"); tx.oncomplete=()=>{r.result.close();res();}; tx.onerror=()=>rej(tx.error); }; r.onerror=()=>rej(r.error); }), [st0.syncRevision, proof]);
       const ok = await page.evaluate(async()=>{ data.students[0].name="預約後一般儲存"; return await saveData(); });
       const st1 = await readStore(page);
       check(`${label}：儲存被擋下、未寫入`, ok===false && clsOf(st1,"cA").data.students[0].name!=="預約後一般儲存", {ok});
@@ -798,7 +802,12 @@ async function run(){
       const ok2 = await page.evaluate(async()=>{ enterClass("cA"); data.students[0].name="重新載入後一般儲存"; return await saveData(); });
       check(`${label}：重新載入後仍讀到預約前版本，仍停止寫入`, ok2===false);
       const offered = await page.locator(RECOVER_BTN).isVisible();
-      if(alive){
+      if(!proof){
+        const t = await panelText(page);
+        check(`${label}：沒有持鎖證據時不提供「從本頁資料繼續」，並提示目前無法安全繼續寫入`, !offered && /無法確認原寫入分頁是否已結束/.test(t) && /無法安全繼續寫入/.test(t), {offered, t});
+        await page.evaluate(async()=>{ await continueFromThisPageAfterUnfinishedWrite(); });
+        check(`${label}：直接呼叫恢復函式也不會寫入`, clsOf(await readStore(page),"cA").data.students[0].name!=="重新載入後一般儲存");
+      }else if(alive){
         check(`${label}：寫入分頁仍開啟時不提供「從本頁資料繼續」`, !offered);
       }else{
         check(`${label}：寫入分頁已關閉、且已重新載入後，才提供「從本頁資料繼續」`, offered);
@@ -1038,7 +1047,7 @@ async function run(){
       const P = await openPage(context, base);
       await P.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
       await P.evaluate(()=>new Promise((res,rej)=>{ const r=indexedDB.open("homeworkTrackerSync",1); r.onupgradeneeded=()=>r.result.createObjectStore("meta");
-        r.onsuccess=()=>{ const tx=r.result.transaction("meta","readwrite"); tx.objectStore("meta").put({rev:1,baseRev:0,state:"writing",writer:"tab-gone",at:"2026-11-09T00:00:00.000Z",contentDigest:"sha256:x"},"homeworkTrackerDataV2");
+        r.onsuccess=()=>{ const tx=r.result.transaction("meta","readwrite"); tx.objectStore("meta").put({rev:1,baseRev:0,state:"writing",writer:"tab-gone",writerLock:true,at:"2026-11-09T00:00:00.000Z",contentDigest:"sha256:x"},"homeworkTrackerDataV2");
           tx.oncomplete=()=>{ r.result.close(); res(); }; tx.onerror=()=>rej(tx.error); }; r.onerror=()=>rej(r.error); }));
       await P.reload();
       const first = await P.evaluate(async()=>{ await openSyncDb(); return {held:__heldRevision, panel:document.getElementById("cmDataSafetyWarning")?.innerText||"",
@@ -1123,6 +1132,106 @@ async function run(){
       check(`${label}：最後修訂號為 2、記錄為 done`, stD.syncRevision===2 && metaD.rev===2 && metaD.state==="done" && JSON.stringify(clsOf(stD,"cA").data.memos).includes("B在A完成後接續"), {ls:stD.syncRevision, meta:metaD});
       await context.close();
     }
+
+    // [25] 沿用 [24]，但只有 A 的 navigator.locks.request() 被拒絕（A 沒有持鎖證據）；B 的 navigator.locks.query() 正常。
+    //      B 查不到 A 的鎖，但不能據此判定 A 已結束：看不到恢復選項、直接呼叫恢復函式也不能寫入。
+    const pauseAfterReserve = page => page.evaluate(()=>{
+      const orig = syncMetaTransaction; let first = true;
+      window.__reserveGate = new Promise(r=>window.__releaseReserve=r);
+      syncMetaTransaction = async (...args)=>{ const r = await orig(...args); if(first){ first=false; window.__reservedHeld=true; await window.__reserveGate; } return r; };
+    });
+    const aWriteMarks = page => page.evaluate(m=>{ enterClass("cA"); data.class.name=m.name; data.students[0].name=m.s0; data.students[1].name=m.s1;
+      data.gradeItems.find(g=>g.id==="g1-原A").scores={"s1-原A":77,"s2-原A":0}; data.gradeItems.find(g=>g.id==="g2-原A").scores={"s2-原A":66};
+      window.__aSave = saveData(); }, A_MARK);
+    for(const action of ["save","import"]){
+      const label = `[25] A 無法取得分頁鎖：A 預約後暫停，B（query 正常、已重新載入）${action==="save"?"一般儲存":"單班匯入"}`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const A = await context.newPage(); A.on("dialog", d=>d.accept());
+      await A.goto(base+"#noTabLock");
+      await A.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await A.reload(); await A.evaluate(()=>openSyncDb());
+      check(`${label}：前提成立（A 的 __tabLockReady 為 false）`, await A.evaluate(async()=>(await __tabLockReady)===false));
+      await pauseAfterReserve(A); await aWriteMarks(A);
+      await A.waitForFunction(()=>window.__reservedHeld===true);
+      const metaHeld = await readMeta(A);
+      check(`${label}：A 的預約為 writing、修訂 1，且記錄沒有持鎖證據`, metaHeld && metaHeld.state==="writing" && metaHeld.rev===1 && metaHeld.writerLock===false, metaHeld);
+      const B = await openPage(context, base);
+      check(`${label}：B 的 query 正常且查不到 A 的鎖`, await B.evaluate(async w=>typeof navigator.locks.query==="function" && !(await navigator.locks.query()).held.some(l=>l.name==="homeworkTrackerTab:"+w), metaHeld.writer));
+      const first = await B.evaluate(async()=>{ await openSyncDb(); return document.getElementById("cmDataSafetyWarning")?.innerText||""; });
+      check(`${label}：B 收到警告`, /尚未確認完成/.test(first), first);
+      await B.reload();
+      const panel = await B.evaluate(async()=>{ await openSyncDb();
+        const p=document.getElementById("cmDataSafetyWarning"); const btn=p?.querySelector("button.cm-data-safety-recover");
+        return {text:p?.innerText||"", recoverVisible:!!btn && !btn.hidden, offered:__unfinishedRecovery!==null,
+          backup:[...(p?.querySelectorAll("button")||[])].some(b=>!b.hidden && b.textContent==="下載本頁資料備份"),
+          reload:[...(p?.querySelectorAll("button")||[])].some(b=>!b.hidden && b.textContent==="重新載入最新資料")}; });
+      check(`${label}：B 看不到恢復選項`, !panel.recoverVisible && !panel.offered, panel);
+      check(`${label}：提示目前無法安全繼續寫入，並保留下載備份與重新載入`, /無法確認原寫入分頁是否已結束/.test(panel.text) && /無法安全繼續寫入/.test(panel.text) && panel.backup && panel.reload, panel);
+      // 直接呼叫恢復函式（也模擬已被設定恢復目標）也不能寫入
+      await B.evaluate(async()=>{ await continueFromThisPageAfterUnfinishedWrite(); });
+      await B.evaluate(async w=>{ __unfinishedRecovery={writer:w.writer,at:w.at,rev:w.rev}; __unfinishedUnverifiable=false; enterClass("cA"); data.students[0].name="B強制恢復嘗試"; await continueFromThisPageAfterUnfinishedWrite(); }, metaHeld);
+      const lsForced = await B.evaluate(k=>JSON.parse(window.__realGetItem(k)), STORAGE_KEY);
+      const metaForced = await readMeta(B);
+      check(`${label}：直接呼叫恢復函式無法寫入、預約仍屬於 A`, !("syncRevision" in lsForced) && !/B強制恢復嘗試/.test(JSON.stringify(lsForced)) && metaForced.state==="writing" && metaForced.rev===1 && metaForced.writer===metaHeld.writer, {lsRev:lsForced.syncRevision, meta:metaForced});
+      await B.reload();
+      B.__dialogs.length = 0; await B.evaluate(()=>{ window.__toasts.length = 0; });
+      let bOk;
+      if(action==="save"){
+        bOk = await B.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); data.students[0].name="B舊內容修改"; return await saveData(); });
+      }else{
+        await B.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); setPage("settings"); });
+        await B.setInputFiles('#importInput', FILE_PATHS.envelope);
+        bOk = (await oldTabOutcome(B)).success;
+      }
+      check(`${label}：B 不能寫入也沒有報成功`, bOk===false && !(await toasts(B)).some(x=>SUCCESS_RE.test(x)), {bOk, toasts:await toasts(B)});
+      // 放行 A
+      await A.evaluate(()=>window.__releaseReserve());
+      check(`${label}：A 完成寫入`, await A.evaluate(()=>window.__aSave)===true);
+      const C = await openPage(context, base);
+      const stC = await readStore(C); const metaDone = await readMeta(C);
+      assertAIntact(stC, label);
+      check(`${label}：修訂號未倒退（localStorage 與記錄皆為 1，done）`, stC.syncRevision===1 && metaDone.rev===1 && metaDone.state==="done", {ls:stC.syncRevision, meta:metaDone});
+      await C.close();
+      await B.reload();
+      const after = await B.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); const seen={name:data.class.name, s0:data.students[0].name};
+        data.memos.push({id:"memo-25",text:"B在A完成後接續"}); return {seen, ok:await saveData()}; });
+      check(`${label}：B 從 A 的資料接續儲存`, after.seen.name===A_MARK.name && after.seen.s0===A_MARK.s0 && after.ok===true, after);
+      const D = await openPage(context, base);
+      const stD = await readStore(D); const metaD = await readMeta(D);
+      assertAIntact(stD, `${label}（B 接續後）`);
+      check(`${label}：最後修訂號為 2、記錄為 done`, stD.syncRevision===2 && metaD.rev===2 && metaD.state==="done" && JSON.stringify(clsOf(stD,"cA").data.memos).includes("B在A完成後接續"), {ls:stD.syncRevision, meta:metaD});
+      await context.close();
+    }
+
+    // [26] 對照：A 確實持有分頁鎖，預約後在寫入前被關閉；B 可經重新載入與確認後恢復，修訂號不重用
+    { const label = "[26] A 確實持鎖、預約後未寫入即關閉";
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const A = await openPage(context, base);
+      await A.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await A.reload(); await A.evaluate(()=>openSyncDb());
+      check(`${label}：A 持有分頁鎖`, await A.evaluate(async()=>(await __tabLockReady)===true));
+      await pauseAfterReserve(A); await aWriteMarks(A);
+      await A.waitForFunction(()=>window.__reservedHeld===true);
+      const metaHeld = await readMeta(A);
+      check(`${label}：預約記錄帶有持鎖證據`, metaHeld.state==="writing" && metaHeld.writerLock===true, metaHeld);
+      const B = await openPage(context, base);
+      await A.close();
+      await B.waitForFunction(async w=>!(await navigator.locks.query()).held.some(l=>l.name==="homeworkTrackerTab:"+w), metaHeld.writer, {timeout:10000});
+      await B.reload();
+      await B.evaluate(()=>openSyncDb());
+      await B.reload();
+      const offered = await B.evaluate(async()=>{ await openSyncDb(); return !!document.querySelector("#cmDataSafetyWarning button.cm-data-safety-recover:not([hidden])"); });
+      check(`${label}：重新載入後提供「從本頁資料繼續」`, offered);
+      if(offered){
+        B.__policy.confirm = true;
+        await B.evaluate(()=>{ enterClass("cA"); data.students[0].name="B恢復後修改"; });
+        await B.locator("#cmDataSafetyWarning button.cm-data-safety-recover").click();
+        await B.waitForFunction(()=>!__storageWriteBlocked && !document.getElementById("cmDataSafetyWarning"), null, {timeout:10000}).catch(()=>{});
+      }
+      const R = await openPage(context, base);
+      const st = await readStore(R); const meta = await readMeta(R);
+      check(`${label}：恢復後以新修訂號（2）寫入，記錄為 done`, clsOf(st,"cA").data.students[0].name==="B恢復後修改" && st.syncRevision===2 && meta.rev===2 && meta.state==="done", {ls:st.syncRevision, meta});
+      await context.close(); }
 
     // [21] 正常升級路徑：只有一位老師開啟 v2.100 舊資料，可直接繼續使用（不需清空或重設）
     { const label = "[21] 單一分頁開啟 v2.100 舊資料";

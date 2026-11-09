@@ -46,7 +46,8 @@ const UNFINISHED_NOTICE_KEY = "homeworkTrackerUnfinishedWrite";
 let __unfinishedNoticeAtLoad = null;
 try{ __unfinishedNoticeAtLoad = JSON.parse(sessionStorage.getItem(UNFINISHED_NOTICE_KEY)||"null"); }catch(e){}
 let __unfinishedRecovery = null;   // reservation the teacher may explicitly continue past
-let __unfinishedUnverifiable = false; // the writer tab's state cannot be checked (no Web Locks query)
+let __unfinishedUnverifiable = false; // the writer tab's end cannot be confirmed (no Web Locks query,
+                                      // or its reservation carries no proof that it held its tab lock)
 // Data written by v2.100 has no syncRevision. A revision recorded in IndexedDB may only be adopted for
 // it when the record is completed ("done", not another tab's "writing" reservation) and its
 // contentDigest matches the content this tab actually loaded; otherwise another
@@ -256,7 +257,7 @@ function showDataStorageWarning(){
     ? "資料安全保護：本頁讀入的是尚未加上修訂號的舊版資料，但其他分頁已用新版儲存過，無法確認本頁內容是否為最新。為保留已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後即可繼續操作。"
     : __lastPersistFailure==="unfinished"
     ? (__unfinishedUnverifiable
-        ? "資料安全保護：另一個分頁有一次儲存尚未確認完成。此瀏覽器無法確認原寫入分頁是否已結束，因此目前仍無法安全繼續寫入。請先下載本頁資料備份，關閉本網站的其他分頁後重新載入；重新載入後若讀到最新已儲存的資料即可繼續。若重新載入後仍出現此訊息，請改用較新版本的瀏覽器開啟本網站。"
+        ? "資料安全保護：另一個分頁有一次儲存尚未確認完成，目前無法確認原寫入分頁是否已結束，因此仍無法安全繼續寫入。請先下載本頁資料備份，關閉本網站的其他分頁後重新載入；重新載入後若讀到最新已儲存的資料即可繼續。若重新載入後仍出現此訊息，請改用較新版本的瀏覽器開啟本網站。"
       : __unfinishedRecovery
         ? "資料安全保護：先前另一個分頁的一次儲存尚未確認完成，該分頁已關閉；重新載入後讀到的仍是那次儲存之前的資料，表示那次儲存很可能沒有寫入。若已確認沒有其他分頁開著本網站，可先下載本頁資料備份，再按「確認從本頁資料繼續」。"
         : "資料安全保護：另一個分頁有一次儲存尚未確認完成（該分頁可能已關閉）。為保留可能已儲存的資料，本頁已停止寫入。請先下載本頁資料備份，再重新載入；重新載入後會讀到最新已儲存的資料，即可繼續操作。")
@@ -449,7 +450,9 @@ async function commitStoreOnce(force=false){
   // explicit import: its success must be confirmed against the current revision.
   if(!force&&content===__knownStoreContent)return true;
   if(!db)return commitStoreWithoutCoordination(content);
-  await __tabLockReady;
+  // Whether this tab really holds its tab lock. Only then can another tab later conclude, from the lock
+  // being gone, that this tab has ended; the reservation records this as writerLock.
+  const holdsTabLock=(await __tabLockReady)===true;
   const supersede=__supersedeReservation;__supersedeReservation=null;
   const digest=await contentDigest(content);
 
@@ -458,7 +461,7 @@ async function commitStoreOnce(force=false){
     if(__storageLoadUnsafe){failure="unsafe";throw new Error("unsafe");}
     if(__storageWriteBlocked){failure="blocked";throw new Error("blocked");}
     const latestRevision=Number(latest?.rev)||0;
-    const explicitlySuperseded=Boolean(supersede&&latest&&latest.state==="writing"&&latest.writer===supersede.writer&&
+    const explicitlySuperseded=Boolean(supersede&&latest&&latest.state==="writing"&&latest.writerLock===true&&latest.writer===supersede.writer&&
       latest.at===supersede.at&&latest.rev===supersede.rev&&(Number(latest.baseRev)||0)===__heldRevision);
     if(latestRevision>__heldRevision&&!explicitlySuperseded){
       // Never reuse or roll back a revision: an unfinished reservation may already have written data.
@@ -467,7 +470,7 @@ async function commitStoreOnce(force=false){
       throw new Error(failure);
     }
     if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw){failure="conflict";throw new Error("conflict");}
-    const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,at:new Date().toISOString(),contentDigest:digest};
+    const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,writerLock:holdsTabLock,at:new Date().toISOString(),contentDigest:digest};
     meta.put(record,STORAGE_KEY);
     return {record,previous:latest};
   });
@@ -506,12 +509,13 @@ function sameReservation(a,b){
 async function handleUnfinishedReservation(reservation){
   // Offer the manual continue only on a reload after this tab already showed the notice for this
   // very reservation, while still holding its base revision, and with the writer tab gone.
-  // Replacing another tab's reservation is allowed only when that tab is confirmed to have ended.
-  // Without a way to check (no navigator.locks.query), it is never offered.
+  // Replacing another tab's reservation is allowed only when that tab is confirmed to have ended:
+  // the reservation must prove the writer held its tab lock (writerLock === true; reservations made
+  // before this field existed have no proof), and this tab must be able to see that the lock is gone.
   let offer=false;
   const locksQueryAvailable=typeof navigator!=="undefined"&&navigator.locks&&typeof navigator.locks.query==="function";
-  __unfinishedUnverifiable=!locksQueryAvailable;
-  if(locksQueryAvailable&&sameReservation(__unfinishedNoticeAtLoad,reservation)&&(Number(reservation.baseRev)||0)===__heldRevision){
+  __unfinishedUnverifiable=!locksQueryAvailable||reservation.writerLock!==true;
+  if(!__unfinishedUnverifiable&&sameReservation(__unfinishedNoticeAtLoad,reservation)&&(Number(reservation.baseRev)||0)===__heldRevision){
     offer=await isWriterTabClosed(reservation.writer);
   }
   __unfinishedRecovery=offer?{writer:reservation.writer,at:reservation.at,rev:reservation.rev}:null;
