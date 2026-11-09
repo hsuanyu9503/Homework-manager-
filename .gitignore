@@ -1,0 +1,2 @@
+# 測試相依套件（由 tests/package-lock.json 安裝），不納入版本控制
+tests/node_modules/

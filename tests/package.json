@@ -1,0 +1,15 @@
+{
+  "name": "classroom-manager-tests",
+  "private": true,
+  "description": "Development-only test dependencies for tests/import-backup.test.js. Not loaded by the website.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node import-backup.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
