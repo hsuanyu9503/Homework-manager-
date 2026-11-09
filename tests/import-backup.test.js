@@ -97,6 +97,26 @@ const INIT = (opts) => {
     return origGet.call(this,k);
   };
   window.addEventListener("storage", e=>{ if(window.__staleView) e.stopImmediatePropagation(); }, true);
+  // 模擬 IndexedDB 協調記錄寫入失敗：window.__metaPutFault = {when:"afterSetItem"|"beforeSetItem", how:"throw"|"abort"}。
+  // afterSetItem：本次設定後已有 localStorage.setItem 成功，才讓 meta.put 拋錯或中止交易。
+  window.__setItemCount = 0;
+  const origSetForCount = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(k,v){ const r = origSetForCount.call(this,k,v); window.__setItemCount++; return r; };
+  if(typeof IDBObjectStore!=="undefined"){
+    const origPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function(value, key){
+      const f = window.__metaPutFault;
+      if(f && this.name==="meta"){
+        const after = window.__setItemCount > f.armedAt;
+        if((f.when==="afterSetItem" && after) || (f.when==="beforeSetItem" && !after)){
+          window.__metaPutFaultHits = (window.__metaPutFaultHits||0)+1;
+          if(f.how==="throw") throw new DOMException("模擬 meta.put 失敗","UnknownError");
+          const r = origPut.call(this,value,key); this.transaction.abort(); return r;
+        }
+      }
+      return origPut.call(this,value,key);
+    };
+  }
   // 模擬容量不足：僅在測試設定旗標時讓寫入失敗。
   const orig = Storage.prototype.setItem;
   Storage.prototype.setItem = function(k,v){
@@ -594,6 +614,166 @@ async function run(){
       const st = await readStore(page);
       if(accept) assertImportedA(st, label, "A班（匯入檔）");
       else check(`${label}：重新載入後資料未變`, JSON.stringify(st)===JSON.stringify(before));
+      await context.close();
+    }
+
+    /* ---------------- 第三輪：三個邊界 ---------------- */
+    const armCommitGate = page => page.evaluate(()=>{
+      const orig = commitStoreOnce;
+      window.__commitWaiting = 0;
+      window.__gate = new Promise(r=>window.__releaseGate=r);
+      commitStoreOnce = async (...args)=>{ window.__commitWaiting++; await window.__gate; return orig(...args); };
+    });
+
+    // [15] 等待儲存期間切班：A 班確認匯入 → 切到其他班或進入目標班 → A 寫入失敗
+    for(const [entry,move] of [["settings","B"],["home","B"],["home","A"]]){
+      const label = `[15] ${entry==="home"?"班級首頁":"班內設定"}匯入 A 班，等待寫入時${move==="B"?"切到 B 班":"進入 A 班"}，寫入失敗`;
+      const {context,page} = await newContext(browser,base);
+      await page.evaluate(()=>{ enterClass("cA"); leaveClass(); enterClass("cB"); leaveClass(); });
+      if(entry==="settings") await page.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+      const before = await readStore(page);
+      await armCommitGate(page);
+      page.__dialogs.length = 0; await page.evaluate(()=>{ window.__toasts.length = 0; });
+      if(entry==="home"){ await page.evaluate(()=>openClassSettings("cA")); await page.setInputFiles('#modalBody input[type=file]', FILE_PATHS.envelope); }
+      else await page.setInputFiles('#importInput', FILE_PATHS.envelope);
+      await page.waitForFunction(()=>window.__commitWaiting>=1);
+      await page.evaluate(target=>{ closeModal(); if(activeClassId) leaveClass(); enterClass(target==="B"?"cB":"cA"); setPage("settings"); }, move);
+      await page.evaluate(()=>{ window.__simulateQuota = true; window.__releaseGate(); });
+      await settle(page);
+      await page.evaluate(()=>{ window.__simulateQuota = false; });
+      const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      check(`${label}：提示匯入未完成、未顯示成功`, alerts.some(m=>/匯入未完成/.test(m)) && !(await toasts(page)).some(x=>SUCCESS_RE.test(x)), alerts);
+      const mem = await page.evaluate(()=>{
+        const A=store.classes.find(c=>c.id==="cA"), B=store.classes.find(c=>c.id==="cB"), cur=store.classes.find(c=>c.id===activeClassId);
+        return {active:activeClassId, dataIsActiveCls:data===cur.data, dataName:data.class.name, dataS0:data.students[0].name,
+          header:document.getElementById("headerClassName").textContent, aName:A.name, aS0:A.data.students[0].name, aInner:A.data.class.name,
+          bName:B.name, bS0:B.data.students[0].name};
+      });
+      const expectName = move==="B" ? "B班（原值）" : "A班（原值）", expectS0 = move==="B" ? "原B學生甲" : "原A學生甲";
+      check(`${label}：目前分頁的 data 指向目前班級且為原資料`, mem.active===(move==="B"?"cB":"cA") && mem.dataIsActiveCls && mem.dataName===expectName && mem.dataS0===expectS0, mem);
+      check(`${label}：頁首顯示目前班級`, mem.header===expectName, mem.header);
+      check(`${label}：A 班回復為匯入前、B 班未被改動`, mem.aName==="A班（原值）" && mem.aInner==="A班（原值）" && mem.aS0==="原A學生甲" && mem.bName==="B班（原值）" && mem.bS0==="原B學生甲", mem);
+      // 後續一般儲存：寫入失敗後依既有保護暫停寫入；編輯留在目前班級，不寫到其他班級
+      const next = await page.evaluate(async()=>{ data.students[1].name="切班後一般儲存"; const ok=await saveData();
+        const cur=store.classes.find(c=>c.id===activeClassId), other=store.classes.find(c=>c.id!==activeClassId);
+        return {ok, curHasEdit:cur.data.students[1].name==="切班後一般儲存", dataIsCur:data===cur.data, otherUntouched:other.data.students[1].name!=="切班後一般儲存"}; });
+      check(`${label}：後續一般儲存被暫停（回傳 false），編輯只留在目前班級`, next.ok===false && next.curHasEdit && next.dataIsCur && next.otherUntouched, next);
+      const [dl] = await Promise.all([ page.waitForEvent("download"), page.locator("#cmDataSafetyWarning button", {hasText:"下載本頁資料備份"}).click() ]);
+      const dlPath = path.join(TMP, `rescue-15-${entry}-${move}.json`); await dl.saveAs(dlPath);
+      const rescue = JSON.parse(fs.readFileSync(dlPath,"utf8"));
+      check(`${label}：救援檔為目前班級且含後續編輯、不含候選備份`, rescue.className===expectName && rescue.data.students[1].name==="切班後一般儲存" && !/匯入/.test(JSON.stringify(rescue)), {className:rescue.className, s:rescue.data.students.map(x=>x.name)});
+      await page.reload();
+      check(`${label}：重新載入後 A、B 班維持原值`, JSON.stringify(await readStore(page))===JSON.stringify(before));
+      await context.close();
+    }
+
+    // [16] 明確匯入與本頁舊快照完全相同的備份：仍須在協調交易內驗證目前修訂號
+    for(const entry of ["home","settings"]){
+      const label = `[16] ${entry==="home"?"班級首頁":"班內設定"} 新分頁已存新版 → 舊分頁匯入與舊快照相同的備份`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const oldPage = await setupOldTab(context, base, entry);
+      const snap = await oldPage.evaluate(()=>{ const c=store.classes.find(x=>x.id==="cA"); return {app:"classroom-manager",version:APP_VERSION,className:c.name,data:normalizeData(c.data)}; });
+      const snapPath = path.join(TMP, `snapshot-${entry}.json`); fs.writeFileSync(snapPath, JSON.stringify(snap));
+      await oldPage.evaluate(k=>{ window.__staleView = {[k]: window.__realGetItem(k)}; }, STORAGE_KEY);
+      const newPage = await openPage(context, base);
+      check(`${label}：新分頁寫入成功`, await newTabWrite(newPage)===true);
+      oldPage.__dialogs.length = 0; await oldPage.evaluate(()=>{ window.__toasts.length = 0; });
+      if(entry==="home"){ await oldPage.evaluate(()=>openClassSettings("cA")); await oldPage.setInputFiles('#modalBody input[type=file]', snapPath); }
+      else await oldPage.setInputFiles('#importInput', snapPath);
+      const r = await oldTabOutcome(oldPage);
+      check(`${label}：提示衝突、未顯示匯入完成`, !r.success && r.alerts.some(m=>/其他分頁/.test(m) && /匯入未完成/.test(m)), r);
+      await oldPage.evaluate(()=>{ window.__staleView = null; });
+      await oldPage.reload();
+      check(`${label}：重新載入後為新分頁版本`, NEW_MARK(await readStore(oldPage)));
+      await context.close();
+    }
+    { const label = "[16] 無其他分頁時匯入與目前內容相同的備份";
+      const {context,page} = await newContext(browser,base);
+      await page.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+      const st0 = await readStore(page);
+      const snap = await page.evaluate(()=>({className:store.classes.find(x=>x.id==="cA").name, data:normalizeData(store.classes.find(x=>x.id==="cA").data)}));
+      const snapPath = path.join(TMP, "snapshot-alone.json"); fs.writeFileSync(snapPath, JSON.stringify(snap));
+      page.__dialogs.length = 0; await page.evaluate(()=>{ window.__toasts.length = 0; });
+      await page.setInputFiles('#importInput', snapPath); await settle(page);
+      const st1 = await readStore(page);
+      check(`${label}：顯示匯入完成，且經協調寫入（修訂號遞增）`, (await toasts(page)).some(x=>SUCCESS_RE.test(x)) && st1.syncRevision===st0.syncRevision+1, {rev0:st0.syncRevision, rev1:st1.syncRevision});
+      const tab2 = await openPage(context, base);
+      await tab2.evaluate(()=>enterClass("cA")); await flush(tab2);
+      check(`${label}：另一分頁單純開班不增加修訂號`, (await readStore(tab2)).syncRevision===st1.syncRevision);
+      await context.close(); }
+
+    // [17] localStorage.setItem() 已成功、但 meta.put() 拋錯或交易中止（以及 setItem 之前就失敗）
+    for(const [when,how] of [["afterSetItem","throw"],["afterSetItem","abort"],["beforeSetItem","throw"],["beforeSetItem","abort"]]){
+      const label = `[17] meta.put ${how==="throw"?"拋錯":"交易中止"}（${when==="afterSetItem"?"setItem 成功之後":"setItem 之前"}）`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      // 其他分頁：先載入並持有目前版本，之後看不到寫入（凍結讀取、收不到 storage 事件）
+      const other = await openPage(context, base);
+      await other.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await other.reload();
+      await other.evaluate(()=>{ enterClass("cA"); }); await flush(other);
+      const writer = await openPage(context, base);
+      await writer.evaluate(()=>{ enterClass("cA"); setPage("settings"); }); await flush(writer);
+      await other.evaluate(k=>{ window.__staleView = {[k]: window.__realGetItem(k)}; }, STORAGE_KEY);
+      await writer.evaluate(f=>{ window.__metaPutFault = {...f, armedAt: window.__setItemCount}; window.__metaPutFaultHits = 0; }, {when,how});
+      writer.__dialogs.length = 0; await writer.evaluate(()=>{ window.__toasts.length = 0; });
+      await writer.setInputFiles('#importInput', FILE_PATHS.envelope);
+      await settle(writer);
+      const hits = await writer.evaluate(()=>{ const h=window.__metaPutFaultHits; window.__metaPutFault=null; return h; });
+      check(`${label}：模擬確實觸發`, hits>=1, hits);
+      // (1) 寫入結果：提示必須與實際儲存一致
+      const t = await toasts(writer);
+      const alerts = writer.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      const stored = IMPORT_MARK(await readStore(writer));
+      const saidSaved = t.some(x=>SUCCESS_RE.test(x)) || alerts.some(m=>/資料已儲存/.test(m));
+      const saidNotSaved = alerts.some(m=>/匯入未完成/.test(m));
+      check(`${label}：寫入結果與提示一致（${stored?"已儲存":"未儲存"}）`, stored ? (saidSaved && !saidNotSaved) : (saidNotSaved && !saidSaved), {stored, toasts:t, alerts});
+      // (2) 重新載入後的內容（另開一個新分頁讀取，不重新載入寫入分頁）
+      const reader = await openPage(context, base);
+      const readerSt = await readStore(reader);
+      check(`${label}：重新載入後的內容與提示一致`, IMPORT_MARK(readerSt)===stored, clsOf(readerSt,"cA").name);
+      await reader.close();
+      // (3a) 下一次寫入：其他分頁（持有較舊版本、看不到變更）不能靜默覆寫
+      const otherSave = await other.evaluate(async()=>{ data.students[0].name="其他分頁覆寫標記"; return await saveData(); });
+      const afterOther = await readStore(writer);
+      const overwritten = clsOf(afterOther,"cA").data.students[0].name==="其他分頁覆寫標記";
+      if(stored) check(`${label}：其他分頁的寫入被擋下、未覆寫已儲存的匯入`, otherSave===false && !overwritten && IMPORT_MARK(afterOther), {otherSave, name:clsOf(afterOther,"cA").name});
+      else check(`${label}：未寫入任何內容，其他分頁的正常寫入不受影響`, otherSave===true && overwritten, {otherSave});
+      // (3b) 下一次寫入：寫入分頁自己
+      const writerNext = await writer.evaluate(async()=>{ data.memos.push({id:"memo-next",text:"寫入分頁下一次寫入"}); return await saveData(); });
+      const afterWriter = await readStore(writer);
+      const writerStored = JSON.stringify(clsOf(afterWriter,"cA").data.memos).includes("寫入分頁下一次寫入");
+      if(when==="afterSetItem"){
+        // 資料已儲存且修訂號已預約為本頁所有：本頁下一次寫入照常成功
+        check(`${label}：寫入分頁下一次寫入成功並已儲存`, writerNext===true && writerStored && IMPORT_MARK(afterWriter), {writerNext, writerStored});
+      }else{
+        // 協調記錄寫不進去：本頁暫停寫入（依提示），下一次寫入回報 false 且未寫入
+        check(`${label}：提示協調記錄寫入失敗`, alerts.some(m=>/跨分頁協調記錄/.test(m)), alerts);
+        check(`${label}：寫入分頁下一次寫入被暫停（回傳 false，未寫入）`, writerNext===false && !writerStored, {writerNext, writerStored});
+      }
+      const finalReader = await openPage(context, base);
+      const finalSt = await readStore(finalReader);
+      check(`${label}：最後重新載入的內容與各次回報一致`,
+        when==="afterSetItem" ? (IMPORT_MARK(finalSt) && JSON.stringify(clsOf(finalSt,"cA").data.memos).includes("寫入分頁下一次寫入"))
+                              : (clsOf(finalSt,"cA").data.students[0].name==="其他分頁覆寫標記" && !IMPORT_MARK(finalSt)),
+        {name:clsOf(finalSt,"cA").name, s0:clsOf(finalSt,"cA").data.students[0].name});
+      await context.close();
+    }
+
+    // [18] 預約記錄留下但寫入分頁已不存在（關閉於預約與寫入之間）／仍存在
+    for(const alive of [false,true]){
+      const label = `[18] 未完成的預約，寫入分頁${alive?"仍開啟":"已關閉"}`;
+      const {context,page} = await newContext(browser,base);
+      await page.evaluate(()=>enterClass("cA")); await flush(page);
+      const st0 = await readStore(page);
+      const holder = await openPage(context, base);
+      if(alive) await holder.evaluate(()=>{ window.__held = new Promise(res=>navigator.locks.request("homeworkTrackerTab:tab-fake", ()=>{ res(); return new Promise(()=>{}); })); return window.__held; });
+      await holder.evaluate(rev=>new Promise((res,rej)=>{ const r=indexedDB.open("homeworkTrackerSync",1); r.onsuccess=()=>{ const tx=r.result.transaction("meta","readwrite");
+        tx.objectStore("meta").put({rev:rev+1, baseRev:rev, state:"writing", writer:"tab-fake", at:new Date().toISOString()}, "homeworkTrackerDataV2"); tx.oncomplete=()=>{r.result.close();res();}; tx.onerror=()=>rej(tx.error); }; r.onerror=()=>rej(r.error); }), st0.syncRevision);
+      const ok = await page.evaluate(async()=>{ data.students[0].name="預約後一般儲存"; return await saveData(); });
+      const st1 = await readStore(page);
+      const savedIt = clsOf(st1,"cA").data.students[0].name==="預約後一般儲存";
+      if(alive) check(`${label}：視為其他分頁寫入中，儲存被擋下`, ok===false && !savedIt, {ok});
+      else check(`${label}：回收預約，儲存成功`, ok===true && savedIt, {ok, rev:st1.syncRevision});
       await context.close();
     }
 

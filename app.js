@@ -30,7 +30,18 @@ let __heldRevisionLegacy = true; // loaded data had no syncRevision (written by 
 let __syncDbPromise = null;
 let __syncUnavailable = false;   // IndexedDB cannot be used: only the pre-v2.101 protection applies
 let __pendingCommit = null;      // queued, not yet started commit (shared by callers)
+let __pendingCommitForce = false;// an explicit import is among the callers sharing that commit
 let __commitTail = Promise.resolve();
+// Each tab holds a Web Lock named after its id for its whole lifetime, so another tab can tell
+// whether the writer of an unfinished reservation (see commitStoreOnce) is still open.
+const TAB_LOCK_PREFIX = "homeworkTrackerTab:";
+const TAB_ID = uid("tab");
+const __tabLockReady = (typeof navigator!=="undefined" && navigator.locks && typeof navigator.locks.request==="function")
+  ? new Promise(resolve=>{
+      navigator.locks.request(TAB_LOCK_PREFIX+TAB_ID, ()=>{ resolve(true); return new Promise(()=>{}); })
+        .catch(()=>resolve(false));
+    })
+  : Promise.resolve(false);
 
 const STATUS_ORDER = ["pending","submitted","correction","completed","missing"];
 const STATUS_LABEL = {
@@ -319,7 +330,39 @@ function commitStoreWithoutCoordination(content){
     return true;
   }catch(e){return recordPersistFailure("write",e);}
 }
-async function commitStoreOnce(){
+function syncMetaTransaction(db, work){
+  // Runs work(store, result) inside one readwrite transaction; resolves {ok, value} after commit.
+  return new Promise(resolve=>{
+    let tx, value;
+    try{tx=db.transaction(SYNC_STORE_NAME,"readwrite");}catch(e){return resolve({ok:false,error:e});}
+    const meta=tx.objectStore(SYNC_STORE_NAME);
+    try{
+      const req=meta.get(STORAGE_KEY);
+      req.onsuccess=()=>{
+        try{value=work(meta, req.result||null);}
+        catch(e){value={error:e};try{tx.abort();}catch(_){}}
+      };
+    }catch(e){return resolve({ok:false,error:e});}
+    tx.oncomplete=()=>resolve({ok:true,value});
+    tx.onabort=tx.onerror=()=>resolve({ok:false,value,error:tx.error});
+  });
+}
+async function isWriterTabClosed(writer){
+  // Without Web Locks the writer's state is unknown: never treat its reservation as abandoned.
+  if(!writer||typeof navigator==="undefined"||!navigator.locks||typeof navigator.locks.query!=="function")return false;
+  try{
+    const state=await navigator.locks.query();
+    return !(state.held||[]).some(l=>l.name===TAB_LOCK_PREFIX+writer);
+  }catch(e){return false;}
+}
+// Two phases, so that localStorage is never ahead of the revision record:
+//  1. In one IndexedDB readwrite transaction: check that no newer revision exists, then record a
+//     reservation {rev:next, state:"writing", writer:this tab}. Other tabs' transactions run before
+//     or after this one, never interleaved, and from then on see the newer revision.
+//  2. Only after that transaction has committed: write localStorage; then mark the record "done".
+// A failed reservation means nothing was written. A failed localStorage write releases the
+// reservation. A failed "done" mark leaves a correct revision behind (data saved, others blocked).
+async function commitStoreOnce(force=false){
   if(__storageLoadUnsafe||__storageWriteBlocked){
     __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
     showDataStorageWarning();return false;
@@ -327,52 +370,72 @@ async function commitStoreOnce(){
   const db=await openSyncDb();
   let content;
   try{content=JSON.stringify(store);}catch(e){return recordPersistFailure("write",e);}
-  if(content===__knownStoreContent)return true; // nothing changed since this tab's last read/write
+  // Unchanged content needs no write (opening a class must not bump the revision), except for an
+  // explicit import: its success must be confirmed against the current revision.
+  if(!force&&content===__knownStoreContent)return true;
   if(!db)return commitStoreWithoutCoordination(content);
-  let tx;
-  try{tx=db.transaction(SYNC_STORE_NAME,"readwrite");}
-  catch(e){markSyncUnavailable(e);return commitStoreWithoutCoordination(content);}
-  return new Promise(resolve=>{
-    let written=false, failed=false;
-    const fail=(reason,error)=>{failed=true;recordPersistFailure(reason,error);try{tx.abort();}catch(e){}};
-    const meta=tx.objectStore(SYNC_STORE_NAME);
-    const req=meta.get(STORAGE_KEY);
-    req.onsuccess=()=>{
-      // Re-check inside the transaction: no other tab can commit between this check and the write.
-      if(__storageLoadUnsafe)return fail("unsafe");
-      if(__storageWriteBlocked){failed=true;__lastPersistFailure=__lastPersistFailure||"conflict";showDataStorageWarning();try{tx.abort();}catch(e){}return;}
-      const latestRevision=Number(req.result?.rev)||0;
-      if(latestRevision>__heldRevision)return fail("conflict");
-      try{
-        if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw)return fail("conflict");
-        const nextRevision=Math.max(latestRevision,__heldRevision)+1;
-        const nextRaw=storeRawForRevision(content,nextRevision);
-        localStorage.setItem(STORAGE_KEY,nextRaw);
-        __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=nextRevision;__lastPersistFailure="";
-        written=true;
-        meta.put({rev:nextRevision,updatedAt:new Date().toISOString()},STORAGE_KEY);
-      }catch(e){fail("write",e);}
-    };
-    tx.oncomplete=()=>resolve(written);
-    tx.onabort=tx.onerror=()=>{
-      // The data itself was saved; only the revision record failed. Stay safe from now on.
-      if(written&&!failed){markSyncUnavailable(tx.error);resolve(true);return;}
-      resolve(false);
-    };
+  await __tabLockReady;
+  // A reservation whose writer tab has closed before writing localStorage is abandoned.
+  let abandoned=null;
+  try{
+    const pre=await readSyncMeta(db);
+    if(pre&&pre.state==="writing"&&pre.writer!==TAB_ID&&(Number(pre.rev)||0)>__heldRevision&&
+       (Number(pre.baseRev)||0)===__heldRevision&&await isWriterTabClosed(pre.writer))abandoned=pre;
+  }catch(e){return recordPersistFailure("coordination",e);}
+
+  let failure=null;
+  const reservation=await syncMetaTransaction(db,(meta,latest)=>{
+    if(__storageLoadUnsafe){failure="unsafe";throw new Error("unsafe");}
+    if(__storageWriteBlocked){failure="blocked";throw new Error("blocked");}
+    let latestRevision=Number(latest?.rev)||0;
+    if(abandoned&&latest&&latest.state==="writing"&&latest.writer===abandoned.writer&&latest.at===abandoned.at&&latest.rev===abandoned.rev)
+      latestRevision=Number(latest.baseRev)||0;
+    if(latestRevision>__heldRevision){failure="conflict";throw new Error("conflict");}
+    if(localStorage.getItem(STORAGE_KEY)!==__knownStoreRaw){failure="conflict";throw new Error("conflict");}
+    const record={rev:Math.max(latestRevision,__heldRevision)+1,baseRev:latestRevision,state:"writing",writer:TAB_ID,at:new Date().toISOString()};
+    meta.put(record,STORAGE_KEY);
+    return {record,previous:latest};
   });
+  if(!reservation.ok){
+    if(failure==="blocked"){__lastPersistFailure=__lastPersistFailure||"conflict";showDataStorageWarning();return false;}
+    // Nothing has been written to localStorage.
+    return recordPersistFailure(failure||"coordination",reservation.error||reservation.value?.error);
+  }
+  const {record,previous}=reservation.value;
+  const nextRaw=storeRawForRevision(content,record.rev);
+  try{
+    localStorage.setItem(STORAGE_KEY,nextRaw);
+  }catch(e){
+    // Release our reservation (only if it is still ours) so the stored revision matches the data.
+    await syncMetaTransaction(db,(meta,latest)=>{
+      if(latest&&latest.writer===TAB_ID&&latest.at===record.at&&latest.rev===record.rev){
+        if(previous)meta.put(previous,STORAGE_KEY);else meta.delete(STORAGE_KEY);
+      }
+    });
+    return recordPersistFailure("write",e);
+  }
+  __knownStoreRaw=nextRaw;__knownStoreContent=content;__heldRevision=record.rev;__lastPersistFailure="";
+  const done=await syncMetaTransaction(db,(meta,latest)=>{
+    if(latest&&latest.writer===TAB_ID&&latest.at===record.at&&latest.rev===record.rev)meta.put({...record,state:"done"},STORAGE_KEY);
+  });
+  // The data is saved and the reservation already carries its revision, so other tabs stay blocked.
+  if(!done.ok)console.warn("協調記錄未能標記完成；資料已儲存，修訂號仍有效",done.error);
+  return true;
 }
 // All writes of STORAGE_KEY go through here. Returns a Promise<boolean>; callers that do not need
 // the result may ignore it. Calls made while a commit is queued share it (it writes the latest store).
-function persistStoreSafely(){
+function persistStoreSafely(options={}){
   // A parsing error is not permission to replace the stored record with empty defaults.
   if(__storageLoadUnsafe||__storageWriteBlocked){
     __lastPersistFailure=__storageLoadUnsafe?"unsafe":(__lastPersistFailure||"conflict");
     showDataStorageWarning();return Promise.resolve(false);
   }
+  if(options.force)__pendingCommitForce=true;
   if(__pendingCommit)return __pendingCommit;
   const commit=__commitTail.then(()=>{
-    if(__pendingCommit===commit)__pendingCommit=null;
-    return commitStoreOnce();
+    let force=false;
+    if(__pendingCommit===commit){__pendingCommit=null;force=__pendingCommitForce;__pendingCommitForce=false;}
+    return commitStoreOnce(force);
   });
   __pendingCommit=commit;
   __commitTail=commit.then(()=>{},()=>{});
@@ -402,22 +465,29 @@ function saveData(){
 // in memory if the write is refused, so the screen, class name and rescue download keep
 // showing this tab's own data rather than the unsaved candidate.
 async function commitClassImport(cls, candidate, nextName){
-  const isActive=cls.id===activeClassId;
-  const previous={data:cls.data,name:cls.name,active:isActive?data:null};
+  const previous={data:cls.data,name:cls.name,active:cls.id===activeClassId?data:null};
   // Home card name (cls.name) and in-class name (data.class.name) must agree after import.
   candidate.class.name=nextName;
   cls.data=candidate;
   cls.name=nextName;
-  if(isActive)data=candidate;
-  if(await persistStoreSafely())return true;
+  if(cls.id===activeClassId)data=candidate;
+  if(await persistStoreSafely({force:true}))return true;
+  // Roll back the import target only. The teacher may have switched class while the write was
+  // pending: the class now on screen (and its `data`) must be left alone unless it is the target.
   cls.data=previous.data;
   cls.name=previous.name;
-  if(isActive)data=previous.active;
+  if(cls.id===activeClassId){
+    data=previous.active||normalizeData(previous.data);
+    data.class.name=cls.name||data.class.name;
+    cls.data=data;
+  }
   return false;
 }
 function classImportFailureMessage(){
   if(__lastPersistFailure==="write")
     return "匯入未完成：瀏覽器儲存空間不足或無法寫入，這次匯入沒有儲存。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，清出空間後重新載入再匯入。";
+  if(__lastPersistFailure==="coordination")
+    return "匯入未完成：無法寫入跨分頁協調記錄（IndexedDB），為避免與其他分頁互相覆蓋，這次匯入沒有寫入。\n\n瀏覽器中仍保留原本已儲存的班級資料，畫面也維持原本內容；匯入檔未被修改。請先下載本頁備份，再重新載入。";
   if(__lastPersistFailure==="unsafe")
     return "匯入未完成：原始班級資料無法正確讀取，為避免覆蓋已暫停寫入，這次匯入沒有儲存。\n\n請保留此分頁並先下載備份。";
   return "匯入未完成：偵測到其他分頁已修改班級資料。為避免把較新的資料覆蓋成舊版本，這次匯入沒有寫入。\n\n瀏覽器中保留的是其他分頁最後儲存的版本。「下載本頁資料備份」下載的是本次匯入前，本頁保留的資料（檔名含「本頁」），不含這次匯入的檔案；匯入檔仍保留在原位置。請重新載入後再匯入。";
@@ -988,7 +1058,10 @@ function importClassBackup(classId, file){
       nextName = parsed.className;
     }
     const saved = await commitClassImport(cls, incoming, nextName);
-    finishClassImport(saved, ()=>{ if(saved) closeModal(); renderClassHome(); }, "班級備份已匯入");
+    finishClassImport(saved, ()=>{
+      if(saved && activeClassId===startedActiveClassId) closeModal();
+      if(activeClassId) renderPage(currentPage); else renderClassHome();
+    }, "班級備份已匯入");
   };
   reader.readAsText(file);
 }
@@ -4833,7 +4906,7 @@ async function importBackup(file){
   // Same naming rule saveData() applied before v2.101.
   const nextName = candidate.class.name || cls.name || "未命名班級";
   const saved = await commitClassImport(cls, candidate, nextName);
-  finishClassImport(saved, ()=>renderPage(currentPage), "備份匯入完成");
+  finishClassImport(saved, ()=>{ if(activeClassId) renderPage(currentPage); else renderClassHome(); }, "備份匯入完成");
 }
 
 function clearAllData(){
