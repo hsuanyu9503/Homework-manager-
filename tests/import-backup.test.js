@@ -89,10 +89,10 @@ const INIT = () => {
   };
   // 模擬讀檔延遲：測試設定 window.__readGate（Promise）時，讀檔要等它 resolve 才完成。
   const origText = Blob.prototype.text;
-  Blob.prototype.text = function(){ const go=()=>origText.call(this); return window.__readGate ? window.__readGate.then(go) : go(); };
+  Blob.prototype.text = function(){ const go=()=>origText.call(this); if(window.__readGate){ window.__readStarted=true; return window.__readGate.then(go); } return go(); };
   const origReadAsText = FileReader.prototype.readAsText;
   FileReader.prototype.readAsText = function(...args){
-    if(window.__readGate){ window.__readGate.then(()=>origReadAsText.apply(this,args)); return; }
+    if(window.__readGate){ window.__readStarted=true; window.__readGate.then(()=>origReadAsText.apply(this,args)); return; }
     return origReadAsText.apply(this,args);
   };
   window.__toasts = [];
@@ -127,6 +127,16 @@ const readStore = page => page.evaluate(k=>JSON.parse(localStorage.getItem(k)),S
 const clsOf = (st,id) => st.classes.find(c=>c.id===id);
 const toasts = page => page.evaluate(()=>window.__toasts.slice());
 
+// 等到匯入流程有結果（alert、toast、或確認被取消）再繼續，不依賴固定延遲。
+async function settle(page, timeout=10000){
+  const start = Date.now();
+  while(Date.now()-start < timeout){
+    const t = await page.evaluate(()=>window.__toasts.length);
+    if(t || page.__dialogs.some(d=>d.type==="alert" || (d.type==="confirm" && !page.__policy.confirm))) break;
+    await page.waitForTimeout(25);
+  }
+  await page.waitForTimeout(100);
+}
 async function importVia(page, entry, fileKey){
   page.__dialogs.length = 0;
   await page.evaluate(()=>{ window.__toasts.length = 0; });
@@ -137,7 +147,7 @@ async function importVia(page, entry, fileKey){
     await page.evaluate(()=>{ if(activeClassId!=="cA") enterClass("cA"); setPage("settings"); });
     await page.setInputFiles('#importInput', FILE_PATHS[fileKey]);
   }
-  await page.waitForTimeout(500);
+  await settle(page);
 }
 async function visibleText(page, entry){
   return entry==="home"
@@ -336,11 +346,11 @@ async function run(){
         await page.evaluate(()=>{ window.__readGate = new Promise(r=>window.__releaseRead=r); });
         await page.setInputFiles('#importInput', FILE_PATHS.envelope);
       }
-      await page.waitForTimeout(200);
+      await page.waitForFunction(()=>window.__readStarted===true);
       if(move==="leave") await page.evaluate(()=>leaveClass());
       else await page.evaluate(()=>{ if(activeClassId) leaveClass(); enterClass("cB"); setPage("settings"); });
       await page.evaluate(()=>{ window.__releaseRead(); window.__readGate = null; });
-      await page.waitForTimeout(500);
+      await settle(page);
       const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
       const confirms = page.__dialogs.filter(d=>d.type==="confirm");
       check(`${label}：取消匯入並說明班級已切換`, alerts.some(m=>/切換/.test(m) && /取消匯入/.test(m)), alerts);
@@ -376,7 +386,7 @@ async function run(){
       page.__dialogs.length = 0;
       await page.evaluate(()=>{ window.__toasts.length = 0; });
       await page.setInputFiles(entry==="home" ? '#modalBody input[type=file]' : '#importInput', FILE_PATHS.envelope);
-      await page.waitForTimeout(500);
+      await settle(page);
       const alerts = page.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
       check(`${label}：提示資料已儲存、請重新載入`, alerts.some(m=>m.includes("資料已儲存，請重新載入以更新畫面")), alerts);
       check(`${label}：未誤報為讀檔或匯入失敗`, !alerts.some(m=>/無法匯入|格式不正確|匯入未完成/.test(m)), alerts);
