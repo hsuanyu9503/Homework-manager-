@@ -958,6 +958,104 @@ async function run(){
       await context.close();
     }
 
+    // [22] v2.100 舊資料：A 已在 IndexedDB 預約成功、但尚未 localStorage.setItem() 時暫停。
+    //      B 讀到舊資料並出現警告 → 實際重新載入 B（A 仍開著且未寫入，B 兩次看到同樣的舊資料）
+    //      → B 一般儲存／單班匯入 → 放行 A → 全新分頁檢查名冊、成績與修訂號 → B 重新載入後接續。
+    const readMeta = page => page.evaluate(()=>new Promise((res,rej)=>{ const r=indexedDB.open("homeworkTrackerSync",1);
+      r.onsuccess=()=>{ const q=r.result.transaction("meta","readonly").objectStore("meta").get("homeworkTrackerDataV2"); q.onsuccess=()=>{ r.result.close(); res(q.result||null); }; q.onerror=()=>rej(q.error); }; r.onerror=()=>rej(r.error); }));
+    for(const action of ["save","import"]){
+      const label = `[22] A 預約後尚未寫入時，B（舊資料、已重新載入）${action==="save"?"一般儲存":"單班匯入"}`;
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const A = await openPage(context, base);
+      await A.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]); // 沒有 syncRevision
+      await A.reload(); await A.evaluate(()=>openSyncDb());
+      // A：在預約交易提交之後、setItem 之前暫停
+      await A.evaluate(()=>{
+        const orig = syncMetaTransaction; let first = true;
+        window.__reserveGate = new Promise(r=>window.__releaseReserve=r);
+        syncMetaTransaction = async (...args)=>{ const r = await orig(...args); if(first){ first=false; window.__reservedHeld=true; await window.__reserveGate; } return r; };
+      });
+      await A.evaluate(m=>{ enterClass("cA"); data.class.name=m.name; data.students[0].name=m.s0; data.students[1].name=m.s1;
+        data.gradeItems.find(g=>g.id==="g1-原A").scores={"s1-原A":77,"s2-原A":0}; data.gradeItems.find(g=>g.id==="g2-原A").scores={"s2-原A":66};
+        window.__aSave = saveData(); }, A_MARK);
+      await A.waitForFunction(()=>window.__reservedHeld===true);
+      const metaHeld = await readMeta(A);
+      const lsHeld = await A.evaluate(k=>JSON.parse(window.__realGetItem(k)), STORAGE_KEY);
+      check(`${label}：前提成立（預約為 writing、localStorage 仍是舊資料）`, metaHeld && metaHeld.state==="writing" && metaHeld.rev===1 && !("syncRevision" in lsHeld), {meta:metaHeld, lsRev:lsHeld.syncRevision});
+      // B 第一次載入：舊資料 + 警告
+      const B = await openPage(context, base);
+      const first = await B.evaluate(async()=>{ await openSyncDb(); return {name:store.classes[0].name, held:__heldRevision, panel:document.getElementById("cmDataSafetyWarning")?.innerText||""}; });
+      check(`${label}：B 第一次載入讀到舊資料並出現警告`, first.name==="A班（原值）" && /重新載入/.test(first.panel), first);
+      // 實際重新載入 B：A 仍開著且尚未寫入，B 仍看到同樣的舊資料
+      await B.reload();
+      const second = await B.evaluate(async()=>{ await openSyncDb(); return {name:store.classes[0].name, raw:!("syncRevision" in JSON.parse(window.__realGetItem("homeworkTrackerDataV2"))), held:__heldRevision}; });
+      check(`${label}：重新載入後仍是同樣的舊資料（預期）`, second.name==="A班（原值）" && second.raw, second);
+      check(`${label}：B 未取得 A 預約中的修訂號`, second.held===0, second.held);
+      B.__dialogs.length = 0; await B.evaluate(()=>{ window.__toasts.length = 0; });
+      let bOk;
+      if(action==="save"){
+        bOk = await B.evaluate(async()=>{ enterClass("cA"); data.students[0].name="B舊內容修改"; return await saveData(); });
+      }else{
+        await B.evaluate(()=>{ enterClass("cA"); setPage("settings"); });
+        await B.setInputFiles('#importInput', FILE_PATHS.envelope);
+        bOk = (await oldTabOutcome(B)).success;
+      }
+      const bAlerts = B.__dialogs.filter(d=>d.type==="alert").map(d=>d.message);
+      check(`${label}：B 沒有誤報成功`, bOk===false && !(await toasts(B)).some(x=>SUCCESS_RE.test(x)), {bOk, toasts:await toasts(B)});
+      if(action==="import") check(`${label}：B 的匯入提示「匯入未完成」並說明恢復方式`, bAlerts.some(m=>/匯入未完成/.test(m) && /重新載入/.test(m)), bAlerts);
+      const bPanel = await B.evaluate(()=>({text:document.getElementById("cmDataSafetyWarning")?.innerText||"", recover:!!document.querySelector("#cmDataSafetyWarning button.cm-data-safety-recover:not([hidden])")}));
+      check(`${label}：B 顯示停止寫入，A 仍開著時不提供「從本頁資料繼續」`, /尚未確認完成/.test(bPanel.text) && !bPanel.recover, bPanel);
+      const metaMid = await readMeta(B);
+      check(`${label}：預約仍屬於 A，未被 B 取代`, metaMid && metaMid.state==="writing" && metaMid.rev===1 && metaMid.writer===metaHeld.writer, metaMid);
+      // 放行 A
+      await A.evaluate(()=>window.__releaseReserve());
+      const aOk = await A.evaluate(()=>window.__aSave);
+      check(`${label}：A 完成寫入`, aOk===true);
+      const C = await openPage(context, base);
+      const stC = await readStore(C);
+      assertAIntact(stC, label);
+      const metaDone = await readMeta(C);
+      check(`${label}：修訂號未倒退（localStorage 與記錄皆為 A 的修訂號，狀態 done）`, stC.syncRevision===1 && metaDone.rev===1 && metaDone.state==="done", {ls:stC.syncRevision, meta:metaDone});
+      await C.close();
+      // B 重新載入 A 的資料並接續
+      await B.reload();
+      const after = await B.evaluate(async()=>{ await openSyncDb(); enterClass("cA"); const seen={name:data.class.name, s0:data.students[0].name, held:__heldRevision};
+        data.memos.push({id:"memo-22",text:"B在A完成後接續"}); return {seen, ok:await saveData()}; });
+      check(`${label}：A 完成後 B 重新載入讀到 A 的資料並接續儲存`, after.seen.name===A_MARK.name && after.seen.s0===A_MARK.s0 && after.seen.held===1 && after.ok===true, after);
+      const D = await openPage(context, base);
+      const stD = await readStore(D);
+      assertAIntact(stD, `${label}（B 接續後）`);
+      const metaD = await readMeta(D);
+      check(`${label}：最後修訂號接續為 2，且記錄為 done`, stD.syncRevision===2 && metaD.rev===2 && metaD.state==="done" && JSON.stringify(clsOf(stD,"cA").data.memos).includes("B在A完成後接續"), {ls:stD.syncRevision, meta:metaD});
+      await context.close();
+    }
+
+    // [23] v2.100 舊資料遇到「writing」預約、而寫入分頁已關閉且從未寫入：不得永久卡住，依恢復流程繼續，修訂號不重用
+    { const label = "[23] 舊資料遇到已關閉分頁留下的 writing 預約";
+      const context = await browser.newContext({acceptDownloads:true}); await context.addInitScript(INIT, {});
+      const P = await openPage(context, base);
+      await P.evaluate(([k,v])=>localStorage.setItem(k,v),[STORAGE_KEY,JSON.stringify(SEED)]);
+      await P.evaluate(()=>new Promise((res,rej)=>{ const r=indexedDB.open("homeworkTrackerSync",1); r.onupgradeneeded=()=>r.result.createObjectStore("meta");
+        r.onsuccess=()=>{ const tx=r.result.transaction("meta","readwrite"); tx.objectStore("meta").put({rev:1,baseRev:0,state:"writing",writer:"tab-gone",at:"2026-11-09T00:00:00.000Z",contentDigest:"sha256:x"},"homeworkTrackerDataV2");
+          tx.oncomplete=()=>{ r.result.close(); res(); }; tx.onerror=()=>rej(tx.error); }; r.onerror=()=>rej(r.error); }));
+      await P.reload();
+      const first = await P.evaluate(async()=>{ await openSyncDb(); return {held:__heldRevision, panel:document.getElementById("cmDataSafetyWarning")?.innerText||"",
+        recover:!!document.querySelector("#cmDataSafetyWarning button.cm-data-safety-recover:not([hidden])")}; });
+      check(`${label}：首次載入停止寫入、未採用預約修訂號、尚不提供繼續`, first.held===0 && /尚未確認完成/.test(first.panel) && !first.recover, first);
+      await P.reload();
+      const second = await P.evaluate(async()=>{ await openSyncDb(); return {held:__heldRevision, recover:!!document.querySelector("#cmDataSafetyWarning button.cm-data-safety-recover:not([hidden])")}; });
+      check(`${label}：重新載入後才提供「從本頁資料繼續」`, second.held===0 && second.recover, second);
+      P.__policy.confirm = true;
+      await P.evaluate(()=>{ enterClass("cA"); data.students[0].name="舊資料恢復後修改"; });
+      if(await P.locator("#cmDataSafetyWarning button.cm-data-safety-recover").isVisible())
+        await P.locator("#cmDataSafetyWarning button.cm-data-safety-recover").click();
+      else await P.evaluate(async()=>{ await saveData(); }); // 舊版沒有恢復按鈕：觀察一般儲存的結果
+      await P.waitForFunction(()=>!__storageWriteBlocked && !document.getElementById("cmDataSafetyWarning"), null, {timeout:10000}).catch(()=>{});
+      const R = await openPage(context, base);
+      const st = await readStore(R); const meta = await readMeta(R);
+      check(`${label}：確認後以新修訂號（2）寫入，記錄為 done`, clsOf(st,"cA").data.students[0].name==="舊資料恢復後修改" && st.syncRevision===2 && meta.rev===2 && meta.state==="done", {ls:st.syncRevision, meta});
+      await context.close(); }
+
     // [21] 正常升級路徑：只有一位老師開啟 v2.100 舊資料，可直接繼續使用（不需清空或重設）
     { const label = "[21] 單一分頁開啟 v2.100 舊資料";
       const {context,page} = await newContext(browser,base);   // 種子資料沒有 syncRevision

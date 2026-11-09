@@ -47,7 +47,8 @@ let __unfinishedNoticeAtLoad = null;
 try{ __unfinishedNoticeAtLoad = JSON.parse(sessionStorage.getItem(UNFINISHED_NOTICE_KEY)||"null"); }catch(e){}
 let __unfinishedRecovery = null;   // reservation the teacher may explicitly continue past
 // Data written by v2.100 has no syncRevision. A revision recorded in IndexedDB may only be adopted for
-// it when the record's contentDigest matches the content this tab actually loaded; otherwise another
+// it when the record is completed ("done", not another tab's "writing" reservation) and its
+// contentDigest matches the content this tab actually loaded; otherwise another
 // tab may have written newer data between this tab's localStorage read and its IndexedDB read. Then
 // this tab stops writing and asks for a reload. If, after that reload, this tab loads the very same
 // unrevisioned content while the record is unchanged, that content is the latest saved data (for
@@ -330,6 +331,15 @@ async function contentDigest(text){
   return `fnv1a:${h.toString(16)}:${text.length}`;
 }
 async function adoptRevisionForLegacyData(meta){
+  // A "writing" reservation belongs to the tab that made it and may not have reached localStorage
+  // yet: never adopt it (not after a reload, not on a matching notice or digest). Treat it like any
+  // other tab's unfinished reservation: stop writing, explain how to recover. Only a completed ("done")
+  // record can be the revision of content already saved. Records from before reservations existed
+  // have no state and were written in one step, so they count as completed.
+  if(meta.state==="writing"){
+    await handleUnfinishedReservation(meta);
+    return false;
+  }
   const rev=Number(meta.rev)||0;
   const loadedDigest=await contentDigest(__knownStoreContent);
   const notice={rev, at:meta.at||null, digest:loadedDigest};
