@@ -1,4 +1,4 @@
-const APP_VERSION = "2.101";
+const APP_VERSION = "2.102";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -4550,7 +4550,7 @@ function renderGradeRegister(items){
   list.innerHTML=items.length?items.map(item=>{const st=gradeStats(item),total=data.students.length;return `<div class="item-card grade-item-card clickable" onclick="openGradeItem('${item.id}')">
     <div class="item-main"><div class="item-title"><span class="grade-subject-badge">${escapeHtml(gradeSubjectName(item.subjectId||""))}</span>${escapeHtml(item.title)} ${gradeTermBadge(item)}</div>
       <div class="item-sub">${formatDate(item.date)}｜滿分 ${formatGradeNumber(item.maxScore)}｜已登記 ${st.count} / ${total}</div></div>
-    <div class="grade-item-stats"><span>平均 <b>${formatGradeNumber(st.avg)}</b></span><span>最高 <b>${formatGradeNumber(st.max)}</b></span><span>最低 <b>${formatGradeNumber(st.min)}</b></span></div>
+    <div class="grade-item-stats"><span>平均 <b>${formatGradeNumber(st.avg)}</b></span><span>最高 <b>${formatGradeNumber(st.max)}</b></span><span>最低 <b>${formatGradeNumber(st.min)}</b></span>${gradeBandButtonHtml(item,"register")}</div>
   </div>`}).join(""):`<div class="empty">這個科目目前沒有成績項目。</div>`;
 }
 function renderGradeOverview(items){
@@ -4564,9 +4564,194 @@ function renderGradeOverview(items){
     const selection=gradeTermsEnabled()&&gradeOverviewTerm!=="all"?GRADE_TERM_LABELS[gradeOverviewTerm]:"此科目";
     box.innerHTML=`<div class="empty">${selection}目前沒有可顯示的成績項目。${gradeTermsEnabled()?"可在「期中／期末設定」指定評量項目。":""}</div>`;return;
   }
-  box.innerHTML=`<div class="grade-overview-scroll"><table class="grade-overview-table"><thead><tr><th class="grade-sticky-name">座號／姓名</th>${items.map(i=>`<th><span>${escapeHtml(i.title)}</span><small>${escapeHtml(gradeSubjectName(i.subjectId||""))}<br>${formatGradeNumber(i.maxScore)} 分</small></th>`).join("")}<th>平均<small>百分制</small></th></tr></thead>
+  box.innerHTML=`<div class="grade-overview-scroll"><table class="grade-overview-table"><thead><tr><th class="grade-sticky-name">座號／姓名</th>${items.map(i=>`<th><span>${escapeHtml(i.title)}</span><small>${escapeHtml(gradeSubjectName(i.subjectId||""))}<br>${formatGradeNumber(i.maxScore)} 分</small>${gradeBandButtonHtml(i,"overview")}</th>`).join("")}<th>平均<small>百分制</small></th></tr></thead>
     <tbody>${students.map(s=>`<tr><th class="grade-sticky-name">${String(s.number).padStart(2,"0")} ${escapeHtml(s.name)}</th>${items.map(i=>{const v=i.scores?.[s.id];return `<td>${v===null||v===undefined||v===""?"—":formatGradeNumber(v)}</td>`}).join("")}<td class="grade-average-cell">${formatGradeNumber(gradeStudentAverage(s.id,items))}</td></tr>`).join("")}</tbody></table></div>`;
 }
+// v2.102 — 個別評量成績級距（唯讀）。
+// 只讀取 data.gradeItems / data.students 計算顯示用的統計：不呼叫 saveData()/persistStoreSafely()，
+// 不改寫原始分數、不更新修訂號，也不觸發資料遷移。
+const GRADE_BANDS=[
+  {key:"b90",label:"90分以上",min:90},
+  {key:"b80",label:"80分至未滿90分",min:80},
+  {key:"b70",label:"70分至未滿80分",min:70},
+  {key:"b60",label:"60分至未滿70分",min:60},
+  {key:"b0",label:"未滿60分",min:-Infinity}
+];
+const GRADE_NUMERIC_TEXT=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+// 將原始值解析為 {kind:"empty"|"valid"|"invalid", value, reason}。不四捨五入、不把異常值當 0。
+function parseGradeRawValue(raw){
+  if(raw===null||raw===undefined)return {kind:"empty"};
+  if(typeof raw==="string"){
+    const text=raw.trim();
+    if(text==="")return {kind:"empty"};
+    if(!GRADE_NUMERIC_TEXT.test(text))return {kind:"invalid",reason:"nonNumeric"};
+    const n=Number(text);
+    if(!Number.isFinite(n))return {kind:"invalid",reason:"nonFinite"};
+    if(n<0||/^-/.test(text)&&gradeDecimalOf(text).digits>0n)return {kind:"invalid",reason:"negative"};
+    // 數字字串以原字串的十進位值判斷級距（不先經 Number() 捨入）。
+    return {kind:"valid",value:n,text};
+  }
+  if(typeof raw!=="number")return {kind:"invalid",reason:"wrongType"};
+  if(!Number.isFinite(raw))return {kind:"invalid",reason:"nonFinite"};
+  if(raw<0)return {kind:"invalid",reason:"negative"};
+  return {kind:"valid",value:raw,text:String(raw)};
+}
+// 滿分：缺漏、非數字、非有限值或 ≤0 都不能換算（不默認為 100）。數字字串與既有程式的 Number(maxScore) 相容。
+function parseGradeMaxScore(raw){
+  if(raw===null||raw===undefined||(typeof raw==="string"&&raw.trim()===""))return {valid:false,reason:"缺漏"};
+  let n=raw,text=null;
+  if(typeof raw==="string"){text=raw.trim();if(!GRADE_NUMERIC_TEXT.test(text))return {valid:false,reason:"不是數字"};n=Number(text);}
+  if(typeof n!=="number")return {valid:false,reason:"不是數字"};
+  if(!Number.isFinite(n))return {valid:false,reason:"不是有限數值"};
+  if(text===null)text=String(n);
+  const d=gradeDecimalOf(text);
+  // 同時要求 Number 值 > 0，與平均、Excel 等既有程式的 Number(maxScore)>0 一致（例如 "1e-999999" 在 JS 中為 0）。
+  if(d.digits===0n||d.negative||!(n>0))return {valid:false,reason:"小於或等於 0"};
+  return {valid:true,value:n,text};
+}
+// 以「原始分數 ÷ 滿分 × 100」判斷級距，不先四捨五入，也不使用浮點容差。
+// 分數與滿分都取「資料中記錄的十進位數值」：字串取原字串；數字取 JS 最短往返表示 String(n)，
+// 這正是 JSON.stringify 存進 localStorage 的文字（例如 89.99999999999999、1e+308、0.7）。
+// 再以 BigInt 精確比較「分數×100 ≥ 門檻×滿分」：先比十進位量級，量級相同才對齊次方，
+// 所以不會因乘法溢位（1e308）或極小值而誤判，也不會把真實低於門檻的差距當成相等。
+// 不直接比較二進位精確值，是因為 0.7、2.8 等十進位輸入的二進位值略小於本身，會被誤降一級。
+function gradeDecimalOf(value){
+  const text=typeof value==="number"?String(value):String(value).trim();
+  const m=/^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(text);
+  if(!m||(m[2]===""&&(m[3]===undefined||m[3]==="")))return {negative:false,digits:0n,exp:0,valid:false};
+  const frac=m[3]||"";
+  const digits=BigInt((m[2]+frac).replace(/^0+(?=\d)/,"")||"0");
+  return {negative:m[1]==="-",digits,exp:Number(m[4]||0)-frac.length,valid:true};
+}
+// a、b 為非負十進位 {digits, exp}；回傳 -1、0、1。
+function gradeDecimalCompare(a,b){
+  if(a.digits===0n||b.digits===0n)return a.digits===b.digits?0:(a.digits===0n?-1:1);
+  const magA=a.digits.toString().length+a.exp,magB=b.digits.toString().length+b.exp;
+  if(magA!==magB)return magA>magB?1:-1;
+  // 量級相同時，兩邊次方差不超過兩數的位數差，對齊所需的 10 的次方很小。
+  let da=a.digits,db=b.digits;
+  if(a.exp>b.exp)da*=10n**BigInt(a.exp-b.exp);else if(b.exp>a.exp)db*=10n**BigInt(b.exp-a.exp);
+  return da===db?0:(da>db?1:-1);
+}
+function gradeDecimalTimes(d,k){return {digits:d.digits*BigInt(k),exp:d.exp};}
+function gradeBandIndex(score,max){
+  const s=gradeDecimalOf(score),m=gradeDecimalOf(max);
+  const lhs=gradeDecimalTimes(s,100);
+  for(let i=0;i<GRADE_BANDS.length-1;i++){
+    if(gradeDecimalCompare(lhs,gradeDecimalTimes(m,GRADE_BANDS[i].min))>=0)return i;
+  }
+  return GRADE_BANDS.length-1;
+}
+const GRADE_INVALID_REASON_LABELS={maxScore:"滿分無效，無法換算",negative:"負分",nonNumeric:"非數字內容",nonFinite:"非有限數值",wrongType:"資料型別不符（布林值、物件等）"};
+function computeGradeBandSummary(item,students){
+  const roster=Array.isArray(students)?students:[];
+  const scores=item&&item.scores&&typeof item.scores==="object"?item.scores:{};
+  const max=parseGradeMaxScore(item?.maxScore);
+  const bands=GRADE_BANDS.map(b=>({key:b.key,label:b.label,count:0}));
+  const invalidReasons={};
+  let valid=0,empty=0,invalid=0,overMax=0;
+  const rosterIds=new Set();
+  for(const s of roster){
+    rosterIds.add(String(s.id));
+    const parsed=parseGradeRawValue(Object.prototype.hasOwnProperty.call(scores,s.id)?scores[s.id]:undefined);
+    if(parsed.kind==="empty"){empty++;continue;}
+    if(parsed.kind==="invalid"){invalid++;invalidReasons[parsed.reason]=(invalidReasons[parsed.reason]||0)+1;continue;}
+    if(!max.valid){invalid++;invalidReasons.maxScore=(invalidReasons.maxScore||0)+1;continue;}
+    valid++;
+    if(gradeDecimalCompare(gradeDecimalOf(parsed.text),gradeDecimalOf(max.text))>0)overMax++;
+    bands[gradeBandIndex(parsed.text,max.text)].count++;
+  }
+  const outsideRoster=Object.keys(scores).filter(id=>!rosterIds.has(String(id))&&parseGradeRawValue(scores[id]).kind!=="empty").length;
+  bands.forEach(b=>{b.percent=valid>0?b.count/valid*100:null;});
+  return {total:roster.length,valid,empty,invalid,overMax,outsideRoster,invalidReasons,max,bands};
+}
+function formatGradeBandPercent(p){return p===null||!Number.isFinite(p)?"—":`${p.toFixed(1)}%`}
+function gradeBandButtonHtml(item,source){
+  const label=`查看「${String(item?.title??"")}」的成績級距`;
+  return `<button type="button" class="grade-band-btn" data-grade-band="${escapeAttr(String(item?.id??""))}" data-grade-band-source="${source}" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}" onclick="openGradeBandsFromButton(event,this)">級距</button>`;
+}
+var __gradeBandModal=null; // {opener, itemId, source} while the grade-band view is open (var: no TDZ for shared modal helpers)
+function openGradeBandsFromButton(event,button){
+  // 按鈕位於可點擊的成績登記卡片內：阻止事件冒泡，避免同時開啟成績編輯。
+  event?.stopPropagation?.();event?.preventDefault?.();
+  openGradeBands(button?.dataset?.gradeBand,button);
+}
+function openGradeBands(itemId,opener){
+  const item=(data.gradeItems||[]).find(g=>String(g.id)===String(itemId));
+  if(!item){toast("找不到這個評量項目");return;}
+  const r=computeGradeBandSummary(item,data.students);
+  const maxText=r.max.valid?formatGradeNumber(r.max.value):`無效（${r.max.reason}）`;
+  const reasonRows=Object.entries(r.invalidReasons).map(([k,n])=>`<li>${escapeHtml(GRADE_INVALID_REASON_LABELS[k]||k)}：${n} 人</li>`).join("");
+  const peak=Math.max(0,...r.bands.map(b=>b.count));
+  const notes=[];
+  if(!r.max.valid)notes.push(`<p class="grade-band-alert" role="note">此評量的滿分設定${escapeHtml(r.max.reason)}，無法換算百分制。已登記的分數列為異常（不會默認以 100 分換算）；未登記仍列為未登記。</p>`);
+  if(r.overMax>0)notes.push(`<p class="grade-band-note" role="note">有 ${r.overMax} 筆分數超過滿分，已計入「90分以上」。</p>`);
+  if(r.outsideRoster>0)notes.push(`<p class="grade-band-note" role="note">另有 ${r.outsideRoster} 筆不在目前學生名單中的分數紀錄，未計入統計（資料仍保留，未刪除）。</p>`);
+  if(r.total===0)notes.push(`<p class="grade-band-note" role="note">目前班級沒有學生名單。</p>`);
+  const body=`<div class="grade-band-view">
+    <div class="grade-band-scroll" tabindex="0" role="region" aria-label="級距統計內容">
+      <div class="grade-band-head">
+        <p class="grade-band-title">${escapeHtml(item.title)}</p>
+        <p class="grade-band-meta"><span>科目：${escapeHtml(gradeSubjectName(item.subjectId||""))}</span><span>原始滿分：${escapeHtml(maxText)}</span>${gradeTermsEnabled()?`<span>區段：${escapeHtml(GRADE_TERM_LABELS[gradeTermOf(item)])}</span>`:""}</p>
+      </div>
+      <dl class="grade-band-counts">
+        <div><dt>全班人數</dt><dd>${r.total}</dd></div>
+        <div><dt>有效登記</dt><dd>${r.valid}</dd></div>
+        <div><dt>未登記</dt><dd>${r.empty}</dd></div>
+        <div class="${r.invalid?"has-invalid":""}"><dt>異常</dt><dd>${r.invalid}</dd></div>
+      </dl>
+      ${notes.join("")}
+      ${reasonRows?`<div class="grade-band-reasons"><strong>異常原因</strong><ul>${reasonRows}</ul></div>`:""}
+      <table class="grade-band-table">
+        <caption class="grade-band-caption">各級距人數與占比（占比分母：有效登記 ${r.valid} 人）</caption>
+        <thead><tr><th scope="col">級距（百分制）</th><th scope="col">人數</th><th scope="col">占比</th></tr></thead>
+        <tbody>${r.bands.map(b=>`<tr><th scope="row">${escapeHtml(b.label)}</th><td>${b.count}</td><td><span class="grade-band-pctcell"><span class="grade-band-bar" aria-hidden="true"><span style="width:${peak>0?(b.count/peak*100).toFixed(1):0}%"></span></span><span class="grade-band-percent">${formatGradeBandPercent(b.percent)}</span></span></td></tr>`).join("")}</tbody>
+      </table>
+      <details class="grade-band-rules" open>
+        <summary>計算規則</summary>
+        <ul>
+          <li>以「原始分數 ÷ 滿分 × 100」換算百分制後分級，分級前不四捨五入（例如 89.99 屬於「80分至未滿90分」）。只用於顯示與統計，不改寫原始分數。</li>
+          <li>只統計目前班級名單中的學生；已不在名單中的分數紀錄不計入，也不刪除。</li>
+          <li>空白或未填為「未登記」；已登記的 0 分是有效分數，歸入「未滿60分」。</li>
+          <li>負分、非數字、非有限數值或型別不符列為「異常」，不當成 0 分；滿分無效時，已登記的分數也列為異常。</li>
+          <li>超過滿分的分數計入「90分以上」，並另外標示筆數。</li>
+          <li>占比以有效登記人數為分母，顯示至小數一位；有效登記為 0 時顯示「—」。</li>
+        </ul>
+      </details>
+    </div>
+    <div class="modal-actions grade-band-actions"><button type="button" class="primary" id="gradeBandCloseBtn" onclick="closeModal()">關閉</button></div>
+  </div>`;
+  showModal("成績級距",body);
+  const dialog=document.querySelector("#modalBackdrop .modal");
+  dialog?.setAttribute("aria-labelledby","modalTitle");
+  __gradeBandModal={opener:opener||null,itemId:String(item.id),source:opener?.dataset?.gradeBandSource||""};
+  document.getElementById("gradeBandCloseBtn")?.focus();
+}
+// 關閉後把焦點還給原按鈕；若畫面已重繪，改找同一評量、同一入口的按鈕。
+function restoreGradeBandFocus(state){
+  if(!state)return;
+  let target=state.opener&&state.opener.isConnected?state.opener:null;
+  if(!target){
+    target=[...document.querySelectorAll("button[data-grade-band]")].find(b=>b.dataset.gradeBand===state.itemId&&b.dataset.gradeBandSource===state.source)||null;
+  }
+  if(target&&typeof target.focus==="function")target.focus();
+}
+function gradeBandModalOpen(){
+  return Boolean(__gradeBandModal)&&!document.getElementById("modalBackdrop")?.classList.contains("hidden")&&Boolean(document.querySelector("#modalBody .grade-band-view"));
+}
+document.addEventListener("keydown",event=>{
+  if(!gradeBandModalOpen())return;
+  if(event.key==="Escape"){event.preventDefault();closeModal();return;}
+  if(event.key!=="Tab")return;
+  // 焦點只在級距視窗內循環：× → 內容捲動區 → 規則摘要 → 關閉 → ×。
+  const dialog=document.querySelector("#modalBackdrop .modal");
+  const focusable=[...dialog.querySelectorAll('button,[href],summary,[tabindex]:not([tabindex="-1"])')].filter(el=>!el.disabled&&el.offsetParent!==null);
+  if(!focusable.length)return;
+  const first=focusable[0],last=focusable[focusable.length-1];
+  if(!dialog.contains(document.activeElement)){event.preventDefault();first.focus();return;}
+  if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+  else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+});
 // 區段設定集中管理所有成績項目：每列三選一，資料模型單值，無法同時計入兩區。
 function openGradeTermSettings(){
   const items=[...(data.gradeItems||[])].sort((a,b)=>(a.date||"").localeCompare(b.date||"")||String(a.title||"").localeCompare(String(b.title||""),"zh-Hant",{numeric:true}));
@@ -5046,11 +5231,24 @@ function showModal(title, bodyHtml){
   document.getElementById("modalBody").innerHTML = bodyHtml;
   // Keep assignment-only layout scoped to this modal, without :has() or override chains.
   document.querySelector("#modalBackdrop .modal")?.classList.toggle("assignment-detail-modal", bodyHtml.includes('class="assignment-modal-top"'));
+  // v2.102: grade-band view only; any other modal content clears its state and dialog label.
+  const isGradeBand=bodyHtml.includes('class="grade-band-view"');
+  document.querySelector("#modalBackdrop .modal")?.classList.toggle("grade-band-modal", isGradeBand);
+  if(!isGradeBand&&typeof __gradeBandModal!=="undefined"&&__gradeBandModal){
+    __gradeBandModal=null;
+    document.querySelector("#modalBackdrop .modal")?.removeAttribute("aria-labelledby");
+  }
   document.getElementById("modalBackdrop").classList.remove("hidden");
 }
 
 function hideModal(){
   document.getElementById("modalBackdrop").classList.add("hidden");
+  // v2.102: closing the grade-band view returns focus to the button that opened it.
+  if(typeof __gradeBandModal!=="undefined"&&__gradeBandModal){
+    const state=__gradeBandModal;__gradeBandModal=null;
+    document.querySelector("#modalBackdrop .modal")?.removeAttribute("aria-labelledby");
+    restoreGradeBandFocus(state);
+  }
 }
 function closeModal(){
   if(assignmentModalOpenFromStudent && assignmentReturnStudentId && currentPage==="students"){
