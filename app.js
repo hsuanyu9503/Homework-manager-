@@ -4482,10 +4482,29 @@ function gradeExcelBuildSheets(mode){
   sheets.push({name:"逐筆分數",title:`${data.class.name||"班級"}｜逐筆成績紀錄`,subtitle:"每位學生 × 每項評量；未登記保留空白，便於 Excel 篩選及樞紐分析",headers:["座號","姓名","科目","評量名稱","日期","滿分","分數","換算百分制","區段歸屬"],rows:raw});
   return sheets;
 }
+// v2.103: Excel rejects (and offers to "repair") any formula longer than 8,192 characters.
+// The average formula grows with the number of assessments, the length of each max score and the
+// student's row number, so every formula is measured as it will be written; nothing is truncated,
+// dropped or replaced by a fixed value — the export stops instead.
+const GRADE_EXCEL_FORMULA_LIMIT=8192;
+function gradeExcelLongestFormula(sheets){
+  let longest=null;
+  sheets.forEach(sheet=>(sheet.rows||[]).forEach((row,r)=>row.forEach((value,c)=>{
+    if(!value||typeof value!=="object"||typeof value.formula!=="string")return;
+    const length=value.formula.length;
+    if(!longest||length>longest.length)longest={length,sheet:sheet.name,cell:`${gradeExcelColumn(c)}${r+5}`,label:`${row[0]??""} ${row[1]??""}`.trim()};
+  })));
+  return longest;
+}
+function gradeExcelFormulaLimitMessage(longest,mode){
+  return `無法匯出 Excel：「${longest.sheet}」工作表 ${longest.cell}（${longest.label}）的平均公式有 ${longest.length.toLocaleString("en-US")} 字元，超過 Excel 單一公式 ${GRADE_EXCEL_FORMULA_LIMIT.toLocaleString("en-US")} 字元的上限。為避免 Excel 開啟時出現修復提示，本次沒有下載任何檔案，班級資料也沒有變更。\n\n請在成績頁改用「科目」篩選，或在成績總覽切換「期中／期末」區段縮小範圍，再按「下載目前畫面 Excel」分批匯出。${mode==="current"?"\n\n目前畫面的範圍仍然太大，請再縮小範圍。":""}`;
+}
 function exportGradeExcel(mode="all"){
   try{
     if(!activeClassId)throw new Error("請先進入班級再匯出成績。");
     const sheets=gradeExcelBuildSheets(mode);
+    const longest=gradeExcelLongestFormula(sheets);
+    if(longest&&longest.length>GRADE_EXCEL_FORMULA_LIMIT){alert(gradeExcelFormulaLimitMessage(longest,mode));return;}
     const blob=gradeExcelWorkbook(sheets);
     const filename=`${String(data.class.name||"班級").replace(/[\\/:*?"<>|\u0000-\u001f]/g,"_").slice(0,40)}_成績_${mode==="current"?"目前畫面_":""}${localDateString()}.xlsx`;
     const url=URL.createObjectURL(blob),a=document.createElement("a");

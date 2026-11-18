@@ -176,5 +176,5 @@
 - 成績 Excel（.xlsx）的工作表節點順序改為結構描述規定的「sheetData → autoFilter → mergeCells → pageMargins」。v2.102 以前把合併儲存格寫在篩選之前，Microsoft Excel 會提示檔案有問題並要求修復；Open XML SDK 驗證也判定為無效。
 - 活頁簿新增每張工作表的隱藏名稱 `_xlnm._FilterDatabase`（與 Excel、LibreOffice 存檔時相同），範圍與該工作表的篩選一致。缺少這個名稱時，LibreOffice 不會套用篩選。
 - 篩選、合併標題、凍結窗格、樣式、原始分數與平均公式都保留；匯出仍為唯讀，不修改班級資料。成績級距、資料防覆寫、IndexedDB 修訂號協調、備份匯入與舊資料相容性均未變更。
-- 已知限制（v2.102 起即存在，未在本次修改）：單一總覽工作表的平均公式長度隨評量數增加，超過約 108 項評量時會超過 Excel 單一公式 8192 字元的上限。
+- 平均公式長度保護：平均公式的長度會隨評量數、各評量滿分的位數與學生所在列號增加。匯出前會實際計算每個公式的字數，任一公式超過 Excel 單一公式 8,192 字元的上限時，停止下載並提示改用「科目」篩選或「期中／期末」區段，以「下載目前畫面 Excel」分批匯出。不會截斷公式、刪除評量或改成固定的平均值；以滿分 100 為例，約 108 項評量以上會觸發。
 - 開發用測試：`tests/xlsx-structure.test.js`（Open XML SDK 驗證與結構檢查，需 .NET SDK 或 `XLSX_VALIDATOR`）、`tests/xlsx-recalc-libreoffice.py`（LibreOffice 代理測試，不等同 Excel 實機驗收）。網站不載入測試程式或測試資料。

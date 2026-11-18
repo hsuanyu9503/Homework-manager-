@@ -298,14 +298,92 @@ async function run(){
       }
       check(`${L}：最長公式 ${ov.maxFormula} 字元（Excel 上限 8192）`, ov.maxFormula<=8192);
     }
-    /* [C] 已知限制（v2.102 起即存在，本次未修改）：平均公式長度隨評量數增加，Excel 單一公式上限 8192 字元。
-           這裡只記錄實際上限並提出警告，不作為通過條件；若之後修正公式寫法，請把下限改為新的保證值。 */
-    { const ctx = await browser.newContext(); const p = await ctx.newPage(); await p.goto(base);
-      const r = await p.evaluate(()=>{ const limit=max=>{ for(let n=1;n<400;n++){ const items=Array.from({length:n},(_,i)=>({id:"x"+i,subjectId:"",title:"t"+i,date:"2026-01-01",maxScore:max,scores:{a:1}})); data={...defaultData(),students:[{id:"a",number:1,name:"甲",tags:[]}],gradeItems:items}; const sh=gradeExcelOverviewSheet("全部成績",items,data.students,"x"); if(sh.rows[0][sh.rows[0].length-1].formula.length>8192) return n-1; } return 400; };
-        return {max100:limit(100), max20:limit(20), max7_5:limit(7.5)}; });
-      console.log(`WARN  [C] 已知限制：單一總覽工作表的平均公式在超過約 ${Math.min(r.max100,r.max20,r.max7_5)} 項評量時會超過 Excel 8192 字元上限（滿分 100：${r.max100} 項、滿分 20：${r.max20} 項、滿分 7.5：${r.max7_5} 項）`);
-      check("[C] 平均公式長度上限已量測（本次修正未縮短上限：至少 108 項）", Math.min(r.max100,r.max20,r.max7_5)>=108, r);
-      await ctx.close(); }
+    /* [C] 平均公式長度保護：任一公式超過 Excel 8,192 字元時停止下載並提示分批匯出。
+           是否超限一律以「實際寫出的公式字數」判定：評量數、滿分位數與學生列號都會改變長度，不用固定評量數判斷。
+           預測字數只用既有的 gradeExcelBuildSheets()/gradeExcelOverviewSheet() 產生公式後由測試自行量測，不依賴新加入的檢查函式。 */
+    const LIMIT = 8192;
+    const limitSeed = (n, max, studentCount, twoSubjects=false)=>{
+      const students = Array.from({length:studentCount},(_,i)=>({id:`L-s${i+1}`,number:i+1,name:`虛構學生${i+1}`,tags:[]}));
+      const items = Array.from({length:n},(_,i)=>({id:`L${i}`,subjectId:twoSubjects&&i%2?"sub-b":"sub-a",title:`虛構評量${i+1}`,date:"2026-09-01",
+        createdAt:new Date(Date.UTC(2026,8,1,0,0,i)).toISOString(),maxScore:max,gradeTerm:i%2?"final":"midterm",scores:{"L-s1":max/2,"L-s2":0}}));
+      return {version:2,classes:[{id:"cLimit",name:"虛構公式上限班",createdAt:"2026-01-01T00:00:00.000Z",data:{class:{name:"虛構公式上限班"},students,assignments:[],records:[],
+        subjects:[{id:"sub-a",name:"虛構科目甲"},{id:"sub-b",name:"虛構科目乙"}],gradeItems:items,scores:{},settings:{gradeTermsEnabled:true}}}]};
+    };
+    const measurePage = await (await browser.newContext()).newPage(); await measurePage.goto(base);
+    // 完整匯出時所有工作表中最長公式的字數（使用既有函式產生公式，再由測試量測）
+    const longestFull = seed=>measurePage.evaluate(s=>{ data = s.classes[0].data; let m = 0;
+      for(const sh of gradeExcelBuildSheets("all")) for(const row of sh.rows) for(const v of row) if(v && typeof v==="object" && typeof v.formula==="string") m = Math.max(m, v.formula.length);
+      return m; }, seed);
+    // 只量總覽表（快速，用於搜尋邊界）
+    const longestOverview = (n,max,studentCount)=>measurePage.evaluate(([n,max,k])=>{ const items=Array.from({length:n},(_,i)=>({id:"q"+i,subjectId:"",title:"t",date:"2026-01-01",maxScore:max,scores:{}}));
+      const st=Array.from({length:k},(_,i)=>({id:"p"+i,number:i+1,name:"x",tags:[]})); data={...defaultData(),students:st,gradeItems:items};
+      const sh=gradeExcelOverviewSheet("全部成績",items,st,"x"); return Math.max(...sh.rows.map(r=>r[r.length-1].formula.length)); }, [n,max,studentCount]);
+    async function exportUI(seed, mode, opts={}){
+      const ctx = await browser.newContext({acceptDownloads:true}); const p = await ctx.newPage(); const alerts = [], errs = [];
+      p.on("dialog", d=>{ alerts.push(d.message()); d.accept(); }); p.on("pageerror", e=>errs.push(e.message));
+      await p.goto(base); await p.evaluate(s=>{ localStorage.clear(); localStorage.setItem("homeworkTrackerDataV2", s); }, JSON.stringify(seed)); await p.reload();
+      await p.evaluate(()=>{ enterClass("cLimit"); setPage("gradebook"); }); await p.evaluate(async()=>{ try{ await __commitTail; }catch(e){} });
+      if(opts.subject) await p.selectOption("#gradeSubjectFilter", opts.subject);
+      if(opts.term) await p.locator(`[data-grade-term-view="${opts.term}"]`).click();
+      const before = await p.evaluate(()=>({ls:localStorage.getItem("homeworkTrackerDataV2"), mem:JSON.stringify(store)}));
+      await p.locator("#exportGradeExcelBtn").click();
+      const dlPromise = p.waitForEvent("download", {timeout:6000}).catch(()=>null);
+      await p.locator(mode==="all"?'button:has-text("下載完整 Excel")':'button:has-text("下載目前畫面 Excel")').click();
+      const dl = await dlPromise; let file = null;
+      if(dl){ file = path.join(OUT, `${opts.save||"limit-"+Date.now()}.xlsx`); await dl.saveAs(file); }
+      await p.evaluate(async()=>{ try{ await __commitTail; }catch(e){} });
+      const after = await p.evaluate(()=>({ls:localStorage.getItem("homeworkTrackerDataV2"), mem:JSON.stringify(store), modalOpen:!document.getElementById("modalBackdrop").classList.contains("hidden"), toast:document.getElementById("toast").textContent}));
+      await ctx.close();
+      return {downloaded:!!dl, file, alerts, errs, unchanged:before.ls===after.ls && before.mem===after.mem, modalOpen:after.modalOpen, toast:after.toast};
+    }
+    const fileLongest = async file=>{ const r = await inspect(file); return {r, longest:Math.max(...r.info.sheetNames.map(n=>r.info[n].maxFormula))}; };
+    const blockedOk = (x, length)=>!x.downloaded && x.alerts.length===1 && x.alerts[0].includes(`${length.toLocaleString("en-US")} 字元`) && x.alerts[0].includes("8,192")
+      && /科目/.test(x.alerts[0]) && /期中／期末/.test(x.alerts[0]) && /分批匯出/.test(x.alerts[0]) && /沒有下載任何檔案/.test(x.alerts[0]) && x.unchanged && x.errs.length===0 && !/已產生/.test(x.toast);
+    const validOk = file=>validator ? runValidator(validator, file).ok : true;
+    // C1／C2：滿分 100、6 位學生；找出不超限的最大評量數與下一個
+    { let n = 80; while((await longestOverview(n+1,100,6))<=LIMIT) n++;
+      const okSeed = limitSeed(n,100,6), badSeed = limitSeed(n+1,100,6);
+      const okLen = await longestFull(okSeed), badLen = await longestFull(badSeed);
+      console.log(`INFO  [C] 滿分 100、6 位學生：${n} 項評量 → 最長公式 ${okLen} 字元；${n+1} 項 → ${badLen} 字元`);
+      const ok = await exportUI(okSeed, "all", {save:`09-公式接近上限-${okLen}字元-${n}項`});
+      const f = ok.file ? await fileLongest(ok.file) : null;
+      check(`[C] 限制內（${n} 項、最長 ${okLen} 字元）：正常下載，Open XML SDK 驗證通過，結構檢查無誤`, ok.downloaded && ok.alerts.length===0 && ok.unchanged && validOk(ok.file) && f && f.r.order.length===0 && f.r.formulas.length===0, {ok, issues:f&&[f.r.order,f.r.formulas]});
+      check(`[C] 限制內：檔案中實際最長公式 ${f?.longest} 字元，等於預測且不超過 8,192`, f && f.longest===okLen && okLen<=LIMIT && okLen>LIMIT-200, {file:f?.longest, okLen});
+      const bad = await exportUI(badSeed, "all");
+      check(`[C] 超限（${n+1} 項、${badLen} 字元）：不下載，提示實際字數、上限與分批方式，班級資料不變`, badLen>LIMIT && blockedOk(bad, badLen), bad);
+      check("[C] 超限時匯出視窗保留，可直接改選「目前畫面」", bad.modalOpen);
+      // ChatGPT 重現案例：110 項滿分 100（5 位學生，第 5～9 列，公式 8,287 字元）
+      const r110 = limitSeed(110,100,5), len110 = await longestFull(r110);
+      const x110 = await exportUI(r110, "all");
+      check(`[C] 重現案例：110 項滿分 100 的平均公式為 8,287 字元，不下載並提示`, len110===8287 && blockedOk(x110, 8287), {len110, alerts:x110.alerts});
+      // C5：分批：同樣超限的資料分成兩個科目，改用「目前畫面」單一科目可正常下載
+      const split = limitSeed(n+1,100,6,true), splitLen = await longestFull(split);
+      const full = await exportUI(split, "all");
+      const part = await exportUI(split, "current", {subject:"sub-a", save:"10-分批匯出-單一科目"});
+      const pf = part.file ? await fileLongest(part.file) : null;
+      check(`[C] 分批：完整匯出（${splitLen} 字元）被擋下，改用科目篩選的目前畫面可正常下載且有效`, splitLen>LIMIT && blockedOk(full, splitLen) && part.downloaded && part.alerts.length===0 && validOk(part.file) && pf && pf.longest<=LIMIT, {full:full.alerts, part:{downloaded:part.downloaded, alerts:part.alerts, longest:pf?.longest}});
+      const termPart = await exportUI(split, "current", {term:"midterm", save:"11-分批匯出-期中區段"});
+      check("[C] 分批：改用「期中」區段的目前畫面也可正常下載且有效", termPart.downloaded && termPart.alerts.length===0 && validOk(termPart.file), termPart.alerts);
+      const curBad = await exportUI(badSeed, "current");
+      check("[C] 目前畫面仍超限時同樣不下載，並提示再縮小範圍", blockedOk(curBad, badLen) && /再縮小範圍/.test(curBad.alerts[0]||""), curBad.alerts);
+    }
+    // C3：同樣評量數，滿分位數不同（1 與 12.5）造成一個可匯出、一個超限
+    { let n = 80; while(!((await longestOverview(n,1,6))<=LIMIT && (await longestOverview(n,12.5,6))>LIMIT) && n<200) n++;
+      const a = limitSeed(n,1,6), b = limitSeed(n,12.5,6), la = await longestFull(a), lb = await longestFull(b);
+      console.log(`INFO  [C] ${n} 項評量、6 位學生：滿分 1 → ${la} 字元；滿分 12.5 → ${lb} 字元`);
+      const xa = await exportUI(a, "all", {save:`12-滿分1-${n}項-${la}字元`}), xb = await exportUI(b, "all");
+      check(`[C] 滿分位數差異：${n} 項、滿分 1（${la} 字元）可下載且有效；滿分 12.5（${lb} 字元）不下載並提示`, la<=LIMIT && lb>LIMIT && xa.downloaded && xa.alerts.length===0 && validOk(xa.file) && blockedOk(xb, lb), {la, lb, xa:xa.alerts, xb:xb.alerts});
+    }
+    // C4：同樣評量數，學生列號位數不同（5 位學生 vs 996 位學生，最後一列為第 1000 列）
+    { let n = 80; while(!((await longestOverview(n,100,5))<=LIMIT && (await longestOverview(n,100,996))>LIMIT) && n<200) n++;
+      const a = limitSeed(n,100,5), b = limitSeed(n,100,996), la = await longestFull(a), lb = await longestFull(b);
+      console.log(`INFO  [C] ${n} 項評量、滿分 100：5 位學生 → ${la} 字元；996 位學生 → ${lb} 字元`);
+      const xa = await exportUI(a, "all", {save:`13-學生5位-${n}項-${la}字元`}), xb = await exportUI(b, "all");
+      const cellRow = Number(((xb.alerts[0]||"").match(/工作表 [A-Z]+(\d+)（/)||[])[1]);
+      check(`[C] 學生列號差異：${n} 項、5 位學生（${la} 字元）可下載且有效；996 位學生（${lb} 字元）不下載並提示`, la<=LIMIT && lb>LIMIT && xa.downloaded && xa.alerts.length===0 && validOk(xa.file) && blockedOk(xb, lb), {la, lb, xa:xa.alerts, xb:xb.alerts});
+      check(`[C] 學生列號差異：提示指出最長公式所在的後段列（第 ${cellRow} 列，列號 4 位數）`, cellRow>=1000, xb.alerts[0]);
+    }
+    await measurePage.context().close();
   }finally{ await browser.close(); server.close(); }
   const failed = results.filter(r=>!r.ok);
   console.log(`\nXLSX：${OUT}`);
