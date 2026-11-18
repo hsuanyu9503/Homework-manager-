@@ -538,9 +538,9 @@ async function run(){
         "contentDigest","adoptRevisionForLegacyData","readSyncMeta","openSyncDb","commitStoreWithoutCoordination","syncMetaTransaction","isWriterTabClosed","commitStoreOnce","sameReservation",
         "handleUnfinishedReservation","continueFromThisPageAfterUnfinishedWrite","persistStoreSafely","isCrossTabCoordinationAvailable","saveData","commitClassImport","classImportFailureMessage",
         "isMultiClassRescueFile","classImportConfirmMessage","finishClassImport","exportClassBackup","isClassBackupData","importClassBackup","exportBackup","importBackup","persistActiveClass","enterClass","leaveClass",
-        // v2.103 刻意修改 gradeExcelSheetXml（節點順序）與 gradeExcelWorkbook（_xlnm._FilterDatabase），不列入原文比對；
-        // 其結構正確性由 tests/xlsx-structure.test.js 驗證。
-        "exportGradeExcel","gradeExcelBuildSheets","gradeExcelOverviewSheet","gradeExcelCell","gradeExcelXmlText","gradeExcelZip","gradeExcelStylesXml","gradeStats","gradeValues","gradeStudentAverage","openGradeItem","saveGradeEntries","closeModal"];
+        // v2.103 刻意修改 gradeExcelSheetXml（節點順序）、gradeExcelWorkbook（_xlnm._FilterDatabase）與
+        // exportGradeExcel（公式長度保護），不列入原文比對；其行為由 tests/xlsx-structure.test.js 驗證。
+        "gradeExcelBuildSheets","gradeExcelOverviewSheet","gradeExcelCell","gradeExcelXmlText","gradeExcelZip","gradeExcelStylesXml","gradeStats","gradeValues","gradeStudentAverage","openGradeItem","saveGradeEntries","closeModal"];
       const changed = SAFETY.filter(n=>{ const a=fnSrc(oldJs,n), b=fnSrc(newJs,n); return a===null || b===null || a!==b; });
       check(`[9] ${SAFETY.length} 個資料安全／匯入／Excel 資料／成績編輯函式原文與基準版（V2101_DIR）完全相同`, changed.length===0, changed);
       const consts = ["STORAGE_KEY","LEGACY_STORAGE_KEY","SYNC_DB_NAME","SYNC_STORE_NAME","SYNC_DB_OPEN_LIMIT_MS","TAB_LOCK_PREFIX","UNFINISHED_NOTICE_KEY","LEGACY_NOTICE_KEY"];
