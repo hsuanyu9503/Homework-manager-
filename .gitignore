@@ -1,2 +1,6 @@
 # 測試相依套件（由 tests/package-lock.json 安裝），不納入版本控制
 tests/node_modules/
+# Open XML SDK 驗證工具的建置輸出
+tests/xlsx-validator/bin/
+tests/xlsx-validator/obj/
+tests/xlsx-validator/out/

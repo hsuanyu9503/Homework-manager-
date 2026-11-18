@@ -1,4 +1,4 @@
-# Classroom Manager v2.102
+# Classroom Manager v2.103
 
 部署：將 index.html、style.css、app.js 上傳至 GitHub Pages。資料保存在瀏覽器 localStorage，請定期匯出備份。
 
@@ -171,3 +171,10 @@
 - 操作：支援滑鼠、觸控與鍵盤；Escape 或「關閉」可關閉，關閉後焦點回到原按鈕；視窗內 Tab 焦點循環；長名稱換行、內容過長可捲動。Escape 與焦點返回只作用於級距視窗，其他共用視窗的行為不變。
 - v2.101 的備份匯入、localStorage 防覆寫、IndexedDB 修訂號協調、兩階段寫入、未完成寫入保護、舊資料修訂號認領與降級處理、儲存鍵、備份格式與 Excel 匯出均未變更。
 - 回歸測試另行提供（`tests/grade-bands.test.js`，需 Playwright），網站不會載入測試程式或測試資料。
+
+## v2.103｜修正 Excel 開啟時出現「發現部分內容有問題」
+- 成績 Excel（.xlsx）的工作表節點順序改為結構描述規定的「sheetData → autoFilter → mergeCells → pageMargins」。v2.102 以前把合併儲存格寫在篩選之前，Microsoft Excel 會提示檔案有問題並要求修復；Open XML SDK 驗證也判定為無效。
+- 活頁簿新增每張工作表的隱藏名稱 `_xlnm._FilterDatabase`（與 Excel、LibreOffice 存檔時相同），範圍與該工作表的篩選一致。缺少這個名稱時，LibreOffice 不會套用篩選。
+- 篩選、合併標題、凍結窗格、樣式、原始分數與平均公式都保留；匯出仍為唯讀，不修改班級資料。成績級距、資料防覆寫、IndexedDB 修訂號協調、備份匯入與舊資料相容性均未變更。
+- 已知限制（v2.102 起即存在，未在本次修改）：單一總覽工作表的平均公式長度隨評量數增加，超過約 108 項評量時會超過 Excel 單一公式 8192 字元的上限。
+- 開發用測試：`tests/xlsx-structure.test.js`（Open XML SDK 驗證與結構檢查，需 .NET SDK 或 `XLSX_VALIDATOR`）、`tests/xlsx-recalc-libreoffice.py`（LibreOffice 代理測試，不等同 Excel 實機驗收）。網站不載入測試程式或測試資料。
