@@ -1,4 +1,4 @@
-const APP_VERSION = "2.102";
+const APP_VERSION = "2.103";
 
 const STORAGE_KEY = "homeworkTrackerDataV2";
 const LEGACY_STORAGE_KEY = "homeworkTrackerDataV1";
@@ -4370,6 +4370,9 @@ function gradeExcelCell(value,col,row,style=0){
   const str=String(value);
   return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${gradeExcelXmlText(str)}</t></is></c>`;
 }
+// v2.103: CT_Worksheet children must follow the schema sequence
+// (… sheetData → autoFilter → mergeCells → pageMargins …); v2.102 and earlier wrote mergeCells
+// before autoFilter, which Microsoft Excel reports as "部分內容有問題" and offers to repair.
 function gradeExcelSheetXml(sheet){
   const headers=sheet.headers||[],rows=sheet.rows||[],count=Math.max(2,headers.length),last=gradeExcelColumn(count-1);
   const renderRow=(values,rowIndex,style=0)=>`<row r="${rowIndex}"${rowIndex===1?' ht="28" customHeight="1"':rowIndex===4?' ht="38" customHeight="1"':''}>${values.map((v,i)=>gradeExcelCell(v,i,rowIndex,rowIndex===1?1:rowIndex===2?4:rowIndex===4?2:i===count-1&&sheet.avgCol?3:style)).join("")}</row>`;
@@ -4377,7 +4380,7 @@ function gradeExcelSheetXml(sheet){
     ...rows.map((r,i)=>renderRow(r,i+5))].join("");
   const columns=Array.from({length:count},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?11:i===1?21:i===count-1&&sheet.avgCol?16:23}" customWidth="1"/>`).join("");
   const pane=sheet.avgCol?'xSplit="2" ySplit="4" topLeftCell="C5" activePane="bottomRight"':'ySplit="4" topLeftCell="A5" activePane="bottomLeft"';
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ${pane} state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="21"/><cols>${columns}</cols><sheetData>${rowXml}</sheetData><mergeCells count="2"><mergeCell ref="A1:${last}1"/><mergeCell ref="A2:${last}2"/></mergeCells><autoFilter ref="A4:${last}${Math.max(4,rows.length+4)}"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ${pane} state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="21"/><cols>${columns}</cols><sheetData>${rowXml}</sheetData><autoFilter ref="A4:${last}${Math.max(4,rows.length+4)}"/><mergeCells count="2"><mergeCell ref="A1:${last}1"/><mergeCell ref="A2:${last}2"/></mergeCells><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>`;
 }
 function gradeExcelStylesXml(){
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
