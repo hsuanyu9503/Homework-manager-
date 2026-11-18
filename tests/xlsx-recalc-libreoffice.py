@@ -100,7 +100,9 @@ try:
     import re
     mx = float(re.search(r"滿分 ([0-9.]+)）$", hdr).group(1))
     before = sh.getCellByPosition(avg_col, r0).Value
-    target.Value = mx * 0.5   # 改成 50%
+    # 改成 50%；若原值已是 50%，改成 25%，確保真的改變了分數
+    new_value = mx * 0.25 if target.Type.value == "VALUE" and abs(target.Value - mx * 0.5) < 1e-9 else mx * 0.5
+    target.Value = new_value
     doc.calculateAll()
     vals = []
     for col in range(2, avg_col):
@@ -117,7 +119,7 @@ try:
     doc2 = load(saved); sh2 = doc2.Sheets.getByIndex(0); doc2.calculateAll()
     c2 = sh2.getCellByPosition(avg_col, r0)
     check("另存後重新開啟：公式仍在、值保留", c2.Formula.startswith("=") and abs(c2.Value - expect) < 1e-9, {"formula": c2.Formula[:60], "value": c2.Value})
-    check("另存後重新開啟：修改的分數保留", abs(sh2.getCellByPosition(2, r0).Value - mx * 0.5) < 1e-9)
+    check("另存後重新開啟：修改的分數保留", abs(sh2.getCellByPosition(2, r0).Value - new_value) < 1e-9)
     doc2.close(True)
 finally:
     proc.terminate()
